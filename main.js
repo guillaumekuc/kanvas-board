@@ -1,6 +1,7 @@
 // Canvas board: color hotkeys for selected canvas cards, a command that opens a terminal running the
 // canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
-// to edit open boards. Copies skill/SKILL.md to .claude/skills/canvas-board/ on load.
+// to edit open boards, and a "Tidy layout" command (dagre, through canvas.js). Copies skill/SKILL.md to
+// .claude/skills/canvas-board/ on load.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
 const { Plugin, Notice, PluginSettingTab, Setting } = require('obsidian');
 const { spawn } = require('child_process');
@@ -21,6 +22,7 @@ const COLORS = [
 const DEFAULTS = {
 	defaultBoard: 'Plans.canvas',
 	claudePath: '',
+	layoutDirection: 'TB',
 	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
 };
 
@@ -32,7 +34,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const script = path.join(dir, 'canvas.js');
 		const req = window.require || require; // the plugin's own require has no cache to clear on reload
 		if (req.cache) delete req.cache[script];
-		const { applyOps } = req(script);
+		const { applyOps, layoutOps } = req(script);
+		const dagrePath = path.join(dir, 'dagre.min.js');
+		if (req.cache) delete req.cache[dagrePath];
+		const dagre = req(dagrePath);
 		this.api = {
 			read: board => {
 				const canvas = this.openCanvas(board);
@@ -68,6 +73,25 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				},
 			});
 		}
+
+		// Selected cards only when 2+ are selected (the rest never moves), else the whole canvas. Ctrl+Z undoes it.
+		this.addCommand({
+			id: 'tidy-layout',
+			name: 'Tidy layout (selected cards, or the whole canvas)',
+			checkCallback: checking => {
+				const canvas = this.activeCanvas();
+				if (!canvas) return false;
+				if (!checking) {
+					const ids = canvas.selection.size > 1 ? [...canvas.selection].map(n => n.id) : [];
+					const d = canvas.getData();
+					applyOps(d, layoutOps(d, { ids, dir: this.settings.layoutDirection, dagre }));
+					canvas.pushHistory && canvas.pushHistory(canvas.getData());
+					canvas.setData(d);
+					canvas.requestSave();
+				}
+				return true;
+			},
+		});
 
 		this.addCommand({
 			id: 'run-pass',
@@ -158,6 +182,10 @@ class CanvasBoardSettings extends PluginSettingTab {
 			.onChange(async v => { this.plugin.settings[key] = v.trim() || DEFAULTS[key]; await this.plugin.saveData(this.plugin.settings); }));
 		text('Default board', 'Board used by "Run pass" when the active tab is not a canvas.', 'defaultBoard');
 		text('Claude path', 'Empty: ~/.local/bin/claude.exe if it exists, else claude on PATH.', 'claudePath');
+		new Setting(containerEl).setName('Layout direction').setDesc('Tidy layout and agent-made plan canvases: top to bottom or left to right ("depends on" prerequisites come first).').addDropdown(dd => dd
+			.addOptions({ TB: 'Top to bottom', LR: 'Left to right' })
+			.setValue(this.plugin.settings.layoutDirection)
+			.onChange(async v => { this.plugin.settings.layoutDirection = v; await this.plugin.saveData(this.plugin.settings); }));
 		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
 	}
 }
