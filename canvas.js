@@ -161,8 +161,9 @@ function tree(board, depth = 0, seen = new Set()) {
 
 // --- Roll-up ------------------------------------------------------------------------------------------
 
-// red > yellow are the "needs me" colors that climb to the parent card; cyan (cleared) and purple (parked)
-// are human choices and are never overwritten.
+// red > yellow are the "needs me" colors that climb to the parent card; cyan and purple (go) are human
+// choices and are never overwritten. The card color is the only state: a red/yellow card with a `· N inside`
+// suffix got its color from the roll-up, one without it was set by an agent or Guillaume and is kept.
 function rollup(board) {
   const t = tree(board);
   const changes = [];
@@ -204,11 +205,12 @@ function rollup(board) {
 }
 
 function desiredColor(card, inner) {
-  const own = card.note && card.note.attention;
   if (card.color === '5' || card.color === '6') return card.color;
-  if (inner.red || own === 'blocked') return '1';
-  if (inner.yellow || own === 'question' || own === 'review') return '3';
-  if (card.color === '1' || card.color === '3') return inner.allGreen ? '4' : null; // was only rolled up
+  const rolled = card.text !== undefined && / · \d+ inside/.test(card.text);
+  const own = rolled ? null : card.color;
+  if (inner.red || own === '1') return '1';
+  if (inner.yellow || own === '3') return '3';
+  if (rolled && (card.color === '1' || card.color === '3')) return inner.allGreen ? '4' : null;
   return card.color || null;
 }
 
