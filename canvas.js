@@ -1,0 +1,403 @@
+// Read and edit Obsidian canvas boards safely, for the canvas-board skill. Ships with the canvas-board plugin.
+// If the board is open in Obsidian, edits go through the plugin's API (`app.plugins.plugins['canvas-board'].api`,
+// called with the Obsidian CLI `obsidian eval`) so Obsidian does not save its in-memory copy over them;
+// otherwise the .canvas file is edited directly. The plugin requires this file for applyOps.
+//
+// Usage (paths relative to the vault root; CANVAS = node .obsidian/plugins/canvas-board/canvas.js):
+//   CANVAS read <board>                       nodes and edges as JSON
+//   CANVAS tree [<board>] [--active]          board + linked notes (level, parts) + nested canvases, as JSON
+//                                             --active: cyan/purple/orange cards, cards edged to them, yellow/red count
+//   CANVAS set <board> <id> [--color c] [--text t] [--file path]
+//                                             c: red orange yellow green cyan purple none (or 1-6)
+//                                             --file turns the card into a file card, --text into a text card
+//   CANVAS add <board> --near <id> --text t [--color c] [--width w] [--height h]
+//                                             new text card next to <id> (right, else below); prints its id
+//   CANVAS remove <board> <id>
+//   CANVAS edge <board> <fromId> <toId> [--label l]
+//   CANVAS layout <board> [--ids a,b,c] [--dir LR|TB] [--fit]
+//                                             dagre layered layout of the given cards (default: all), the others
+//                                             stay put; --fit sizes text cards to their text. For canvases an agent
+//                                             made, or cards it just added
+//   CANVAS rollup [<board>]                   recolor parents from nested boards, update `· N inside` / `· Nd`
+//   CANVAS check [<board>]                    read-only: broken board invariants (links, card text, plan notes) as JSON
+// Default board: Plans.canvas. Default direction: the plugin setting "Layout direction" (data.json), else TB.
+const fs = require('fs');
+const path = require('path');
+const { execFileSync } = require('child_process');
+
+const ROOT = path.resolve(__dirname, '..', '..', '..'); // <vault>/.obsidian/plugins/canvas-board
+const DEFAULT_BOARD = 'Plans.canvas';
+const SKIP_DIRS = new Set(['.git', '.obsidian', '.trash', '_secrets', 'node_modules']);
+const COLORS = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
+const STALE_DAYS = 7;
+
+const args = process.argv.slice(2);
+const opt = name => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
+const positional = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--')));
+
+// Shared by both modes: runs in Node on the parsed file, or inside Obsidian (plugin) on canvas.getData().
+function applyOps(d, ops) {
+  const retyped = [];
+  for (const o of ops) {
+    if (o.op === 'set') {
+      const n = d.nodes.find(n => n.id === o.id);
+      if (!n) throw new Error('no node ' + o.id);
+      if (o.color !== undefined) { if (o.color) n.color = o.color; else delete n.color; }
+      if (o.file !== undefined) { if (n.type !== 'file') retyped.push(n.id); n.type = 'file'; n.file = o.file; delete n.text; }
+      if (o.text !== undefined) { if (n.type !== 'text') retyped.push(n.id); n.type = 'text'; n.text = o.text; delete n.file; }
+      for (const k of ['x', 'y', 'width', 'height']) if (o[k] !== undefined) n[k] = o[k];
+    } else if (o.op === 'sides') {
+      const e = d.edges.find(e => e.id === o.id);
+      if (e) { e.fromSide = o.fromSide; e.toSide = o.toSide; }
+    } else if (o.op === 'add') d.nodes.push(o.node);
+    else if (o.op === 'remove') { d.nodes = d.nodes.filter(n => n.id !== o.id); d.edges = d.edges.filter(e => e.fromNode !== o.id && e.toNode !== o.id); }
+    else if (o.op === 'edge') d.edges.push(o.edge);
+  }
+  return retyped;
+}
+
+// --- Obsidian CLI -----------------------------------------------------------------------------------
+
+const OBSIDIAN = ['obsidian', 'C:\\Program Files\\Obsidian\\Obsidian.com'];
+
+function obsidianEval(code) {
+  for (const bin of OBSIDIAN) {
+    try {
+      const out = execFileSync(bin, ['eval', `code=${code}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      const m = out.match(/=>\s?([\s\S]*)$/);
+      if (!m) throw new Error(out.trim());
+      return m[1].trim();
+    } catch (e) {
+      if (e.code === 'ENOENT') continue;
+      return null; // Obsidian not running, or the CLI is off
+    }
+  }
+  return null;
+}
+
+// Calls the plugin API inside Obsidian. 'closed' = board not open there; null = Obsidian not reachable.
+const api = (fn, ...a) => obsidianEval(`(async()=>{const p=app.plugins.plugins['canvas-board'];if(!p||!p.api)return 'no plugin';` +
+  `const r=await p.api.${fn}(${a.map(x => JSON.stringify(x)).join(',')});return r===null?'closed':r})()`);
+
+// --- Board I/O ----------------------------------------------------------------------------------------
+
+const abs = p => path.join(ROOT, p);
+const readFileBoard = board => JSON.parse(fs.readFileSync(abs(board), 'utf8'));
+
+function serialize(d) {
+  const line = x => '\t\t' + JSON.stringify(x);
+  return `{\n\t"nodes":[\n${d.nodes.map(line).join(',\n')}\n\t],\n\t"edges":[\n${d.edges.map(line).join(',\n')}\n\t]\n}\n`;
+}
+
+function readBoard(board) {
+  const out = api('read', board);
+  if (out && out.startsWith('{')) { const d = JSON.parse(out); return { nodes: d.nodes, edges: d.edges }; }
+  return readFileBoard(board);
+}
+
+function writeOps(board, ops) {
+  const out = api('apply', board, ops);
+  if (out === 'obsidian') return 'obsidian';
+  if (out !== null && out !== 'closed') throw new Error(`Obsidian edit failed: ${out}`);
+  const d = readFileBoard(board);
+  applyOps(d, ops);
+  fs.writeFileSync(abs(board), serialize(d));
+  return 'file';
+}
+
+// --- Links and notes --------------------------------------------------------------------------------
+
+let fileIndex = null;
+function findFile(name) {
+  if (!fileIndex) {
+    fileIndex = new Map();
+    const walk = dir => {
+      for (const e of fs.readdirSync(abs(dir), { withFileTypes: true })) {
+        if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) walk(path.posix.join(dir, e.name)); continue; }
+        const rel = path.posix.join(dir, e.name);
+        const key = e.name.endsWith('.md') ? e.name.slice(0, -3) : e.name;
+        if (!fileIndex.has(key)) fileIndex.set(key, rel);
+        fileIndex.set(rel, rel);
+        fileIndex.set(rel.replace(/\.md$/, ''), rel);
+      }
+    };
+    walk('');
+  }
+  return fileIndex.get(name) || null;
+}
+
+function cardLinks(n) {
+  const targets = n.type === 'file' ? [n.file] : [...(n.text || '').matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map(m => findFile(m[1].trim()));
+  const found = targets.filter(Boolean);
+  return { note: found.find(f => f.endsWith('.md')) || null, canvas: found.find(f => f.endsWith('.canvas')) || null };
+}
+
+// Level is derived from the note: `- [ ]` / `- [x]` parts make it a plan, otherwise it is a brief.
+function noteState(rel) {
+  const text = fs.readFileSync(abs(rel), 'utf8');
+  const parts = [...text.matchAll(/^\s*- \[([ xX])\] /gm)];
+  const done = parts.filter(m => m[1] !== ' ').length;
+  const questions = [...text.matchAll(/^\s*- \[\?\] /gm)].length;
+  return { level: parts.length ? 'plan' : 'brief', parts: { done, total: parts.length }, questions };
+}
+
+function tree(board, depth = 0, seen = new Set()) {
+  seen.add(board);
+  const d = readBoard(board);
+  return {
+    board,
+    cards: d.nodes.filter(n => n.type !== 'group').map(n => {
+      const { note, canvas } = cardLinks(n);
+      const card = { id: n.id, color: n.color || null, text: n.type === 'text' ? n.text : undefined, file: n.file };
+      if (note) {
+        const ageDays = Math.floor((Date.now() - fs.statSync(abs(note)).mtimeMs) / 86400000);
+        card.note = { path: note, ageDays, ...noteState(note) };
+      }
+      if (canvas && !seen.has(canvas) && depth < 2) card.inside = tree(canvas, depth + 1, seen);
+      return card;
+    }),
+    edges: d.edges.map(e => ({ from: e.fromNode, to: e.toNode, label: e.label })),
+  };
+}
+
+// --active: only what a pass needs. Cyan/purple/orange cards with their notes, the cards edged to them (once
+// each, text only, as context), nested boards only when they hold active cards, and the yellow/red count.
+const ACTIVE = new Set(['2', '5', '6']);
+function activeTree(t) {
+  const total = { waiting: 0 };
+  const a = activeNode(t, total);
+  return { board: a.board, waiting: total.waiting, cards: a.cards, context: a.context, edges: a.edges };
+}
+
+function activeNode(t, total) {
+  const ids = new Set(t.cards.filter(c => ACTIVE.has(c.color)).map(c => c.id));
+  const near = new Set();
+  for (const e of t.edges) {
+    if (ids.has(e.from) && !ids.has(e.to)) near.add(e.to);
+    if (ids.has(e.to) && !ids.has(e.from)) near.add(e.from);
+  }
+  const cards = [], context = [];
+  for (const c of t.cards) {
+    if (c.color === '1' || c.color === '3') total.waiting++;
+    const inside = c.inside && activeNode(c.inside, total);
+    if (ids.has(c.id) || (inside && inside.cards.length)) cards.push({ ...c, inside: inside && inside.cards.length ? inside : undefined });
+    else if (near.has(c.id)) context.push({ id: c.id, color: c.color, text: c.text, file: c.file });
+  }
+  const kept = new Set(cards.map(c => c.id));
+  const edges = t.edges.filter(e => kept.has(e.from) || kept.has(e.to));
+  return { board: t.board, cards, context, edges };
+}
+
+// --- Roll-up ------------------------------------------------------------------------------------------
+
+// red > yellow are the "needs me" colors that climb to the parent card; cyan and purple (go) are human
+// choices and are never overwritten. The card color is the only state: a red/yellow card with a `· N inside`
+// suffix got its color from the roll-up, one without it was set by an agent or Guillaume and is kept.
+function rollup(board) {
+  const t = tree(board);
+  const changes = [];
+  const walk = node => {
+    const ops = [];
+    let red = 0, yellow = 0, cards = 0, green = 0;
+    for (const c of node.cards) {
+      let color = c.color;
+      if (c.inside) {
+        const inner = walk(c.inside);
+        const want = desiredColor(c, inner);
+        let text = c.text;
+        if (text !== undefined) {
+          text = text.replace(/ · \d+ inside| · \d+d$/g, '');
+          if (inner.red + inner.yellow) text += ` · ${inner.red + inner.yellow} inside`;
+        }
+        if (want !== color || (text !== undefined && text !== c.text)) {
+          ops.push({ op: 'set', id: c.id, color: want === null ? '' : want, ...(text !== c.text ? { text } : {}) });
+          color = want;
+        }
+      }
+      if (color === '1') red++;
+      if (color === '3') yellow++;
+      cards++;
+      if (color === '4') green++;
+    }
+    // Age suffix on yellow cards whose note has not changed for a week.
+    for (const c of node.cards) {
+      if (c.color !== '3' || !c.note || c.text === undefined || c.inside) continue;
+      const base = c.text.replace(/ · \d+d$/, '');
+      const text = c.note.ageDays >= STALE_DAYS ? `${base} · ${c.note.ageDays}d` : base;
+      if (text !== c.text) ops.push({ op: 'set', id: c.id, text });
+    }
+    if (ops.length) changes.push({ board: node.board, via: writeOps(node.board, ops), ops });
+    return { red, yellow, allGreen: cards > 0 && green === cards };
+  };
+  walk(t);
+  return changes;
+}
+
+function desiredColor(card, inner) {
+  if (card.color === '5' || card.color === '6') return card.color;
+  const rolled = card.text !== undefined && / · \d+ inside/.test(card.text);
+  const own = rolled ? null : card.color;
+  if (inner.red || own === '1') return '1';
+  if (inner.yellow || own === '3') return '3';
+  if (rolled && (card.color === '1' || card.color === '3')) return inner.allGreen ? '4' : null;
+  return card.color || null;
+}
+
+// --- Check --------------------------------------------------------------------------------------------
+
+// Structure only, never content: the invariants the skill and SOP state. A check that never fires in a month
+// gets deleted; a new one only after the same defect shows up twice.
+const ORANGE_STALE_MS = 3600000;
+function check(board) {
+  const issues = [];
+  const walk = (b, depth, seen) => {
+    seen.add(b);
+    const d = readBoard(b);
+    for (const n of d.nodes) {
+      if (n.type === 'group' || !n.color) continue;
+      const add = issue => issues.push({ board: b, id: n.id, text: (n.text || n.file || '').split('\n')[0], issue });
+      const links = n.type === 'file' ? [n.file] : [...(n.text || '').matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map(m => m[1].trim());
+      for (const l of links) if (!findFile(l)) add(`broken link [[${l}]]`);
+      if (n.type === 'text' && depth === 0) { // plan-canvas cards are parts, free text
+        const text = n.text || '';
+        if (text.includes('[[') ? !/^\[\[[^\]]+\]\]( · .+)?$/.test(text) : text.split('\n').length > 3) add('card text is neither a wish (≤ 3 lines) nor `[[Note]] · reason`');
+      }
+      const { note, canvas } = cardLinks(n);
+      if (note && note.startsWith('Projects/_assets/plans/')) {
+        const src = fs.readFileSync(abs(note), 'utf8');
+        const fm = (src.match(/^---\n([\s\S]*?)\n---/) || [])[1];
+        const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map(m => m[1]) : [];
+        if (keys.join() !== 'tags') add(`note frontmatter is not \`tags\` only (${keys.join(', ') || 'none'})`);
+        if ([...(fm || '').matchAll(/context\//g)].length !== 1) add('note does not have exactly one context/* tag');
+        for (const s of ['Aim', 'Done when', 'Design']) if (!new RegExp(`^## ${s}\\s*$`, 'm').test(src)) add(`note has no ## ${s}`);
+        if (n.color === '4' && !/^## Output\s*$/m.test(src)) add('green card, note has no ## Output');
+        if (n.color === '2' && Date.now() - fs.statSync(abs(note)).mtimeMs > ORANGE_STALE_MS) add('orange card, note untouched for 1h+ (interrupted pass?)');
+      }
+      if (canvas && !seen.has(canvas) && depth < 2) walk(canvas, depth + 1, seen);
+    }
+  };
+  walk(board, 0, new Set());
+  return { issues };
+}
+
+// --- Commands -----------------------------------------------------------------------------------------
+
+const colorArg = c => (c === undefined ? undefined : c === 'none' ? '' : COLORS[c] || c);
+const newId = () => [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join('');
+
+function place(d, near, w, h) {
+  const p = d.nodes.find(n => n.id === near);
+  if (!p) throw new Error('no node ' + near);
+  const overlaps = (x, y) => d.nodes.some(n => x < n.x + n.width + 20 && x + w + 20 > n.x && y < n.y + n.height + 20 && y + h + 20 > n.y);
+  for (let k = 0; k < 20; k++) {
+    const right = { x: p.x + p.width + 40, y: p.y + k * (h + 40) };
+    if (!overlaps(right.x, right.y)) return right;
+    const below = { x: p.x + k * (w + 40), y: p.y + p.height + 40 };
+    if (!overlaps(below.x, below.y)) return below;
+  }
+  return { x: p.x + p.width + 40, y: p.y };
+}
+
+// --- Layout -------------------------------------------------------------------------------------------
+
+const SIDES = { TB: ['bottom', 'top'], LR: ['right', 'left'] };
+const settings = () => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8')); } catch (e) { return {}; } };
+const defaultDir = () => (settings().layoutDirection === 'LR' ? 'LR' : 'TB');
+
+// Height that fits a text card's markdown at Obsidian's default canvas font (~8px a char, 26px a line).
+function fitHeight(text, w) {
+  const perLine = Math.max(10, Math.floor((w - 40) / 8));
+  const lines = String(text || '').split('\n').reduce((s, l) => s + Math.max(1, Math.ceil(l.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2').length / perLine)), 0);
+  return Math.max(60, lines * 26 + 34);
+}
+
+// Ops that lay out `ids` (all cards when empty) with dagre; the other cards never move. The laid-out block
+// goes next to the first fixed card it is edged to, else right of everything, then steps until it overlaps
+// nothing. Shared with the plugin, which passes its own dagre.
+function layoutOps(d, { ids, dir = 'TB', fit = false, dagre }) {
+  const cards = d.nodes.filter(n => n.type !== 'group');
+  const pick = new Set(ids && ids.length ? ids : cards.map(n => n.id));
+  const moving = cards.filter(n => pick.has(n.id));
+  const fixed = cards.filter(n => !pick.has(n.id));
+  if (!moving.length) return [];
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: dir, nodesep: 40, ranksep: 80, marginx: 0, marginy: 0 });
+  g.setDefaultEdgeLabel(() => ({}));
+  const size = n => ({ width: n.width, height: fit && n.type === 'text' ? fitHeight(n.text, n.width) : n.height });
+  for (const n of moving) g.setNode(n.id, size(n));
+  const inner = d.edges.filter(e => pick.has(e.fromNode) && pick.has(e.toNode));
+  // "depends on" edges point at the prerequisite, which should come first: rank them reversed.
+  const back = e => /depends on/i.test(e.label || '');
+  for (const e of inner) back(e) ? g.setEdge(e.toNode, e.fromNode) : g.setEdge(e.fromNode, e.toNode);
+  dagre.layout(g);
+
+  const box = ns => ns.reduce((b, n) => ({ x0: Math.min(b.x0, n.x), y0: Math.min(b.y0, n.y), x1: Math.max(b.x1, n.x + n.width), y1: Math.max(b.y1, n.y + n.height) }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+  const placed = moving.map(n => { const p = g.node(n.id); return { id: n.id, x: Math.round(p.x - p.width / 2), y: Math.round(p.y - p.height / 2), width: p.width, height: p.height }; });
+  const b = box(placed);
+  let ox = 0, oy = 0;
+  if (fixed.length) {
+    const link = d.edges.find(e => pick.has(e.fromNode) !== pick.has(e.toNode));
+    const anchor = link && fixed.find(n => n.id === (pick.has(link.fromNode) ? link.toNode : link.fromNode));
+    const all = box(fixed);
+    const ref = anchor || { x: all.x1, y: all.y0, width: 0, height: 0 };
+    ox = dir === 'LR' || !anchor ? ref.x + ref.width + 80 - b.x0 : ref.x - b.x0;
+    oy = dir === 'LR' || !anchor ? ref.y - b.y0 : ref.y + ref.height + 80 - b.y0;
+    const hits = () => placed.some(p => fixed.some(n => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
+    for (let k = 0; k < 200 && hits(); k++) { if (dir === 'LR') oy += 40; else ox += 40; }
+  } else { ox = -b.x0; oy = -b.y0; }
+
+  const ops = placed.map(p => ({ op: 'set', id: p.id, x: p.x + ox, y: p.y + oy, width: p.width, height: p.height }));
+  const [fromSide, toSide] = SIDES[dir];
+  for (const e of inner) ops.push(back(e) ? { op: 'sides', id: e.id, fromSide: toSide, toSide: fromSide } : { op: 'sides', id: e.id, fromSide, toSide });
+  return ops;
+}
+
+module.exports = { applyOps, layoutOps };
+
+if (require.main === module) {
+  const [cmd, boardArg, ...rest] = positional;
+  const board = boardArg || DEFAULT_BOARD;
+  const print = x => console.log(JSON.stringify(x, null, 2));
+
+  switch (cmd) {
+    case 'read': print(readBoard(board)); break;
+    case 'tree': print(args.includes('--active') ? activeTree(tree(board)) : tree(board)); break;
+    case 'set': {
+      const op = { op: 'set', id: rest[0], color: colorArg(opt('--color')) };
+      if (opt('--text') !== undefined) op.text = opt('--text');
+      if (opt('--file') !== undefined) op.file = opt('--file');
+      console.log(writeOps(board, [op]));
+      break;
+    }
+    case 'add': {
+      const w = Number(opt('--width') || 320), h = Number(opt('--height') || fitHeight(opt('--text'), w));
+      const pos = place(readBoard(board), opt('--near'), w, h);
+      const node = { id: newId(), type: 'text', text: opt('--text') || '', x: pos.x, y: pos.y, width: w, height: h };
+      const c = colorArg(opt('--color'));
+      if (c) node.color = c;
+      writeOps(board, [{ op: 'add', node }]);
+      console.log(node.id);
+      break;
+    }
+    case 'remove': console.log(writeOps(board, [{ op: 'remove', id: rest[0] }])); break;
+    case 'edge': {
+      const [a, b] = SIDES[defaultDir()];
+      const [fromSide, toSide] = /depends on/i.test(opt('--label') || '') ? [b, a] : [a, b];
+      const edge = { id: newId(), fromNode: rest[0], fromSide, toNode: rest[1], toSide };
+      if (opt('--label')) edge.label = opt('--label');
+      console.log(writeOps(board, [{ op: 'edge', edge }]));
+      break;
+    }
+    case 'layout': {
+      const ids = (opt('--ids') || '').split(',').filter(Boolean);
+      const ops = layoutOps(readBoard(board), { ids, dir: (opt('--dir') || defaultDir()).toUpperCase(), fit: args.includes('--fit'), dagre: require('./dagre.min.js') });
+      console.log(writeOps(board, ops), ops.filter(o => o.op === 'set').length, 'cards');
+      break;
+    }
+    case 'rollup': print(rollup(board)); break;
+    case 'check': print(check(board)); break;
+    default:
+      console.error('Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|layout|rollup|check <board> ... (see header)');
+      process.exit(1);
+  }
+}
