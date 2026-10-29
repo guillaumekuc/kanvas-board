@@ -1,0 +1,9 @@
+{
+	"id": "canvas-board",
+	"name": "Canvas board",
+	"version": "0.1.0",
+	"minAppVersion": "1.12.0",
+	"description": "Color hotkeys for canvas cards and a command that starts a canvas-board agent pass.",
+	"author": "Guillaume Kuc",
+	"isDesktopOnly": true
+}
