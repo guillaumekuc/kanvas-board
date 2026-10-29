@@ -235,6 +235,43 @@ function desiredColor(card, inner) {
   return card.color || null;
 }
 
+// --- Check --------------------------------------------------------------------------------------------
+
+// Structure only, never content: the invariants the skill and SOP state. A check that never fires in a month
+// gets deleted; a new one only after the same defect shows up twice.
+const ORANGE_STALE_MS = 3600000;
+function check(board) {
+  const issues = [];
+  const walk = (b, depth, seen) => {
+    seen.add(b);
+    const d = readBoard(b);
+    for (const n of d.nodes) {
+      if (n.type === 'group' || !n.color) continue;
+      const add = issue => issues.push({ board: b, id: n.id, text: (n.text || n.file || '').split('\n')[0], issue });
+      const links = n.type === 'file' ? [n.file] : [...(n.text || '').matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map(m => m[1].trim());
+      for (const l of links) if (!findFile(l)) add(`broken link [[${l}]]`);
+      if (n.type === 'text' && depth === 0) { // plan-canvas cards are parts, free text
+        const text = n.text || '';
+        if (text.includes('[[') ? !/^\[\[[^\]]+\]\]( · .+)?$/.test(text) : text.split('\n').length > 3) add('card text is neither a wish (≤ 3 lines) nor `[[Note]] · reason`');
+      }
+      const { note, canvas } = cardLinks(n);
+      if (note && note.startsWith('Projects/_assets/plans/')) {
+        const src = fs.readFileSync(abs(note), 'utf8');
+        const fm = (src.match(/^---\n([\s\S]*?)\n---/) || [])[1];
+        const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map(m => m[1]) : [];
+        if (keys.join() !== 'tags') add(`note frontmatter is not \`tags\` only (${keys.join(', ') || 'none'})`);
+        if ([...(fm || '').matchAll(/context\//g)].length !== 1) add('note does not have exactly one context/* tag');
+        for (const s of ['Aim', 'Done when', 'Design']) if (!new RegExp(`^## ${s}\\s*$`, 'm').test(src)) add(`note has no ## ${s}`);
+        if (n.color === '4' && !/^## Output\s*$/m.test(src)) add('green card, note has no ## Output');
+        if (n.color === '2' && Date.now() - fs.statSync(abs(note)).mtimeMs > ORANGE_STALE_MS) add('orange card, note untouched for 1h+ (interrupted pass?)');
+      }
+      if (canvas && !seen.has(canvas) && depth < 2) walk(canvas, depth + 1, seen);
+    }
+  };
+  walk(board, 0, new Set());
+  return { issues };
+}
+
 // --- Commands -----------------------------------------------------------------------------------------
 
 const colorArg = c => (c === undefined ? undefined : c === 'none' ? '' : COLORS[c] || c);
