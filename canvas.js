@@ -14,9 +14,13 @@
 //                                             new text card next to <id> (right, else below); prints its id
 //   CANVAS remove <board> <id>
 //   CANVAS edge <board> <fromId> <toId> [--label l]
+//   CANVAS layout <board> [--ids a,b,c] [--dir LR|TB] [--fit]
+//                                             dagre layered layout of the given cards (default: all), the others
+//                                             stay put; --fit sizes text cards to their text. For canvases an agent
+//                                             made, or cards it just added
 //   CANVAS rollup [<board>]                   recolor parents from nested boards, update `· N inside` / `· Nd`
 //   CANVAS check [<board>]                    read-only: broken board invariants (links, card text, plan notes) as JSON
-// Default board: Plans.canvas.
+// Default board: Plans.canvas. Default direction: the plugin setting "Layout direction" (data.json), else TB.
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -41,6 +45,10 @@ function applyOps(d, ops) {
       if (o.color !== undefined) { if (o.color) n.color = o.color; else delete n.color; }
       if (o.file !== undefined) { if (n.type !== 'file') retyped.push(n.id); n.type = 'file'; n.file = o.file; delete n.text; }
       if (o.text !== undefined) { if (n.type !== 'text') retyped.push(n.id); n.type = 'text'; n.text = o.text; delete n.file; }
+      for (const k of ['x', 'y', 'width', 'height']) if (o[k] !== undefined) n[k] = o[k];
+    } else if (o.op === 'sides') {
+      const e = d.edges.find(e => e.id === o.id);
+      if (e) { e.fromSide = o.fromSide; e.toSide = o.toSide; }
     } else if (o.op === 'add') d.nodes.push(o.node);
     else if (o.op === 'remove') { d.nodes = d.nodes.filter(n => n.id !== o.id); d.edges = d.edges.filter(e => e.fromNode !== o.id && e.toNode !== o.id); }
     else if (o.op === 'edge') d.edges.push(o.edge);
@@ -290,7 +298,61 @@ function place(d, near, w, h) {
   return { x: p.x + p.width + 40, y: p.y };
 }
 
-module.exports = { applyOps };
+// --- Layout -------------------------------------------------------------------------------------------
+
+const SIDES = { TB: ['bottom', 'top'], LR: ['right', 'left'] };
+const settings = () => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8')); } catch (e) { return {}; } };
+const defaultDir = () => (settings().layoutDirection === 'LR' ? 'LR' : 'TB');
+
+// Height that fits a text card's markdown at Obsidian's default canvas font (~8px a char, 26px a line).
+function fitHeight(text, w) {
+  const perLine = Math.max(10, Math.floor((w - 40) / 8));
+  const lines = String(text || '').split('\n').reduce((s, l) => s + Math.max(1, Math.ceil(l.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2').length / perLine)), 0);
+  return Math.max(60, lines * 26 + 34);
+}
+
+// Ops that lay out `ids` (all cards when empty) with dagre; the other cards never move. The laid-out block
+// goes next to the first fixed card it is edged to, else right of everything, then steps until it overlaps
+// nothing. Shared with the plugin, which passes its own dagre.
+function layoutOps(d, { ids, dir = 'TB', fit = false, dagre }) {
+  const cards = d.nodes.filter(n => n.type !== 'group');
+  const pick = new Set(ids && ids.length ? ids : cards.map(n => n.id));
+  const moving = cards.filter(n => pick.has(n.id));
+  const fixed = cards.filter(n => !pick.has(n.id));
+  if (!moving.length) return [];
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: dir, nodesep: 40, ranksep: 80, marginx: 0, marginy: 0 });
+  g.setDefaultEdgeLabel(() => ({}));
+  const size = n => ({ width: n.width, height: fit && n.type === 'text' ? fitHeight(n.text, n.width) : n.height });
+  for (const n of moving) g.setNode(n.id, size(n));
+  const inner = d.edges.filter(e => pick.has(e.fromNode) && pick.has(e.toNode));
+  // "depends on" edges point at the prerequisite, which should come first: rank them reversed.
+  const back = e => /depends on/i.test(e.label || '');
+  for (const e of inner) back(e) ? g.setEdge(e.toNode, e.fromNode) : g.setEdge(e.fromNode, e.toNode);
+  dagre.layout(g);
+
+  const box = ns => ns.reduce((b, n) => ({ x0: Math.min(b.x0, n.x), y0: Math.min(b.y0, n.y), x1: Math.max(b.x1, n.x + n.width), y1: Math.max(b.y1, n.y + n.height) }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+  const placed = moving.map(n => { const p = g.node(n.id); return { id: n.id, x: Math.round(p.x - p.width / 2), y: Math.round(p.y - p.height / 2), width: p.width, height: p.height }; });
+  const b = box(placed);
+  let ox = 0, oy = 0;
+  if (fixed.length) {
+    const link = d.edges.find(e => pick.has(e.fromNode) !== pick.has(e.toNode));
+    const anchor = link && fixed.find(n => n.id === (pick.has(link.fromNode) ? link.toNode : link.fromNode));
+    const all = box(fixed);
+    const ref = anchor || { x: all.x1, y: all.y0, width: 0, height: 0 };
+    ox = dir === 'LR' || !anchor ? ref.x + ref.width + 80 - b.x0 : ref.x - b.x0;
+    oy = dir === 'LR' || !anchor ? ref.y - b.y0 : ref.y + ref.height + 80 - b.y0;
+    const hits = () => placed.some(p => fixed.some(n => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
+    for (let k = 0; k < 200 && hits(); k++) { if (dir === 'LR') oy += 40; else ox += 40; }
+  } else { ox = -b.x0; oy = -b.y0; }
+
+  const ops = placed.map(p => ({ op: 'set', id: p.id, x: p.x + ox, y: p.y + oy, width: p.width, height: p.height }));
+  const [fromSide, toSide] = SIDES[dir];
+  for (const e of inner) ops.push(back(e) ? { op: 'sides', id: e.id, fromSide: toSide, toSide: fromSide } : { op: 'sides', id: e.id, fromSide, toSide });
+  return ops;
+}
+
+module.exports = { applyOps, layoutOps };
 
 if (require.main === module) {
   const [cmd, boardArg, ...rest] = positional;
@@ -308,7 +370,7 @@ if (require.main === module) {
       break;
     }
     case 'add': {
-      const w = Number(opt('--width') || 320), h = Number(opt('--height') || 80);
+      const w = Number(opt('--width') || 320), h = Number(opt('--height') || fitHeight(opt('--text'), w));
       const pos = place(readBoard(board), opt('--near'), w, h);
       const node = { id: newId(), type: 'text', text: opt('--text') || '', x: pos.x, y: pos.y, width: w, height: h };
       const c = colorArg(opt('--color'));
@@ -319,15 +381,23 @@ if (require.main === module) {
     }
     case 'remove': console.log(writeOps(board, [{ op: 'remove', id: rest[0] }])); break;
     case 'edge': {
-      const edge = { id: newId(), fromNode: rest[0], fromSide: 'bottom', toNode: rest[1], toSide: 'top' };
+      const [a, b] = SIDES[defaultDir()];
+      const [fromSide, toSide] = /depends on/i.test(opt('--label') || '') ? [b, a] : [a, b];
+      const edge = { id: newId(), fromNode: rest[0], fromSide, toNode: rest[1], toSide };
       if (opt('--label')) edge.label = opt('--label');
       console.log(writeOps(board, [{ op: 'edge', edge }]));
+      break;
+    }
+    case 'layout': {
+      const ids = (opt('--ids') || '').split(',').filter(Boolean);
+      const ops = layoutOps(readBoard(board), { ids, dir: (opt('--dir') || defaultDir()).toUpperCase(), fit: args.includes('--fit'), dagre: require('./dagre.min.js') });
+      console.log(writeOps(board, ops), ops.filter(o => o.op === 'set').length, 'cards');
       break;
     }
     case 'rollup': print(rollup(board)); break;
     case 'check': print(check(board)); break;
     default:
-      console.error('Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|rollup|check <board> ... (see header)');
+      console.error('Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|layout|rollup|check <board> ... (see header)');
       process.exit(1);
   }
 }
