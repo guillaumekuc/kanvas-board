@@ -17,8 +17,42 @@ const COLORS = [
 	['purple (go, plan)', '6', '6'],
 ];
 
+// {vault} {board} {claude} are replaced; quoted parts stay one argument.
+const DEFAULTS = {
+	defaultBoard: 'Plans.canvas',
+	claudePath: '',
+	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
+};
+
 module.exports = class CanvasBoardPlugin extends Plugin {
-	onload() {
+	async onload() {
+		this.settings = Object.assign({}, DEFAULTS, await this.loadData());
+		this.addSettingTab(new CanvasBoardSettings(this.app, this));
+		const dir = path.join(this.app.vault.adapter.basePath, this.manifest.dir);
+		const script = path.join(dir, 'canvas.js');
+		const req = window.require || require; // the plugin's own require has no cache to clear on reload
+		if (req.cache) delete req.cache[script];
+		const { applyOps } = req(script);
+		this.api = {
+			read: board => {
+				const canvas = this.openCanvas(board);
+				return canvas ? JSON.stringify(canvas.getData()) : null;
+			},
+			// Changing a card's type needs setData() without the card, then with it, to keep its id.
+			apply: async (board, ops) => {
+				const canvas = this.openCanvas(board);
+				if (!canvas) return null;
+				const d = canvas.getData();
+				const retyped = applyOps(d, ops);
+				if (retyped.length) canvas.setData({ ...d, nodes: d.nodes.filter(n => !retyped.includes(n.id)) });
+				canvas.setData(d);
+				canvas.requestSave();
+				await new Promise(r => setTimeout(r, 2500));
+				return 'obsidian';
+			},
+		};
+		this.syncSkill(dir);
+
 		for (const [label, color, key] of COLORS) {
 			this.addCommand({
 				id: `color-${key}`,
@@ -70,19 +104,42 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 	async runPass() {
 		const vault = this.app.vault.adapter.basePath;
 		const local = path.join(process.env.USERPROFILE || '', '.local', 'bin', 'claude.exe');
-		const claude = fs.existsSync(local) ? local : 'claude';
+		const claude = this.settings.claudePath || (fs.existsSync(local) ? local : 'claude');
 		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
-		const board = view && view.getViewType() === 'canvas' && view.file ? view.file.path : 'Plans.canvas';
+		const board = view && view.getViewType() === 'canvas' && view.file ? view.file.path : this.settings.defaultBoard;
 		if (!(await this.hasGoCards(board))) {
 			new Notice(`Canvas board: nothing to do on ${board} (no cyan or purple card)`);
 			return;
 		}
+		const vars = { vault, board, claude };
+		const [cmd, ...cmdArgs] = (this.settings.terminal.match(/"[^"]*"|\S+/g) || [])
+			.map(a => a.replace(/^"|"$/g, '').replace(/\{(vault|board|claude)\}/g, (_, k) => vars[k]));
 		try {
-			// One named window, one tab per pass: `-w canvas-board` reuses the window or creates it.
-			spawn('wt.exe', ['-w', 'canvas-board', 'new-tab', '-d', vault, '--title', `pass ${board}`, claude, `/canvas-board ${board}`], { detached: true, stdio: 'ignore' }).unref();
+			const child = spawn(cmd, cmdArgs, { detached: true, stdio: 'ignore' });
+			child.on('error', e => new Notice(`Canvas board: could not start the pass (${e.message})`));
+			child.unref();
 			new Notice(`Canvas board: pass started on ${board}`);
 		} catch (e) {
 			new Notice(`Canvas board: could not start the pass (${e.message})`);
 		}
 	}
 };
+
+class CanvasBoardSettings extends PluginSettingTab {
+	constructor(app, plugin) {
+		super(app, plugin);
+		this.plugin = plugin;
+	}
+
+	display() {
+		const { containerEl } = this;
+		containerEl.empty();
+		const text = (name, desc, key) => new Setting(containerEl).setName(name).setDesc(desc).addText(t => t
+			.setPlaceholder(DEFAULTS[key])
+			.setValue(this.plugin.settings[key])
+			.onChange(async v => { this.plugin.settings[key] = v.trim() || DEFAULTS[key]; await this.plugin.saveData(this.plugin.settings); }));
+		text('Default board', 'Board used by "Run pass" when the active tab is not a canvas.', 'defaultBoard');
+		text('Claude path', 'Empty: ~/.local/bin/claude.exe if it exists, else claude on PATH.', 'claudePath');
+		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
+	}
+}
