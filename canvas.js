@@ -1,25 +1,27 @@
-// Read and edit Obsidian canvas boards safely, for the canvas-board skill.
-// If the board is open in Obsidian, edits go through the Obsidian CLI (`obsidian eval`) so Obsidian
-// does not save its in-memory copy over them; otherwise the .canvas file is edited directly.
+// Read and edit Obsidian canvas boards safely, for the canvas-board skill. Ships with the canvas-board plugin.
+// If the board is open in Obsidian, edits go through the plugin's API (`app.plugins.plugins['canvas-board'].api`,
+// called with the Obsidian CLI `obsidian eval`) so Obsidian does not save its in-memory copy over them;
+// otherwise the .canvas file is edited directly. The plugin requires this file for applyOps.
 //
-// Usage (paths relative to the vault root):
-//   node _scripts/canvas.js read <board>                       nodes and edges as JSON
-//   node _scripts/canvas.js tree [<board>] [--active]          board + linked notes (level, parts) + nested canvases, as JSON
-//                                                              --active: cyan/purple/orange cards, cards edged to them, yellow/red count
-//   node _scripts/canvas.js set <board> <id> [--color c] [--text t] [--file path]
-//                                                              c: red orange yellow green cyan purple none (or 1-6)
-//                                                              --file turns the card into a file card, --text into a text card
-//   node _scripts/canvas.js add <board> --near <id> --text t [--color c] [--width w] [--height h]
-//                                                              new text card next to <id> (right, else below); prints its id
-//   node _scripts/canvas.js remove <board> <id>
-//   node _scripts/canvas.js edge <board> <fromId> <toId> [--label l]
-//   node _scripts/canvas.js rollup [<board>]                   recolor parents from nested boards, update `· N inside` / `· Nd`
+// Usage (paths relative to the vault root; CANVAS = node .obsidian/plugins/canvas-board/canvas.js):
+//   CANVAS read <board>                       nodes and edges as JSON
+//   CANVAS tree [<board>] [--active]          board + linked notes (level, parts) + nested canvases, as JSON
+//                                             --active: cyan/purple/orange cards, cards edged to them, yellow/red count
+//   CANVAS set <board> <id> [--color c] [--text t] [--file path]
+//                                             c: red orange yellow green cyan purple none (or 1-6)
+//                                             --file turns the card into a file card, --text into a text card
+//   CANVAS add <board> --near <id> --text t [--color c] [--width w] [--height h]
+//                                             new text card next to <id> (right, else below); prints its id
+//   CANVAS remove <board> <id>
+//   CANVAS edge <board> <fromId> <toId> [--label l]
+//   CANVAS rollup [<board>]                   recolor parents from nested boards, update `· N inside` / `· Nd`
+//   CANVAS check [<board>]                    read-only: broken board invariants (links, card text, plan notes) as JSON
 // Default board: Plans.canvas.
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..', '..'); // <vault>/.obsidian/plugins/canvas-board
 const DEFAULT_BOARD = 'Plans.canvas';
 const SKIP_DIRS = new Set(['.git', '.obsidian', '.trash', '_secrets', 'node_modules']);
 const COLORS = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
@@ -29,8 +31,8 @@ const args = process.argv.slice(2);
 const opt = name => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const positional = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--')));
 
-// Shared by both modes: runs in Node on the parsed file, or inside Obsidian on canvas.getData().
-const APPLY_SRC = `function applyOps(d, ops) {
+// Shared by both modes: runs in Node on the parsed file, or inside Obsidian (plugin) on canvas.getData().
+function applyOps(d, ops) {
   const retyped = [];
   for (const o of ops) {
     if (o.op === 'set') {
@@ -44,8 +46,7 @@ const APPLY_SRC = `function applyOps(d, ops) {
     else if (o.op === 'edge') d.edges.push(o.edge);
   }
   return retyped;
-}`;
-const applyOps = new Function(`${APPLY_SRC}; return applyOps;`)();
+}
 
 // --- Obsidian CLI -----------------------------------------------------------------------------------
 
@@ -66,11 +67,9 @@ function obsidianEval(code) {
   return null;
 }
 
-const leafExpr = board => `app.workspace.getLeavesOfType('canvas').find(l=>l.view.file&&l.view.file.path===${JSON.stringify(board)})`;
-
-function isOpen(board) {
-  return obsidianEval(`String(!!(${leafExpr(board)}))`) === 'true';
-}
+// Calls the plugin API inside Obsidian. 'closed' = board not open there; null = Obsidian not reachable.
+const api = (fn, ...a) => obsidianEval(`(async()=>{const p=app.plugins.plugins['canvas-board'];if(!p||!p.api)return 'no plugin';` +
+  `const r=await p.api.${fn}(${a.map(x => JSON.stringify(x)).join(',')});return r===null?'closed':r})()`);
 
 // --- Board I/O ----------------------------------------------------------------------------------------
 
@@ -83,22 +82,15 @@ function serialize(d) {
 }
 
 function readBoard(board) {
-  if (isOpen(board)) {
-    const out = obsidianEval(`JSON.stringify(${leafExpr(board)}.view.canvas.getData())`);
-    if (out) { const d = JSON.parse(out); return { nodes: d.nodes, edges: d.edges }; }
-  }
+  const out = api('read', board);
+  if (out && out.startsWith('{')) { const d = JSON.parse(out); return { nodes: d.nodes, edges: d.edges }; }
   return readFileBoard(board);
 }
 
 function writeOps(board, ops) {
-  if (isOpen(board)) {
-    const code = `(async()=>{${APPLY_SRC};const c=${leafExpr(board)}.view.canvas;const d=c.getData();const ops=${JSON.stringify(ops)};` +
-      `const retyped=applyOps(d,ops);if(retyped.length)c.setData({...d,nodes:d.nodes.filter(n=>!retyped.includes(n.id))});` +
-      `c.setData(d);c.requestSave();await new Promise(r=>setTimeout(r,2500));return 'obsidian'})()`;
-    const out = obsidianEval(code);
-    if (out !== 'obsidian') throw new Error(`Obsidian edit failed: ${out}`);
-    return 'obsidian';
-  }
+  const out = api('apply', board, ops);
+  if (out === 'obsidian') return 'obsidian';
+  if (out !== null && out !== 'closed') throw new Error(`Obsidian edit failed: ${out}`);
   const d = readFileBoard(board);
   applyOps(d, ops);
   fs.writeFileSync(abs(board), serialize(d));
@@ -243,6 +235,43 @@ function desiredColor(card, inner) {
   return card.color || null;
 }
 
+// --- Check --------------------------------------------------------------------------------------------
+
+// Structure only, never content: the invariants the skill and SOP state. A check that never fires in a month
+// gets deleted; a new one only after the same defect shows up twice.
+const ORANGE_STALE_MS = 3600000;
+function check(board) {
+  const issues = [];
+  const walk = (b, depth, seen) => {
+    seen.add(b);
+    const d = readBoard(b);
+    for (const n of d.nodes) {
+      if (n.type === 'group' || !n.color) continue;
+      const add = issue => issues.push({ board: b, id: n.id, text: (n.text || n.file || '').split('\n')[0], issue });
+      const links = n.type === 'file' ? [n.file] : [...(n.text || '').matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map(m => m[1].trim());
+      for (const l of links) if (!findFile(l)) add(`broken link [[${l}]]`);
+      if (n.type === 'text' && depth === 0) { // plan-canvas cards are parts, free text
+        const text = n.text || '';
+        if (text.includes('[[') ? !/^\[\[[^\]]+\]\]( · .+)?$/.test(text) : text.split('\n').length > 3) add('card text is neither a wish (≤ 3 lines) nor `[[Note]] · reason`');
+      }
+      const { note, canvas } = cardLinks(n);
+      if (note && note.startsWith('Projects/_assets/plans/')) {
+        const src = fs.readFileSync(abs(note), 'utf8');
+        const fm = (src.match(/^---\n([\s\S]*?)\n---/) || [])[1];
+        const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map(m => m[1]) : [];
+        if (keys.join() !== 'tags') add(`note frontmatter is not \`tags\` only (${keys.join(', ') || 'none'})`);
+        if ([...(fm || '').matchAll(/context\//g)].length !== 1) add('note does not have exactly one context/* tag');
+        for (const s of ['Aim', 'Done when', 'Design']) if (!new RegExp(`^## ${s}\\s*$`, 'm').test(src)) add(`note has no ## ${s}`);
+        if (n.color === '4' && !/^## Output\s*$/m.test(src)) add('green card, note has no ## Output');
+        if (n.color === '2' && Date.now() - fs.statSync(abs(note)).mtimeMs > ORANGE_STALE_MS) add('orange card, note untouched for 1h+ (interrupted pass?)');
+      }
+      if (canvas && !seen.has(canvas) && depth < 2) walk(canvas, depth + 1, seen);
+    }
+  };
+  walk(board, 0, new Set());
+  return { issues };
+}
+
 // --- Commands -----------------------------------------------------------------------------------------
 
 const colorArg = c => (c === undefined ? undefined : c === 'none' ? '' : COLORS[c] || c);
@@ -261,39 +290,44 @@ function place(d, near, w, h) {
   return { x: p.x + p.width + 40, y: p.y };
 }
 
-const [cmd, boardArg, ...rest] = positional;
-const board = boardArg || DEFAULT_BOARD;
-const print = x => console.log(JSON.stringify(x, null, 2));
+module.exports = { applyOps };
 
-switch (cmd) {
-  case 'read': print(readBoard(board)); break;
-  case 'tree': print(args.includes('--active') ? activeTree(tree(board)) : tree(board)); break;
-  case 'set': {
-    const op = { op: 'set', id: rest[0], color: colorArg(opt('--color')) };
-    if (opt('--text') !== undefined) op.text = opt('--text');
-    if (opt('--file') !== undefined) op.file = opt('--file');
-    console.log(writeOps(board, [op]));
-    break;
+if (require.main === module) {
+  const [cmd, boardArg, ...rest] = positional;
+  const board = boardArg || DEFAULT_BOARD;
+  const print = x => console.log(JSON.stringify(x, null, 2));
+
+  switch (cmd) {
+    case 'read': print(readBoard(board)); break;
+    case 'tree': print(args.includes('--active') ? activeTree(tree(board)) : tree(board)); break;
+    case 'set': {
+      const op = { op: 'set', id: rest[0], color: colorArg(opt('--color')) };
+      if (opt('--text') !== undefined) op.text = opt('--text');
+      if (opt('--file') !== undefined) op.file = opt('--file');
+      console.log(writeOps(board, [op]));
+      break;
+    }
+    case 'add': {
+      const w = Number(opt('--width') || 320), h = Number(opt('--height') || 80);
+      const pos = place(readBoard(board), opt('--near'), w, h);
+      const node = { id: newId(), type: 'text', text: opt('--text') || '', x: pos.x, y: pos.y, width: w, height: h };
+      const c = colorArg(opt('--color'));
+      if (c) node.color = c;
+      writeOps(board, [{ op: 'add', node }]);
+      console.log(node.id);
+      break;
+    }
+    case 'remove': console.log(writeOps(board, [{ op: 'remove', id: rest[0] }])); break;
+    case 'edge': {
+      const edge = { id: newId(), fromNode: rest[0], fromSide: 'bottom', toNode: rest[1], toSide: 'top' };
+      if (opt('--label')) edge.label = opt('--label');
+      console.log(writeOps(board, [{ op: 'edge', edge }]));
+      break;
+    }
+    case 'rollup': print(rollup(board)); break;
+    case 'check': print(check(board)); break;
+    default:
+      console.error('Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|rollup|check <board> ... (see header)');
+      process.exit(1);
   }
-  case 'add': {
-    const w = Number(opt('--width') || 320), h = Number(opt('--height') || 80);
-    const pos = place(readBoard(board), opt('--near'), w, h);
-    const node = { id: newId(), type: 'text', text: opt('--text') || '', x: pos.x, y: pos.y, width: w, height: h };
-    const c = colorArg(opt('--color'));
-    if (c) node.color = c;
-    writeOps(board, [{ op: 'add', node }]);
-    console.log(node.id);
-    break;
-  }
-  case 'remove': console.log(writeOps(board, [{ op: 'remove', id: rest[0] }])); break;
-  case 'edge': {
-    const edge = { id: newId(), fromNode: rest[0], fromSide: 'bottom', toNode: rest[1], toSide: 'top' };
-    if (opt('--label')) edge.label = opt('--label');
-    console.log(writeOps(board, [{ op: 'edge', edge }]));
-    break;
-  }
-  case 'rollup': print(rollup(board)); break;
-  default:
-    console.error('Usage: node _scripts/canvas.js read|tree|set|add|remove|edge|rollup <board> ... (see header)');
-    process.exit(1);
 }
