@@ -1,6 +1,8 @@
-// Canvas board: color hotkeys for selected canvas cards, and a command that opens a terminal
-// running the canvas-board skill (Claude Code) on the vault. See Wiki/G&A/PKM/SOP - Canvas Board.md.
-const { Plugin, Notice } = require('obsidian');
+// Canvas board: color hotkeys for selected canvas cards, a command that opens a terminal running the
+// canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
+// to edit open boards. Copies skill/SKILL.md to .claude/skills/canvas-board/ on load.
+// See Wiki/G&A/PKM/SOP - Canvas Board.md.
+const { Plugin, Notice, PluginSettingTab, Setting } = require('obsidian');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -53,9 +55,8 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			try { return JSON.parse(await this.app.vault.cachedRead(file)).nodes || []; } catch (e) { return []; }
 		};
 		const isGo = n => n.color === '5' || n.color === '6';
-		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
-		const open = view && view.getViewType() === 'canvas' && view.file && view.file.path === board;
-		const nodes = open ? view.canvas.getData().nodes : await read(board);
+		const open = this.openCanvas(board);
+		const nodes = open ? open.getData().nodes : await read(board);
 		if (nodes.some(isGo)) return true;
 		for (const n of nodes) {
 			for (const m of (n.text || '').matchAll(/\[\[([^\]|#]+\.canvas)/g)) {
