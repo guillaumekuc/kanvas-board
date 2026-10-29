@@ -4,7 +4,7 @@
 //
 // Usage (paths relative to the vault root):
 //   node _scripts/canvas.js read <board>                       nodes and edges as JSON
-//   node _scripts/canvas.js tree [<board>]                     board + linked notes (frontmatter) + nested canvases, as JSON
+//   node _scripts/canvas.js tree [<board>]                     board + linked notes (level, parts) + nested canvases, as JSON
 //   node _scripts/canvas.js set <board> <id> [--color c] [--text t] [--file path]
 //                                                              c: red orange yellow green cyan purple none (or 1-6)
 //                                                              --file turns the card into a file card, --text into a text card
@@ -131,15 +131,13 @@ function cardLinks(n) {
   return { note: found.find(f => f.endsWith('.md')) || null, canvas: found.find(f => f.endsWith('.canvas')) || null };
 }
 
-function frontmatter(rel) {
+// Level is derived from the note: `- [ ]` / `- [x]` parts make it a plan, otherwise it is a brief.
+function noteState(rel) {
   const text = fs.readFileSync(abs(rel), 'utf8');
-  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  const fm = {};
-  if (m) for (const line of m[1].split(/\r?\n/)) {
-    const kv = line.match(/^([A-Za-z][\w.]*):\s*(.*)$/);
-    if (kv && kv[2] !== '') fm[kv[1]] = kv[2].trim();
-  }
-  return fm;
+  const parts = [...text.matchAll(/^\s*- \[([ xX])\] /gm)];
+  const done = parts.filter(m => m[1] !== ' ').length;
+  const questions = [...text.matchAll(/^\s*- \[\?\] /gm)].length;
+  return { level: parts.length ? 'plan' : 'brief', parts: { done, total: parts.length }, questions };
 }
 
 function tree(board, depth = 0, seen = new Set()) {
@@ -152,7 +150,7 @@ function tree(board, depth = 0, seen = new Set()) {
       const card = { id: n.id, color: n.color || null, text: n.type === 'text' ? n.text : undefined, file: n.file };
       if (note) {
         const ageDays = Math.floor((Date.now() - fs.statSync(abs(note)).mtimeMs) / 86400000);
-        card.note = { path: note, ageDays, ...frontmatter(note) };
+        card.note = { path: note, ageDays, ...noteState(note) };
       }
       if (canvas && !seen.has(canvas) && depth < 2) card.inside = tree(canvas, depth + 1, seen);
       return card;
