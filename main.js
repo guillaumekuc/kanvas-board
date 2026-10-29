@@ -45,12 +45,37 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return view && view.getViewType() === 'canvas' ? view.canvas : null;
 	}
 
-	runPass() {
+	// True if the board, or a plan canvas linked from one of its cards, has a cyan or purple card.
+	async hasGoCards(board) {
+		const read = async p => {
+			const file = this.app.vault.getAbstractFileByPath(p);
+			if (!file) return [];
+			try { return JSON.parse(await this.app.vault.cachedRead(file)).nodes || []; } catch (e) { return []; }
+		};
+		const isGo = n => n.color === '5' || n.color === '6';
+		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
+		const open = view && view.getViewType() === 'canvas' && view.file && view.file.path === board;
+		const nodes = open ? view.canvas.getData().nodes : await read(board);
+		if (nodes.some(isGo)) return true;
+		for (const n of nodes) {
+			for (const m of (n.text || '').matchAll(/\[\[([^\]|#]+\.canvas)/g)) {
+				const dest = this.app.metadataCache.getFirstLinkpathDest(m[1].trim(), board);
+				if (dest && (await read(dest.path)).some(isGo)) return true;
+			}
+		}
+		return false;
+	}
+
+	async runPass() {
 		const vault = this.app.vault.adapter.basePath;
 		const local = path.join(process.env.USERPROFILE || '', '.local', 'bin', 'claude.exe');
 		const claude = fs.existsSync(local) ? local : 'claude';
 		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
 		const board = view && view.getViewType() === 'canvas' && view.file ? view.file.path : 'Plans.canvas';
+		if (!(await this.hasGoCards(board))) {
+			new Notice(`Canvas board: nothing to do on ${board} (no cyan or purple card)`);
+			return;
+		}
 		try {
 			// One named window, one tab per pass: `-w canvas-board` reuses the window or creates it.
 			spawn('wt.exe', ['-w', 'canvas-board', 'new-tab', '-d', vault, '--title', `pass ${board}`, claude, `/canvas-board ${board}`], { detached: true, stdio: 'ignore' }).unref();
