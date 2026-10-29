@@ -76,6 +76,24 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		});
 	}
 
+	// The plugin folder holds the skill's source; the vault copy is rewritten when missing or older.
+	syncSkill(dir) {
+		const src = path.join(dir, 'skill', 'SKILL.md');
+		const dest = path.join(this.app.vault.adapter.basePath, '.claude', 'skills', 'canvas-board', 'SKILL.md');
+		try {
+			if (fs.existsSync(dest) && fs.statSync(dest).mtimeMs >= fs.statSync(src).mtimeMs) return;
+			fs.mkdirSync(path.dirname(dest), { recursive: true });
+			fs.copyFileSync(src, dest);
+		} catch (e) {
+			console.error('canvas-board: skill sync failed', e);
+		}
+	}
+
+	openCanvas(board) {
+		const leaf = this.app.workspace.getLeavesOfType('canvas').find(l => l.view.file && l.view.file.path === board);
+		return leaf ? leaf.view.canvas : null;
+	}
+
 	activeCanvas() {
 		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
 		return view && view.getViewType() === 'canvas' ? view.canvas : null;
