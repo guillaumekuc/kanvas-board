@@ -6,13 +6,13 @@ argument-hint: "[board path, default Plans.canvas]"
 
 # Canvas board pass
 
-Rules and vocabulary: `Wiki/G&A/PKM/SOP - Canvas Board.md`. Read it first. **The card color is the state**: notes carry no board fields beyond `tags`.
+This skill holds the steps; read `Wiki/G&A/PKM/SOP - Canvas Board.md` only for an edge case it does not cover. **The card color is the state**: notes carry no board fields beyond `tags`.
 
 **Never edit a `.canvas` file with Write/Edit/sed.** Every board change goes through `node _scripts/canvas.js` (it uses the Obsidian CLI when the board is open, the file otherwise). Never move or resize cards; new cards go next to their parent (`add --near`).
 
-1. `node _scripts/canvas.js tree [board]`. List the cyan (`"5"`, go auto) and purple (`"6"`, go plan) cards at any depth, plus the current yellow/red count.
+1. `node _scripts/canvas.js tree [board] --active`: the cyan (`"5"`, go auto), purple (`"6"`, go plan) and orange cards at any depth (orange = another pass may still be running: leave it, list it in the report), the cards edged to them under `context` (read them, never change them), and the yellow/red count as `waiting`.
 2. WIP limit: if 5 or more cards are already yellow/red, only take cards whose step will not end in a question; say which you skipped.
-3. For each card, set it orange (`set <board> <id> --color orange`), then work by its level (`note.level` from `tree`: no note = wish, note without `- [ ]` parts = brief, with parts = plan). **Purple:** one step, then back to Guillaume. **Cyan:** keep stepping (every part counts as ticked) until a question, something only he can review, or done.
+3. For each card, set it orange (`set <board> <id> --color orange`), then work by its level (`note.level` from `tree`: no note = wish, note without `- [ ]` parts = brief, with parts = plan). **Purple:** one step, then back to Guillaume. **Cyan:** keep stepping (every part counts as ticked) until a question, something only he can review, or done. A cyan wish that is clear enough goes straight to work (no brief, no plan step).
    - **wish → brief:** create `Projects/_assets/plans/<Name>.md` (name says what it is, no context needed) with frontmatter `tags` (one `context/*`) only, then Aim · Done when · Design · Open questions as `- [?]`. Keep Guillaume's card wording in the brief. With questions: card text `[[Name]] · N questions`, yellow.
    - **brief → plan:** fold his `- [i]` answers into Design (keep his answers in place). List the parts as `- [ ]` checkboxes. If there are about 5+ parts with dependencies, also make `<Name>.canvas` next to the note: one short text card per part, "depends on" edges (`add`, `edge`), and link it from the card: `[[Name]] · [[Name.canvas|plan]] · review plan`. Purple: card yellow `· review plan`.
    - **plan → work:** purple = only the ticked parts / cyan sub-cards; cyan = all parts. Do what an agent can (vault edits, scripts; code on its own branch, never push or merge); anything for Guillaume becomes a weekly task linking `[[Name]]`. Tick parts, set finished sub-cards green. Unticked parts left: yellow `· review`. Questions on the way: yellow `· N questions`.

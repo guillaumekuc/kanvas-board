@@ -4,7 +4,8 @@
 //
 // Usage (paths relative to the vault root):
 //   node _scripts/canvas.js read <board>                       nodes and edges as JSON
-//   node _scripts/canvas.js tree [<board>]                     board + linked notes (level, parts) + nested canvases, as JSON
+//   node _scripts/canvas.js tree [<board>] [--active]          board + linked notes (level, parts) + nested canvases, as JSON
+//                                                              --active: cyan/purple/orange cards, cards edged to them, yellow/red count
 //   node _scripts/canvas.js set <board> <id> [--color c] [--text t] [--file path]
 //                                                              c: red orange yellow green cyan purple none (or 1-6)
 //                                                              --file turns the card into a file card, --text into a text card
@@ -159,6 +160,34 @@ function tree(board, depth = 0, seen = new Set()) {
   };
 }
 
+// --active: only what a pass needs. Cyan/purple/orange cards with their notes, the cards edged to them (once
+// each, text only, as context), nested boards only when they hold active cards, and the yellow/red count.
+const ACTIVE = new Set(['2', '5', '6']);
+function activeTree(t) {
+  const total = { waiting: 0 };
+  const a = activeNode(t, total);
+  return { board: a.board, waiting: total.waiting, cards: a.cards, context: a.context, edges: a.edges };
+}
+
+function activeNode(t, total) {
+  const ids = new Set(t.cards.filter(c => ACTIVE.has(c.color)).map(c => c.id));
+  const near = new Set();
+  for (const e of t.edges) {
+    if (ids.has(e.from) && !ids.has(e.to)) near.add(e.to);
+    if (ids.has(e.to) && !ids.has(e.from)) near.add(e.from);
+  }
+  const cards = [], context = [];
+  for (const c of t.cards) {
+    if (c.color === '1' || c.color === '3') total.waiting++;
+    const inside = c.inside && activeNode(c.inside, total);
+    if (ids.has(c.id) || (inside && inside.cards.length)) cards.push({ ...c, inside: inside && inside.cards.length ? inside : undefined });
+    else if (near.has(c.id)) context.push({ id: c.id, color: c.color, text: c.text, file: c.file });
+  }
+  const kept = new Set(cards.map(c => c.id));
+  const edges = t.edges.filter(e => kept.has(e.from) || kept.has(e.to));
+  return { board: t.board, cards, context, edges };
+}
+
 // --- Roll-up ------------------------------------------------------------------------------------------
 
 // red > yellow are the "needs me" colors that climb to the parent card; cyan and purple (go) are human
@@ -238,7 +267,7 @@ const print = x => console.log(JSON.stringify(x, null, 2));
 
 switch (cmd) {
   case 'read': print(readBoard(board)); break;
-  case 'tree': print(tree(board)); break;
+  case 'tree': print(args.includes('--active') ? activeTree(tree(board)) : tree(board)); break;
   case 'set': {
     const op = { op: 'set', id: rest[0], color: colorArg(opt('--color')) };
     if (opt('--text') !== undefined) op.text = opt('--text');
