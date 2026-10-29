@@ -52,7 +52,8 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
 		const board = view && view.getViewType() === 'canvas' && view.file ? view.file.path : 'Plans.canvas';
 		try {
-			spawn('wt.exe', ['-d', vault, claude, `/canvas-board ${board}`], { detached: true, stdio: 'ignore' }).unref();
+			// One named window, one tab per pass: `-w canvas-board` reuses the window or creates it.
+			spawn('wt.exe', ['-w', 'canvas-board', 'new-tab', '-d', vault, '--title', `pass ${board}`, claude, `/canvas-board ${board}`], { detached: true, stdio: 'ignore' }).unref();
 			new Notice(`Canvas board: pass started on ${board}`);
 		} catch (e) {
 			new Notice(`Canvas board: could not start the pass (${e.message})`);
