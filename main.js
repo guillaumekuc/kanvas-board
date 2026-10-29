@@ -6,13 +6,13 @@ const fs = require('fs');
 const path = require('path');
 
 const COLORS = [
-	['none', '', '0'],
+	['none (idea or parked)', '', '0'],
 	['red (blocked)', '1', '1'],
 	['orange (agent working)', '2', '2'],
 	['yellow (needs me)', '3', '3'],
 	['green (done)', '4', '4'],
-	['cyan (cleared for an agent)', '5', '5'],
-	['purple (parked)', '6', '6'],
+	['cyan (go, auto)', '5', '5'],
+	['purple (go, plan)', '6', '6'],
 ];
 
 module.exports = class CanvasBoardPlugin extends Plugin {
