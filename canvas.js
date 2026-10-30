@@ -193,7 +193,7 @@ function extractOps(d, id, part, from) {
 
 const ARCHIVE_DIR = 'Projects/_assets/canvas-board/archive';
 const noteName = text => (String(text).split('\n').find(l => l.trim()) || 'Card')
-  .replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2').replace(/[#^|[\]*_`>:\\/"?<]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60).trim() || 'Card';
+  .replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, '').replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2').replace(/[#^|[\]*_`>:\\/"?<]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60).trim() || 'Card';
 const yamlStr = s => JSON.stringify(String(s));
 
 // Returns { name, content, ops }. `tags` is the archived card's note tags when it links one, else context/GA.

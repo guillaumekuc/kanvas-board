@@ -1,9 +1,10 @@
 // Canvas board: color hotkeys for selected canvas cards, a command that opens a terminal running the
 // canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
-// to edit open boards, a "Tidy layout" command (dagre, through canvas.js) and a status bar card count. Copies skill/SKILL.md to
+// to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (collapse, expand, merge,
+// split, extract), archive/restore and a status bar card count. Copies skill/SKILL.md to
 // .claude/skills/canvas-board/ on load.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
-const { Plugin, Notice, PluginSettingTab, Setting } = require('obsidian');
+const { Plugin, Notice, PluginSettingTab, Setting, Modal } = require('obsidian');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -35,7 +36,9 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const script = path.join(dir, 'canvas.js');
 		const req = window.require || require; // the plugin's own require has no cache to clear on reload
 		if (req.cache) delete req.cache[script];
-		const { applyOps, layoutOps } = req(script);
+		const cb = req(script);
+		const { applyOps, layoutOps } = cb;
+		this.cb = cb;
 		const dagrePath = path.join(dir, 'dagre.min.js');
 		if (req.cache) delete req.cache[dagrePath];
 		const dagre = req(dagrePath);
@@ -94,6 +97,81 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			},
 		});
 
+		// Refactor and archive commands: one undo step each (Ctrl+Z), same code as canvas.js for agents.
+		const canvasCommand = (id, name, test, run, hotkeys) => this.addCommand({
+			id, name, hotkeys,
+			checkCallback: checking => {
+				const canvas = this.activeCanvas();
+				if (!canvas || !test(canvas, [...canvas.selection])) return false;
+				if (!checking) Promise.resolve(run(canvas, [...canvas.selection])).catch(e => new Notice(`Canvas board: ${e.message}`));
+				return true;
+			},
+		});
+		const isText = n => n.getData().type === 'text';
+
+		canvasCommand('collapse', 'Collapse selected cards into a subcanvas', (c, sel) => sel.length > 0, (canvas, sel) =>
+			new NamePrompt(this.app, 'Subcanvas name', async name => {
+				const board = this.activeFile();
+				const dir = board.parent && board.parent.path !== '/' ? board.parent.path + '/' : '';
+				const file = this.freePath(dir, name, '.canvas');
+				const { ops, sub } = cb.collapseOps(canvas.getData(), sel.map(n => n.id), file, name);
+				await this.app.vault.create(file, JSON.stringify(sub, null, '\t'));
+				this.edit(canvas, ops);
+			}).open());
+
+		canvasCommand('expand', 'Expand subcanvas card', (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]), async (canvas, [node]) => {
+			const file = this.linkedCanvas(node);
+			const sub = JSON.parse(await this.app.vault.read(file));
+			this.edit(canvas, cb.expandOps(canvas.getData(), node.id, { nodes: sub.nodes || [], edges: sub.edges || [] }));
+			await this.app.fileManager.trashFile(file);
+		});
+
+		canvasCommand('merge', 'Merge selected cards', (c, sel) => sel.length > 1 && sel.every(isText), (canvas, sel) =>
+			this.edit(canvas, cb.mergeOps(canvas.getData(), sel.map(n => n.id))));
+
+		for (const [by, label] of [['paragraph', 'paragraph'], ['bullet', 'top-level bullet'], ['h1', 'heading 1'], ['h2', 'heading 2'], ['h3', 'heading 3']])
+			canvasCommand(`split-${by}`, `Split card by ${label}`, (c, sel) => sel.length === 1 && isText(sel[0]) && !sel[0].isEditing, (canvas, [node]) =>
+				this.edit(canvas, cb.splitOps(canvas.getData(), node.id, by)));
+
+		// The card being edited, with text selected: the selection becomes a new card.
+		canvasCommand('extract', 'Extract selection to a new card', (c, sel) => sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]), (canvas, [node]) => {
+			const editor = this.cardEditor(node);
+			const part = editor.getSelection();
+			if (!part.trim()) throw new Error('select some text in the card first');
+			const from = editor.posToOffset(editor.getCursor('from'));
+			const before = editor.getValue();
+			editor.replaceSelection('');
+			node.blur();
+			const d = canvas.getData();
+			const n = d.nodes.find(x => x.id === node.id);
+			if (n) n.text = before; // the editor may not have saved yet: work from what it showed
+			this.edit(canvas, cb.extractOps(d, node.id, part, from), d);
+		});
+
+		canvasCommand('archive', 'Archive selected cards', (c, sel) => sel.length > 0, async (canvas, sel) => {
+			const board = this.activeFile().path;
+			const d = canvas.getData();
+			if (!this.app.vault.getAbstractFileByPath(cb.ARCHIVE_DIR)) await this.app.vault.createFolder(cb.ARCHIVE_DIR);
+			for (const node of sel) {
+				const a = cb.archiveNote(d, node.id, board, window.moment().format('YYYY-MM-DD'), this.cardTags(node, board));
+				await this.app.vault.create(this.freePath(cb.ARCHIVE_DIR + '/', a.name, '.md'), a.content);
+			}
+			this.edit(canvas, sel.map(n => ({ op: 'remove', id: n.id })));
+			new Notice(`Canvas board: archived ${sel.length} card${sel.length > 1 ? 's' : ''}`);
+		}, [{ modifiers: ['Alt'], key: 'a' }]);
+
+		this.addCommand({
+			id: 'restore',
+			name: 'Restore archived card (from its archive note)',
+			checkCallback: checking => {
+				const file = this.app.workspace.getActiveFile();
+				const fm = file && file.extension === 'md' && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
+				if (!fm || !fm['archived-from']) return false;
+				if (!checking) this.restore(file).catch(e => new Notice(`Canvas board: ${e.message}`));
+				return true;
+			},
+		});
+
 		this.addCommand({
 			id: 'run-pass',
 			name: 'Run pass (recheck the board)',
@@ -132,6 +210,68 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		} catch (e) {
 			console.error('canvas-board: skill sync failed', e);
 		}
+	}
+
+	// One undo step: the state before is pushed, then the edited data is set. `d` is passed when the caller
+	// already changed it (extract).
+	edit(canvas, ops, d = canvas.getData()) {
+		const before = canvas.getData();
+		const retyped = this.cb.applyOps(d, ops);
+		canvas.pushHistory && canvas.pushHistory(before);
+		if (retyped.length) canvas.setData({ ...d, nodes: d.nodes.filter(n => !retyped.includes(n.id)) });
+		canvas.setData(d);
+		canvas.requestSave();
+	}
+
+	activeFile() {
+		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
+		return view && view.file;
+	}
+
+	freePath(dir, name, ext) {
+		for (let k = 1; ; k++) {
+			const p = `${dir}${name}${k > 1 ? ' ' + k : ''}${ext}`;
+			if (!this.app.vault.getAbstractFileByPath(p)) return p;
+		}
+	}
+
+	linkedCanvas(node) {
+		const d = node.getData();
+		const target = d.type === 'file' ? d.file : ((d.text || '').match(/\[\[([^\]|#]+\.canvas)/) || [])[1];
+		if (!target || !target.endsWith('.canvas')) return null;
+		return this.app.vault.getAbstractFileByPath(target) || this.app.metadataCache.getFirstLinkpathDest(target.trim(), '');
+	}
+
+	cardEditor(node) {
+		const child = node.child;
+		return child && ((child.editMode && child.editMode.editor) || child.editor) || null;
+	}
+
+	// context/* tags of the note a card links, so its archive note keeps the same context.
+	cardTags(node, board) {
+		const d = node.getData();
+		const target = d.type === 'file' ? d.file : ((d.text || '').match(/\[\[([^\]|#]+)/) || [])[1];
+		const file = target && this.app.metadataCache.getFirstLinkpathDest(target.trim(), board);
+		const fm = file && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
+		const tags = fm && [].concat(fm.tags || []).filter(t => String(t).startsWith('context/'));
+		return tags && tags.length ? tags : undefined;
+	}
+
+	async restore(note) {
+		const src = await this.app.vault.read(note);
+		const { board } = this.cb.restoreOps({ nodes: [], edges: [] }, src);
+		const file = this.app.vault.getAbstractFileByPath(board) || this.app.metadataCache.getFirstLinkpathDest(board, note.path);
+		if (!file) throw new Error(`board ${board} not found`);
+		const canvas = this.openCanvas(file.path);
+		if (canvas) this.edit(canvas, this.cb.restoreOps(canvas.getData(), src).ops);
+		else await this.app.vault.process(file, text => {
+			const d = JSON.parse(text);
+			d.nodes = d.nodes || []; d.edges = d.edges || [];
+			this.cb.applyOps(d, this.cb.restoreOps(d, src).ops);
+			return JSON.stringify(d, null, '\t');
+		});
+		await this.app.fileManager.trashFile(note);
+		new Notice(`Canvas board: card restored on ${file.path}`);
 	}
 
 	openCanvas(board) {
@@ -187,6 +327,35 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		}
 	}
 };
+
+// One-line name prompt; Enter confirms, Escape cancels.
+class NamePrompt extends Modal {
+	constructor(app, title, onSubmit) {
+		super(app);
+		this.title = title;
+		this.onSubmit = onSubmit;
+	}
+
+	onOpen() {
+		this.setTitle(this.title);
+		let value = '';
+		const submit = () => {
+			const name = value.trim().replace(/[\\/:#^|[\]]/g, '');
+			if (!name) return;
+			this.close();
+			Promise.resolve(this.onSubmit(name)).catch(e => new Notice(`Canvas board: ${e.message}`));
+		};
+		new Setting(this.contentEl).addText(t => {
+			t.onChange(v => { value = v; });
+			t.inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+			setTimeout(() => t.inputEl.focus(), 0);
+		}).addButton(b => b.setButtonText('Create').setCta().onClick(submit));
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
 
 class CanvasBoardSettings extends PluginSettingTab {
 	constructor(app, plugin) {
