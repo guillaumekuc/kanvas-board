@@ -1,0 +1,4 @@
+/* Status bar card count past the "Card count warning" setting. */
+.status-bar-item.canvas-board-over {
+	color: var(--text-warning);
+}
