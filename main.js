@@ -98,18 +98,24 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		});
 
 		// Refactor and archive commands: one undo step each (Ctrl+Z), same code as canvas.js for agents.
-		const canvasCommand = (id, name, test, run, hotkeys) => this.addCommand({
-			id, name, hotkeys,
-			checkCallback: checking => {
-				const canvas = this.activeCanvas();
-				if (!canvas || !test(canvas, [...canvas.selection])) return false;
-				if (!checking) Promise.resolve(run(canvas, [...canvas.selection])).catch(e => new Notice(`Canvas board: ${e.message}`));
-				return true;
-			},
-		});
+		// Each is also a right-click item (label `menu`) on the cards it applies to.
+		const actions = [];
+		const runAction = (run, canvas, sel) => Promise.resolve(run(canvas, sel)).catch(e => new Notice(`Canvas board: ${e.message}`));
+		const canvasCommand = (id, name, menu, test, run, hotkeys) => {
+			actions.push({ menu, test, run });
+			this.addCommand({
+				id, name, hotkeys,
+				checkCallback: checking => {
+					const canvas = this.activeCanvas();
+					if (!canvas || !test(canvas, [...canvas.selection])) return false;
+					if (!checking) runAction(run, canvas, [...canvas.selection]);
+					return true;
+				},
+			});
+		};
 		const isText = n => n.getData().type === 'text';
 
-		canvasCommand('collapse', 'Collapse selected cards into a subcanvas', (c, sel) => sel.length > 0, (canvas, sel) =>
+		canvasCommand('collapse', 'Collapse selected cards into a subcanvas', 'Collapse into a subcanvas', (c, sel) => sel.length > 0, (canvas, sel) =>
 			new NamePrompt(this.app, 'Subcanvas name', async name => {
 				const board = this.activeFile();
 				const dir = board.parent && board.parent.path !== '/' ? board.parent.path + '/' : '';
@@ -119,22 +125,22 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				this.edit(canvas, ops);
 			}).open());
 
-		canvasCommand('expand', 'Expand subcanvas card', (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]), async (canvas, [node]) => {
+		canvasCommand('expand', 'Expand subcanvas card', 'Expand subcanvas', (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]), async (canvas, [node]) => {
 			const file = this.linkedCanvas(node);
 			const sub = JSON.parse(await this.app.vault.read(file));
 			this.edit(canvas, cb.expandOps(canvas.getData(), node.id, { nodes: sub.nodes || [], edges: sub.edges || [] }));
 			await this.app.fileManager.trashFile(file);
 		});
 
-		canvasCommand('merge', 'Merge selected cards', (c, sel) => sel.length > 1 && sel.every(isText), (canvas, sel) =>
+		canvasCommand('merge', 'Merge selected cards', 'Merge cards', (c, sel) => sel.length > 1 && sel.every(isText), (canvas, sel) =>
 			this.edit(canvas, cb.mergeOps(canvas.getData(), sel.map(n => n.id))));
 
 		for (const [by, label] of [['paragraph', 'paragraph'], ['bullet', 'top-level bullet'], ['h1', 'heading 1'], ['h2', 'heading 2'], ['h3', 'heading 3']])
-			canvasCommand(`split-${by}`, `Split card by ${label}`, (c, sel) => sel.length === 1 && isText(sel[0]) && !sel[0].isEditing, (canvas, [node]) =>
+			canvasCommand(`split-${by}`, `Split card by ${label}`, `Split by ${label}`, (c, sel) => sel.length === 1 && isText(sel[0]) && !sel[0].isEditing, (canvas, [node]) =>
 				this.edit(canvas, cb.splitOps(canvas.getData(), node.id, by)));
 
 		// The card being edited, with text selected: the selection becomes a new card.
-		canvasCommand('extract', 'Extract selection to a new card', (c, sel) => sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]), (canvas, [node]) => {
+		canvasCommand('extract', 'Extract selection to a new card', 'Extract selection to a new card', (c, sel) => sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]), (canvas, [node]) => {
 			const editor = this.cardEditor(node);
 			const part = editor.getSelection();
 			if (!part.trim()) throw new Error('select some text in the card first');
@@ -148,7 +154,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			this.edit(canvas, cb.extractOps(d, node.id, part, from), d);
 		});
 
-		canvasCommand('archive', 'Archive selected cards', (c, sel) => sel.length > 0, async (canvas, sel) => {
+		canvasCommand('archive', 'Archive selected cards', 'Archive', (c, sel) => sel.length > 0, async (canvas, sel) => {
 			const board = this.activeFile().path;
 			const d = canvas.getData();
 			if (!this.app.vault.getAbstractFileByPath(cb.ARCHIVE_DIR)) await this.app.vault.createFolder(cb.ARCHIVE_DIR);
@@ -160,17 +166,39 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			new Notice(`Canvas board: archived ${sel.length} card${sel.length > 1 ? 's' : ''}`);
 		}, [{ modifiers: ['Alt'], key: 'a' }]);
 
+		// Right-click on one card, on a selection, or inside a card being edited (Extract).
+		const addActions = (menu, canvas, sel) => {
+			for (const a of actions) if (a.test(canvas, sel))
+				menu.addItem(item => item.setTitle(a.menu).setSection('canvas-board').onClick(() => runAction(a.run, canvas, sel)));
+		};
+		this.registerEvent(this.app.workspace.on('canvas:selection-menu', (menu, canvas) => addActions(menu, canvas, [...canvas.selection])));
+		this.registerEvent(this.app.workspace.on('canvas:node-menu', (menu, node) =>
+			addActions(menu, node.canvas, node.canvas.selection.has(node) ? [...node.canvas.selection] : [node])));
+		this.registerEvent(this.app.workspace.on('editor-menu', (menu, editor) => {
+			const canvas = this.activeCanvas();
+			const node = canvas && [...canvas.selection].find(n => n.isEditing && this.cardEditor(n) === editor);
+			if (node) addActions(menu, canvas, [node]);
+		}));
+
+		const isArchived = file => {
+			const fm = file && file.extension === 'md' && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
+			return !!(fm && fm['archived-from']);
+		};
 		this.addCommand({
 			id: 'restore',
 			name: 'Restore archived card (from its archive note)',
 			checkCallback: checking => {
 				const file = this.app.workspace.getActiveFile();
-				const fm = file && file.extension === 'md' && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
-				if (!fm || !fm['archived-from']) return false;
+				if (!isArchived(file)) return false;
 				if (!checking) this.restore(file).catch(e => new Notice(`Canvas board: ${e.message}`));
 				return true;
 			},
 		});
+		// Right-click on an archive note: a link to it, the file explorer, its tab.
+		this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
+			if (isArchived(file)) menu.addItem(item => item.setTitle('Restore archived card').setIcon('archive-restore').setSection('canvas-board')
+				.onClick(() => this.restore(file).catch(e => new Notice(`Canvas board: ${e.message}`))));
+		}));
 
 		this.addCommand({
 			id: 'run-pass',
