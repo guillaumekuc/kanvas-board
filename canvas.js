@@ -23,7 +23,7 @@
 //   CANVAS expand <board> <id>                the reverse; the subcanvas file goes to .trash
 //   CANVAS merge <board> --ids a,b            text cards into the first in reading order (most urgent color)
 //   CANVAS split <board> <id> [--by b]        b: paragraph (default), bullet, h1..h6; pieces stack under it
-//   CANVAS extract <board> <id> --text t      the text t leaves the card for a new card next to it
+//   CANVAS extract <board> <id> --text t      the text t leaves the card for a new card right of it, overlaps allowed
 //   CANVAS archive <board> <id>[,id]          cards become notes in Projects/_assets/canvas-board/archive/
 //   CANVAS restore <note>                     puts an archived card back on its board, note to .trash
 //   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
@@ -201,8 +201,11 @@ function extractOps(d, id, part, from) {
   const left = (card.text.slice(0, at) + card.text.slice(at + part.length)).replace(/\n{3,}/g, '\n\n').trim();
   const text = part.trim();
   const height = fitHeight(text, card.width);
-  const pos = place(d, id, card.width, height);
-  const node = { id: newId(), type: 'text', text, x: pos.x, y: pos.y, width: card.width, height };
+  // Right next to the card even if it overlaps another (seen beats tidy), on top of the stack (added last);
+  // stepped down only so repeated extracts don't hide each other exactly.
+  let y = card.y;
+  while (d.nodes.some(n => n.x === card.x + card.width + 40 && n.y === y)) y += 40;
+  const node = { id: newId(), type: 'text', text, x: card.x + card.width + 40, y, width: card.width, height };
   if (card.color) node.color = card.color;
   return [{ op: 'set', id, text: left, height: fitHeight(left, card.width) }, { op: 'add', node }];
 }
