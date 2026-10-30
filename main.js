@@ -1,6 +1,6 @@
 // Canvas board: color hotkeys for selected canvas cards, a command that opens a terminal running the
 // canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
-// to edit open boards, and a "Tidy layout" command (dagre, through canvas.js). Copies skill/SKILL.md to
+// to edit open boards, a "Tidy layout" command (dagre, through canvas.js) and a status bar card count. Copies skill/SKILL.md to
 // .claude/skills/canvas-board/ on load.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
 const { Plugin, Notice, PluginSettingTab, Setting } = require('obsidian');
@@ -23,6 +23,7 @@ const DEFAULTS = {
 	defaultBoard: 'Plans.canvas',
 	claudePath: '',
 	layoutDirection: 'TB',
+	cardWarning: '60',
 	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
 };
 
@@ -98,6 +99,26 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			name: 'Run pass (recheck the board)',
 			callback: () => this.runPass(),
 		});
+
+		// Card count of the active canvas in the status bar: boards get hard to manage past a threshold.
+		this.countEl = this.addStatusBarItem();
+		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.updateCount()));
+		this.registerInterval(window.setInterval(() => this.updateCount(), 2000));
+		this.updateCount();
+	}
+
+	updateCount() {
+		const canvas = this.activeCanvas();
+		if (!canvas) { this.countEl.setText(''); this.countEl.hide(); return; }
+		const cards = [...canvas.nodes.values()].map(n => n.getData()).filter(n => n.type !== 'group');
+		const names = { '': 'none', 1: 'red', 2: 'orange', 3: 'yellow', 4: 'green', 5: 'cyan', 6: 'purple' };
+		const byColor = {};
+		for (const n of cards) { const c = names[n.color || ''] || 'custom'; byColor[c] = (byColor[c] || 0) + 1; }
+		const max = Number(this.settings.cardWarning) || 0;
+		this.countEl.setText(`${cards.length} cards${max && cards.length > max ? ` (over ${max})` : ''}`);
+		this.countEl.setAttr('aria-label', Object.entries(byColor).map(([c, k]) => `${c} ${k}`).join(' · '));
+		this.countEl.setAttr('data-tooltip-position', 'top');
+		this.countEl.show();
 	}
 
 	// The plugin folder holds the skill's source; the vault copy is rewritten when missing or older.
@@ -186,6 +207,7 @@ class CanvasBoardSettings extends PluginSettingTab {
 			.addOptions({ TB: 'Top to bottom', LR: 'Left to right' })
 			.setValue(this.plugin.settings.layoutDirection)
 			.onChange(async v => { this.plugin.settings.layoutDirection = v; await this.plugin.saveData(this.plugin.settings); }));
+		text('Card count warning', 'The status bar card count says "over N" past this many cards (0: never).', 'cardWarning');
 		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
 	}
 }
