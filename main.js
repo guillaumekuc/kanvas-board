@@ -193,8 +193,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const byColor = {};
 		for (const n of cards) { const c = names[n.color || ''] || 'custom'; byColor[c] = (byColor[c] || 0) + 1; }
 		const max = Number(this.settings.cardWarning) || 0;
-		this.countEl.setText(`${cards.length} cards${max && cards.length > max ? ` (over ${max})` : ''}`);
-		this.countEl.setAttr('aria-label', Object.entries(byColor).map(([c, k]) => `${c} ${k}`).join(' · '));
+		const over = max > 0 && cards.length > max;
+		this.countEl.setText(`${cards.length} cards`);
+		this.countEl.toggleClass('canvas-board-over', over); // warning color, see styles.css
+		this.countEl.setAttr('aria-label', (over ? `over ${max} · ` : '') + Object.entries(byColor).map(([c, k]) => `${c} ${k}`).join(' · '));
 		this.countEl.setAttr('data-tooltip-position', 'top');
 		this.countEl.show();
 	}
@@ -376,7 +378,7 @@ class CanvasBoardSettings extends PluginSettingTab {
 			.addOptions({ TB: 'Top to bottom', LR: 'Left to right' })
 			.setValue(this.plugin.settings.layoutDirection)
 			.onChange(async v => { this.plugin.settings.layoutDirection = v; await this.plugin.saveData(this.plugin.settings); }));
-		text('Card count warning', 'The status bar card count says "over N" past this many cards (0: never).', 'cardWarning');
+		text('Card count warning', 'The status bar card count turns to the warning color past this many cards (0: never).', 'cardWarning');
 		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
 	}
 }
