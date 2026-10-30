@@ -18,7 +18,15 @@
 //                                             dagre layered layout of the given cards (default: all), the others
 //                                             stay put; --fit sizes text cards to their text. For canvases an agent
 //                                             made, or cards it just added
-//   CANVAS rollup [<board>]                   recolor parents from nested boards, update `· N inside` / `· Nd`
+//   CANVAS collapse <board> --ids a,b --name N  the cards (and cards inside selected groups) move to `N.canvas`
+//                                             next to the board; one card `[[N.canvas|N]]` takes their place
+//   CANVAS expand <board> <id>                the reverse; the subcanvas file goes to .trash
+//   CANVAS merge <board> --ids a,b            text cards into the first in reading order (most urgent color)
+//   CANVAS split <board> <id> [--by b]        b: paragraph (default), bullet, h1..h6; pieces stack under it
+//   CANVAS extract <board> <id> --text t      the text t leaves the card for a new card next to it
+//   CANVAS archive <board> <id>[,id]          cards become notes in Projects/_assets/canvas-board/archive/
+//   CANVAS restore <note>                     puts an archived card back on its board, note to .trash
+//   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
 //   CANVAS check [<board>]                    read-only: broken board invariants (links, card text, plan notes) as JSON
 // Default board: Plans.canvas. Default direction: the plugin setting "Layout direction" (data.json), else TB.
 const fs = require('fs');
@@ -52,8 +60,189 @@ function applyOps(d, ops) {
     } else if (o.op === 'add') d.nodes.push(o.node);
     else if (o.op === 'remove') { d.nodes = d.nodes.filter(n => n.id !== o.id); d.edges = d.edges.filter(e => e.fromNode !== o.id && e.toNode !== o.id); }
     else if (o.op === 'edge') d.edges.push(o.edge);
+    else if (o.op === 'retarget') { const e = d.edges.find(e => e.id === o.id); if (e) { e.fromNode = o.fromNode; e.toNode = o.toNode; } }
+    else if (o.op === 'unedge') d.edges = d.edges.filter(e => e.id !== o.id);
   }
   return retyped;
+}
+
+// --- Refactor operations ------------------------------------------------------------------------------
+// Pure: they return ops (and the other file's content when there is one); the CLI and the plugin write them.
+
+const URGENCY = ['1', '3', '2', '5', '6', '4']; // red > yellow > orange > cyan > purple > green > none
+const mostUrgent = colors => URGENCY.find(c => colors.includes(c)) || '';
+const byReading = (a, b) => a.y - b.y || a.x - b.x;
+
+// Cards inside a selected group come with it.
+function withGroupMembers(d, ids) {
+  const pick = new Set(ids);
+  for (const g of d.nodes.filter(n => n.type === 'group' && pick.has(n.id)))
+    for (const n of d.nodes) if (n.x >= g.x && n.y >= g.y && n.x + n.width <= g.x + g.width && n.y + n.height <= g.y + g.height) pick.add(n.id);
+  return pick;
+}
+
+// Selected cards move to `file` (a new .canvas) at their relative places, with the edges between them; one card
+// `[[file|label]]` takes their place and the edges that crossed the boundary now end on it.
+function collapseOps(d, ids, file, label) {
+  const pick = withGroupMembers(d, ids);
+  const moving = d.nodes.filter(n => pick.has(n.id));
+  if (!moving.length) throw new Error('nothing to collapse');
+  const x0 = Math.min(...moving.map(n => n.x)), y0 = Math.min(...moving.map(n => n.y));
+  const sub = {
+    nodes: moving.map(n => ({ ...n, x: n.x - x0, y: n.y - y0 })),
+    edges: d.edges.filter(e => pick.has(e.fromNode) && pick.has(e.toNode)),
+  };
+  const card = { id: newId(), type: 'text', text: `[[${file}|${label}]]`, x: x0, y: y0, width: 320, height: 60 };
+  const ops = [{ op: 'add', node: card }];
+  for (const e of d.edges) {
+    const from = pick.has(e.fromNode), to = pick.has(e.toNode);
+    if (from !== to) ops.push({ op: 'retarget', id: e.id, fromNode: from ? card.id : e.fromNode, toNode: to ? card.id : e.toNode });
+  }
+  for (const n of moving) ops.push({ op: 'remove', id: n.id });
+  return { ops, sub, id: card.id };
+}
+
+// The reverse: the subcanvas's cards come back at the card's place, shifted right until they overlap nothing;
+// edges on the card go to the first of them in reading order. The caller trashes the .canvas file.
+function expandOps(d, id, sub) {
+  const card = d.nodes.find(n => n.id === id);
+  if (!card) throw new Error('no node ' + id);
+  if (!sub.nodes.length) throw new Error('empty subcanvas');
+  const taken = new Set(d.nodes.map(n => n.id).concat(d.edges.map(e => e.id)));
+  const ids = new Map(sub.nodes.map(n => [n.id, taken.has(n.id) ? newId() : n.id]));
+  const x0 = Math.min(...sub.nodes.map(n => n.x)), y0 = Math.min(...sub.nodes.map(n => n.y));
+  const others = d.nodes.filter(n => n.id !== id);
+  let ox = card.x - x0;
+  const oy = card.y - y0;
+  const hits = () => sub.nodes.some(p => others.some(n => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
+  for (let k = 0; k < 200 && hits(); k++) ox += 40;
+  const nodes = sub.nodes.map(n => ({ ...n, id: ids.get(n.id), x: n.x + ox, y: n.y + oy }));
+  const first = nodes.filter(n => n.type !== 'group').sort(byReading)[0] || nodes[0];
+  const ops = nodes.map(node => ({ op: 'add', node }));
+  for (const e of sub.edges) ops.push({ op: 'edge', edge: { ...e, id: taken.has(e.id) ? newId() : e.id, fromNode: ids.get(e.fromNode), toNode: ids.get(e.toNode) } });
+  for (const e of d.edges) if (e.fromNode === id || e.toNode === id)
+    ops.push({ op: 'retarget', id: e.id, fromNode: e.fromNode === id ? first.id : e.fromNode, toNode: e.toNode === id ? first.id : e.toNode });
+  ops.push({ op: 'remove', id });
+  return ops;
+}
+
+// Text cards become the first one (in reading order): texts joined by a blank line, the most urgent color,
+// every edge; edges between them are dropped.
+function mergeOps(d, ids) {
+  const cards = d.nodes.filter(n => ids.includes(n.id)).sort(byReading);
+  if (cards.length < 2) throw new Error('merge needs 2+ cards');
+  if (cards.some(n => n.type !== 'text')) throw new Error('merge takes text cards only');
+  const [keep, ...rest] = cards;
+  const gone = new Set(rest.map(n => n.id));
+  const all = new Set(cards.map(n => n.id));
+  const text = cards.map(n => n.text.trim()).join('\n\n');
+  const width = Math.max(...cards.map(n => n.width));
+  const ops = [{ op: 'set', id: keep.id, text, color: mostUrgent(cards.map(n => n.color || '')), width, height: fitHeight(text, width) }];
+  for (const e of d.edges) {
+    if (!gone.has(e.fromNode) && !gone.has(e.toNode)) continue;
+    if (all.has(e.fromNode) && all.has(e.toNode)) ops.push({ op: 'unedge', id: e.id });
+    else ops.push({ op: 'retarget', id: e.id, fromNode: gone.has(e.fromNode) ? keep.id : e.fromNode, toNode: gone.has(e.toNode) ? keep.id : e.toNode });
+  }
+  for (const n of rest) ops.push({ op: 'remove', id: n.id });
+  return ops;
+}
+
+// by: paragraph (blank lines), bullet (top-level list items), h1..h6 (a new piece at each heading of that level).
+function splitText(text, by) {
+  const h = /^h([1-6])$/.exec(by);
+  const starts = h ? new RegExp(`^#{${h[1]}} `) : by === 'bullet' ? /^([-*+]|\d+[.)]) / : null;
+  const pieces = starts
+    ? text.split('\n').reduce((acc, line) => { if (starts.test(line) || !acc.length) acc.push([]); acc[acc.length - 1].push(line); return acc; }, []).map(l => l.join('\n'))
+    : text.split(/\n\s*\n/);
+  return pieces.map(p => p.trim()).filter(Boolean);
+}
+
+// One text card becomes one card per piece, stacked under it; the first keeps the id, color and edges.
+function splitOps(d, id, by = 'paragraph') {
+  const card = d.nodes.find(n => n.id === id);
+  if (!card || card.type !== 'text') throw new Error('split takes one text card');
+  const pieces = splitText(card.text || '', by);
+  if (pieces.length < 2) throw new Error(`nothing to split by ${by}`);
+  let y = card.y;
+  return pieces.map((text, i) => {
+    const height = fitHeight(text, card.width);
+    const node = { ...card, id: i ? newId() : card.id, text, y, height };
+    y += height + 20;
+    return i ? { op: 'add', node } : { op: 'set', id, text, height };
+  });
+}
+
+// `part` (a piece of the card's text, e.g. the editor selection) leaves the card for a new card next to it.
+function extractOps(d, id, part, from) {
+  const card = d.nodes.find(n => n.id === id);
+  if (!card || card.type !== 'text') throw new Error('extract takes one text card');
+  const at = from !== undefined && card.text.slice(from, from + part.length) === part ? from : card.text.indexOf(part);
+  if (!part.trim() || at < 0) throw new Error('text not found in the card');
+  const left = (card.text.slice(0, at) + card.text.slice(at + part.length)).replace(/\n{3,}/g, '\n\n').trim();
+  const text = part.trim();
+  const height = fitHeight(text, card.width);
+  const pos = place(d, id, card.width, height);
+  const node = { id: newId(), type: 'text', text, x: pos.x, y: pos.y, width: card.width, height };
+  if (card.color) node.color = card.color;
+  return [{ op: 'set', id, text: left, height: fitHeight(left, card.width) }, { op: 'add', node }];
+}
+
+// --- Archive ------------------------------------------------------------------------------------------
+// An archived card becomes a note (body = its text, or a link to its file) whose frontmatter keeps what a
+// restore needs: board, id, place, size, color and its edges. Listed by Canvas archive.base.
+
+const ARCHIVE_DIR = 'Projects/_assets/canvas-board/archive';
+const noteName = text => (String(text).split('\n').find(l => l.trim()) || 'Card')
+  .replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2').replace(/[#^|[\]*_`>:\\/"?<]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60).trim() || 'Card';
+const yamlStr = s => JSON.stringify(String(s));
+
+// Returns { name, content, ops }. `tags` is the archived card's note tags when it links one, else context/GA.
+function archiveNote(d, id, board, date, tags = ['context/GA']) {
+  const n = d.nodes.find(n => n.id === id);
+  if (!n) throw new Error('no node ' + id);
+  const edges = d.edges.filter(e => e.fromNode === id || e.toNode === id)
+    .map(e => yamlStr([e.id, e.fromNode, e.fromSide || '', e.toNode, e.toSide || '', e.label || ''].join(' | ')));
+  const fm = [
+    '---', 'tags:', ...tags.map(t => `  - ${t}`),
+    `archived-from: "[[${board}]]"`, `archived: ${date}`, `card-id: ${yamlStr(n.id)}`, `card-type: ${n.type}`,
+    ...(n.type === 'file' ? [`card-file: ${yamlStr(n.file)}`] : []), ...(n.type === 'link' ? [`card-url: ${yamlStr(n.url)}`] : []),
+    `x: ${n.x}`, `y: ${n.y}`, `width: ${n.width}`, `height: ${n.height}`, `color: ${yamlStr(n.color || '')}`,
+    edges.length ? 'edges:' : 'edges: []', ...edges.map(e => `  - ${e}`), '---', '',
+  ].join('\n');
+  const body = n.type === 'text' ? n.text : n.type === 'file' ? `[[${n.file}]]` : n.type === 'link' ? n.url : n.label || '';
+  return { name: noteName(n.type === 'text' ? n.text : n.file || n.url || n.label), content: fm + body + '\n', ops: [{ op: 'remove', id }] };
+}
+
+// Parses an archive note; returns { board, ops } that put the card back (same id if free) with the edges whose
+// other end is still on the board.
+function restoreOps(d, src) {
+  const fm = (src.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) || [])[1];
+  if (!fm || !/^archived-from:/m.test(fm)) throw new Error('not an archived card note');
+  const get = k => { const m = new RegExp(`^${k}: (.*)$`, 'm').exec(fm); if (!m) return undefined; const v = m[1].trim(); return v.startsWith('"') ? JSON.parse(v) : v; };
+  const board = get('archived-from').replace(/^\[\[|\]\]$/g, '');
+  const body = src.slice(src.indexOf('---', 3) + 3).replace(/^\r?\n/, '').replace(/\s+$/, '');
+  const type = get('card-type') || 'text';
+  const ids = new Set(d.nodes.map(n => n.id));
+  const id = ids.has(get('card-id')) ? newId() : get('card-id');
+  const node = { id, type, x: Number(get('x')), y: Number(get('y')), width: Number(get('width')), height: Number(get('height')) };
+  if (type === 'text') node.text = body;
+  if (type === 'file') node.file = get('card-file');
+  if (type === 'link') node.url = get('card-url');
+  if (get('color')) node.color = get('color');
+  const ops = [{ op: 'add', node }];
+  const old = get('card-id');
+  const edgeIds = new Set(d.edges.map(e => e.id));
+  for (const m of fm.matchAll(/^ {2}- (".*")$/gm)) {
+    const [eid, from, fromSide, to, toSide, label] = JSON.parse(m[1]).split(' | ');
+    const fromNode = from === old ? id : from, toNode = to === old ? id : to;
+    if (edgeIds.has(eid) || !(fromNode === id || ids.has(fromNode)) || !(toNode === id || ids.has(toNode))) continue;
+    const edge = { id: eid, fromNode, toNode };
+    if (fromSide) edge.fromSide = fromSide;
+    if (toSide) edge.toSide = toSide;
+    if (label) edge.label = label;
+    ops.push({ op: 'edge', edge });
+  }
+  return { board, ops };
 }
 
 // --- Obsidian CLI -----------------------------------------------------------------------------------
@@ -352,7 +541,26 @@ function layoutOps(d, { ids, dir = 'TB', fit = false, dagre }) {
   return ops;
 }
 
-module.exports = { applyOps, layoutOps };
+module.exports = { applyOps, layoutOps, collapseOps, expandOps, mergeOps, splitOps, extractOps, archiveNote, restoreOps, noteName, ARCHIVE_DIR };
+
+// Next free `<dir>/<name><ext>` (vault-relative), adding " 2", " 3"... when taken.
+function freePath(dir, name, ext) {
+  for (let k = 1; ; k++) {
+    const p = path.posix.join(dir, `${name}${k > 1 ? ' ' + k : ''}${ext}`);
+    if (!fs.existsSync(abs(p))) return p;
+  }
+}
+
+// Tags of the note a card links, to file its archive note under the same context.
+function cardTags(n) {
+  const { note } = cardLinks(n);
+  const fm = note && (fs.readFileSync(abs(note), 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1];
+  const tags = fm ? [...fm.matchAll(/^\s+- (context\/\S+)$/gm)].map(m => m[1]) : [];
+  return tags.length ? tags : undefined;
+}
+
+const toTrash = rel => { const dest = abs(path.posix.join('.trash', path.posix.basename(rel))); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.renameSync(abs(rel), dest); };
+const today = () => new Date().toISOString().slice(0, 10);
 
 if (require.main === module) {
   const [cmd, boardArg, ...rest] = positional;
@@ -394,10 +602,54 @@ if (require.main === module) {
       console.log(writeOps(board, ops), ops.filter(o => o.op === 'set').length, 'cards');
       break;
     }
+    case 'collapse': {
+      const name = opt('--name');
+      if (!name) throw new Error('collapse needs --name');
+      const file = freePath(path.posix.dirname(board), name, '.canvas');
+      const { ops, sub, id } = collapseOps(readBoard(board), (opt('--ids') || '').split(',').filter(Boolean), file, name);
+      fs.writeFileSync(abs(file), serialize(sub));
+      writeOps(board, ops);
+      console.log(file, id);
+      break;
+    }
+    case 'expand': {
+      const card = readBoard(board).nodes.find(n => n.id === rest[0]);
+      const sub = card && cardLinks(card).canvas;
+      if (!sub) throw new Error('card links no canvas');
+      writeOps(board, expandOps(readBoard(board), rest[0], readBoard(sub)));
+      toTrash(sub);
+      console.log('expanded', sub);
+      break;
+    }
+    case 'merge': console.log(writeOps(board, mergeOps(readBoard(board), (opt('--ids') || '').split(',').filter(Boolean)))); break;
+    case 'split': console.log(writeOps(board, splitOps(readBoard(board), rest[0], opt('--by') || 'paragraph'))); break;
+    case 'extract': console.log(writeOps(board, extractOps(readBoard(board), rest[0], opt('--text') || ''))); break;
+    case 'archive': {
+      const d = readBoard(board);
+      const ids = rest[0].split(',');
+      for (const id of ids) {
+        const n = d.nodes.find(n => n.id === id);
+        const a = archiveNote(d, id, board, today(), n && cardTags(n));
+        const file = freePath(ARCHIVE_DIR, a.name, '.md');
+        fs.mkdirSync(abs(ARCHIVE_DIR), { recursive: true });
+        fs.writeFileSync(abs(file), a.content);
+        console.log(file);
+      }
+      writeOps(board, ids.map(id => ({ op: 'remove', id })));
+      break;
+    }
+    case 'restore': { // positional is the archive note, not a board
+      const src = fs.readFileSync(abs(boardArg), 'utf8');
+      const target = restoreOps({ nodes: [], edges: [] }, src).board;
+      const { ops } = restoreOps(readBoard(target), src);
+      console.log(writeOps(target, ops), target, ops[0].node.id);
+      toTrash(boardArg);
+      break;
+    }
     case 'rollup': print(rollup(board)); break;
     case 'check': print(check(board)); break;
     default:
-      console.error('Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|layout|rollup|check <board> ... (see header)');
+      console.error('Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|layout|collapse|expand|merge|split|extract|archive|restore|rollup|check <board> ... (see header)');
       process.exit(1);
   }
 }
