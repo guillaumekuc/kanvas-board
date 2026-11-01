@@ -133,11 +133,12 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			await this.app.fileManager.trashFile(file);
 		});
 
-		canvasCommand('merge', 'Merge selected cards', 'Merge cards', (c, sel) => sel.length > 1 && sel.every(isText), (canvas, sel) =>
+		canvasCommand('merge', 'Merge selected cards', ['Merge cards', 'merge'], (c, sel) => sel.length > 1 && sel.every(isText), (canvas, sel) =>
 			this.edit(canvas, cb.mergeOps(canvas.getData(), sel.map(n => n.id))));
 
+		// Only the top-level split is a menu item; the others stay commands.
 		for (const [by, label] of [['paragraph', 'paragraph'], ['bullet', 'top-level bullet'], ['h1', 'heading 1'], ['h2', 'heading 2'], ['h3', 'heading 3']])
-			canvasCommand(`split-${by}`, `Split card by ${label}`, `Split by ${label}`, (c, sel) => sel.length === 1 && isText(sel[0]) && !sel[0].isEditing, (canvas, [node]) =>
+			canvasCommand(`split-${by}`, `Split card by ${label}`, by === 'bullet' ? ['Split by top-level bullet', 'split'] : null, (c, sel) => sel.length === 1 && isText(sel[0]) && !sel[0].isEditing, (canvas, [node]) =>
 				this.edit(canvas, cb.splitOps(canvas.getData(), node.id, by)));
 
 		// The card being edited, with text selected: the selection becomes a new card.
