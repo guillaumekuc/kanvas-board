@@ -99,10 +99,11 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 
 		// Refactor and archive commands: one undo step each (Ctrl+Z), same code as canvas.js for agents.
 		// Each is also a right-click item (label `menu`) on the cards it applies to.
+		// `menu` is [title, Lucide icon], or null for a command with no menu item.
 		const actions = [];
 		const runAction = (run, canvas, sel) => Promise.resolve(run(canvas, sel)).catch(e => new Notice(`Canvas board: ${e.message}`));
 		const canvasCommand = (id, name, menu, test, run, hotkeys) => {
-			actions.push({ menu, test, run });
+			if (menu) actions.push({ menu, test, run });
 			this.addCommand({
 				id, name, hotkeys,
 				checkCallback: checking => {
@@ -115,7 +116,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		};
 		const isText = n => n.getData().type === 'text';
 
-		canvasCommand('collapse', 'Collapse selected cards into a subcanvas', 'Collapse into a subcanvas', (c, sel) => sel.length > 0, (canvas, sel) =>
+		canvasCommand('collapse', 'Collapse selected cards into a subcanvas', ['Collapse into a subcanvas', 'fold-vertical'], (c, sel) => sel.length > 0, (canvas, sel) =>
 			new NamePrompt(this.app, 'Subcanvas name', async name => {
 				const board = this.activeFile();
 				const dir = board.parent && board.parent.path !== '/' ? board.parent.path + '/' : '';
@@ -125,7 +126,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				this.edit(canvas, ops);
 			}).open());
 
-		canvasCommand('expand', 'Expand subcanvas card', 'Expand subcanvas', (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]), async (canvas, [node]) => {
+		canvasCommand('expand', 'Expand subcanvas card', ['Expand subcanvas', 'unfold-vertical'], (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]), async (canvas, [node]) => {
 			const file = this.linkedCanvas(node);
 			const sub = JSON.parse(await this.app.vault.read(file));
 			this.edit(canvas, cb.expandOps(canvas.getData(), node.id, { nodes: sub.nodes || [], edges: sub.edges || [] }));
@@ -140,7 +141,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				this.edit(canvas, cb.splitOps(canvas.getData(), node.id, by)));
 
 		// The card being edited, with text selected: the selection becomes a new card.
-		canvasCommand('extract', 'Extract selection to a new card', 'Extract selection to a new card', (c, sel) => sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]), (canvas, [node]) => {
+		canvasCommand('extract', 'Extract selection to a new card', ['Extract selection to a new card', 'text-select'], (c, sel) => sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]), (canvas, [node]) => {
 			const editor = this.cardEditor(node);
 			const part = editor.getSelection();
 			if (!part.trim()) throw new Error('select some text in the card first');
@@ -154,7 +155,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			this.edit(canvas, cb.extractOps(d, node.id, part, from), d);
 		});
 
-		canvasCommand('archive', 'Archive selected cards', 'Archive', (c, sel) => sel.length > 0, async (canvas, sel) => {
+		canvasCommand('archive', 'Archive selected cards', ['Archive', 'archive'], (c, sel) => sel.length > 0, async (canvas, sel) => {
 			const board = this.activeFile().path;
 			const d = canvas.getData();
 			if (!this.app.vault.getAbstractFileByPath(cb.ARCHIVE_DIR)) await this.app.vault.createFolder(cb.ARCHIVE_DIR);
@@ -169,7 +170,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		// Right-click on one card, on a selection, or inside a card being edited (Extract).
 		const addActions = (menu, canvas, sel) => {
 			for (const a of actions) if (a.test(canvas, sel))
-				menu.addItem(item => item.setTitle(a.menu).setSection('canvas-board').onClick(() => runAction(a.run, canvas, sel)));
+				menu.addItem(item => item.setTitle(a.menu[0]).setIcon(a.menu[1]).setSection('canvas-board').onClick(() => runAction(a.run, canvas, sel)));
 		};
 		this.registerEvent(this.app.workspace.on('canvas:selection-menu', (menu, canvas) => addActions(menu, canvas, [...canvas.selection])));
 		this.registerEvent(this.app.workspace.on('canvas:node-menu', (menu, node) =>
