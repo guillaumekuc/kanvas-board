@@ -210,6 +210,22 @@ function extractOps(d, id, part, from) {
   return [{ op: 'set', id, text: left, height: fitHeight(left, card.width) }, { op: 'add', node }];
 }
 
+// --- Templates ----------------------------------------------------------------------------------------
+// A template is a .canvas file (Templates/Canvas/). Its cards get new ids and land with their top-left at `at`.
+
+const TEMPLATE_DIR = 'Templates/Canvas';
+
+function templateOps(tpl, at) {
+  const nodes = tpl.nodes || [];
+  if (!nodes.length) throw new Error('empty template');
+  const x0 = Math.min(...nodes.map(n => n.x)), y0 = Math.min(...nodes.map(n => n.y));
+  const ids = new Map(nodes.map(n => [n.id, newId()]));
+  const ops = nodes.map(n => ({ op: 'add', node: { ...n, id: ids.get(n.id), x: n.x - x0 + at.x, y: n.y - y0 + at.y } }));
+  for (const e of tpl.edges || []) if (ids.has(e.fromNode) && ids.has(e.toNode))
+    ops.push({ op: 'edge', edge: { ...e, id: newId(), fromNode: ids.get(e.fromNode), toNode: ids.get(e.toNode) } });
+  return ops;
+}
+
 // --- Archive ------------------------------------------------------------------------------------------
 // An archived card becomes a note (body = its text, or a link to its file) whose frontmatter keeps what a
 // restore needs: board, id, place, size, color and its edges. Listed by Canvas archive.base.
@@ -565,7 +581,7 @@ function layoutOps(d, { ids, dir = 'TB', fit = false, dagre }) {
   return ops;
 }
 
-module.exports = { applyOps, layoutOps, collapseOps, expandOps, mergeOps, splitOps, extractOps, archiveNote, restoreOps, noteName, ARCHIVE_DIR };
+module.exports = { applyOps, layoutOps, collapseOps, expandOps, mergeOps, splitOps, extractOps, archiveNote, restoreOps, noteName, ARCHIVE_DIR, templateOps, TEMPLATE_DIR };
 
 // Next free `<dir>/<name><ext>` (vault-relative), adding " 2", " 3"... when taken.
 function freePath(dir, name, ext) {
