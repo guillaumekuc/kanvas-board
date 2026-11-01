@@ -1,10 +1,10 @@
 // Canvas board: color hotkeys for selected canvas cards, a command that opens a terminal running the
 // canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
 // to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (collapse, expand, merge,
-// split, extract), archive/restore and a status bar card count. Copies skill/SKILL.md to
+// split, extract), archive/restore, view tools (search and jump, filter, fold), card templates and a status bar card count. Copies skill/SKILL.md to
 // .claude/skills/canvas-board/ on load.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
-const { Plugin, Notice, PluginSettingTab, Setting, Modal } = require('obsidian');
+const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal } = require('obsidian');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -168,6 +168,81 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			new Notice(`Canvas board: archived ${sel.length} card${sel.length > 1 ? 's' : ''}`);
 		}, [{ modifiers: ['Alt'], key: 'a' }]);
 
+		// Fold hides the cards a card leads to (edges from it, then on); view only, like the filter.
+		const children = (canvas, id) => [...canvas.edges.values()].some(e => e.from.node.id === id && e.to.node.id !== id);
+		canvasCommand('fold', 'Fold branch of the selected card', ['Fold branch', 'chevrons-down-up'], (c, [n, ...rest]) =>
+			!!n && !rest.length && !this.viewState(c, false).folded.has(n.id) && children(c, n.id), (canvas, [node]) => {
+			this.viewState(canvas).folded.add(node.id);
+			this.refreshView(canvas);
+		});
+		canvasCommand('unfold', 'Expand folded branch of the selected card', ['Expand branch', 'chevrons-up-down'], (c, [n, ...rest]) =>
+			!!n && !rest.length && this.viewState(c, false).folded.has(n.id), (canvas, [node]) => {
+			this.viewState(canvas).folded.delete(node.id);
+			this.refreshView(canvas);
+		});
+
+		// Templates: the selection (and edges between its cards) as Templates/Canvas/<name>.canvas.
+		canvasCommand('template-save', 'Save selected cards as a template', ['Save as template', 'layout-template'], (c, sel) => sel.length > 0, canvas =>
+			new NamePrompt(this.app, 'Template name', async name => {
+				const { nodes, edges } = canvas.getSelectionData();
+				if (!this.app.vault.getAbstractFileByPath(cb.TEMPLATE_DIR)) await this.app.vault.createFolder(cb.TEMPLATE_DIR);
+				const file = this.freePath(cb.TEMPLATE_DIR + '/', name, '.canvas');
+				await this.app.vault.create(file, JSON.stringify({ nodes, edges }, null, '\t'));
+				new Notice(`Canvas board: template saved to ${file}`);
+			}).open());
+		this.addCommand({
+			id: 'template-insert',
+			name: 'New cards from template (next to the selection)',
+			checkCallback: checking => {
+				const canvas = this.activeCanvas();
+				if (!canvas) return false;
+				if (!checking) {
+					const files = this.app.vault.getFiles().filter(f => f.extension === 'canvas' && f.path.startsWith(cb.TEMPLATE_DIR + '/'));
+					if (!files.length) new Notice(`Canvas board: no template in ${cb.TEMPLATE_DIR} (Save selected cards as a template)`);
+					else new Picker(this.app, 'Template', files, f => f.basename, f => this.insertTemplate(canvas, f)).open();
+				}
+				return true;
+			},
+		});
+
+		// Search and jump, filter: the active canvas only. Filter and folds hide cards (styles.css), the file is
+		// untouched, and both reset when the board is reopened.
+		this.views = new WeakMap(); // canvas → { colors, tags, all, folded, hidden }
+		this.addCommand({
+			id: 'search',
+			name: 'Search cards and jump',
+			checkCallback: checking => {
+				const canvas = this.activeCanvas();
+				if (!canvas) return false;
+				if (!checking) new Picker(this.app, 'Card', [...canvas.nodes.values()], n => this.cardLabel(n), n => {
+					if (this.isHidden(canvas, n)) { this.showAll(canvas); new Notice('Canvas board: filter and folds cleared to show the card'); }
+					canvas.selectOnly(n);
+					canvas.zoomToSelection();
+				}).open();
+				return true;
+			},
+		});
+		this.addCommand({
+			id: 'filter',
+			name: 'Filter cards by color or tag',
+			checkCallback: checking => {
+				const canvas = this.activeCanvas();
+				if (!canvas) return false;
+				if (!checking) new FilterModal(this.app, this, canvas).open();
+				return true;
+			},
+		});
+		this.addCommand({
+			id: 'show-all',
+			name: 'Show all cards (clear filter and folds)',
+			checkCallback: checking => {
+				const canvas = this.activeCanvas();
+				if (!canvas || !this.viewLabel(canvas)) return false;
+				if (!checking) this.showAll(canvas);
+				return true;
+			},
+		});
+
 		// Right-click on one card, on a selection, or inside a card being edited (Extract).
 		const addActions = (menu, canvas, sel) => {
 			for (const a of actions) if (a.test(canvas, sel))
@@ -209,14 +284,157 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		});
 
 		// Card count of the active canvas in the status bar: boards get hard to manage past a threshold.
+		// Next to it, the active filter and folds; click to change them.
 		this.countEl = this.addStatusBarItem();
-		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.updateCount()));
-		this.registerInterval(window.setInterval(() => this.updateCount(), 2000));
-		this.updateCount();
+		this.viewEl = this.addStatusBarItem();
+		this.viewEl.addClass('mod-clickable');
+		this.viewEl.onClickEvent(() => { const c = this.activeCanvas(); if (c) new FilterModal(this.app, this, c).open(); });
+		const tick = () => {
+			this.updateCount();
+			// Cards that come into view or are added get the classes again.
+			for (const l of this.app.workspace.getLeavesOfType('canvas')) if (this.views.has(l.view.canvas)) this.refreshView(l.view.canvas);
+		};
+		this.registerEvent(this.app.workspace.on('active-leaf-change', tick));
+		this.registerInterval(window.setInterval(tick, 2000));
+		tick();
+		this.register(() => {
+			for (const l of this.app.workspace.getLeavesOfType('canvas')) {
+				const canvas = l.view.canvas;
+				if (!this.views.has(canvas)) continue;
+				delete canvas.updateSelection;
+				this.showAll(canvas);
+			}
+		});
+	}
+
+	// Filter and fold state of an open canvas. `create` false only reads (an empty state, not stored).
+	viewState(canvas, create = true) {
+		const empty = () => ({ colors: new Set(), tags: new Set(), all: false, folded: new Set(), hidden: new Set() });
+		let v = this.views.get(canvas);
+		if (v || !create) return v || empty();
+		v = empty();
+		this.views.set(canvas, v);
+		// Hidden cards never stay selected (select all, drag to select), so Delete never hits a card you can't see.
+		const orig = canvas.updateSelection;
+		canvas.updateSelection = function (fn) {
+			return orig.call(this, () => {
+				fn();
+				for (const x of [...this.selection]) if (v.hidden.has(x.id) || (x.from && (v.hidden.has(x.from.node.id) || v.hidden.has(x.to.node.id)))) this.selection.delete(x);
+			});
+		};
+		return v;
+	}
+
+	isHidden(canvas, node) {
+		return this.viewState(canvas, false).hidden.has(node.id);
+	}
+
+	showAll(canvas) {
+		const v = this.viewState(canvas, false);
+		v.colors.clear(); v.tags.clear(); v.folded.clear();
+		this.refreshView(canvas);
+	}
+
+	// Tags of a card (no #): `#tags` in its text and the frontmatter tags of the notes it links or shows. Exact
+	// match only: #tag1 is not #tag10.
+	cardTagSet(node) {
+		const d = node.getData();
+		const board = node.canvas.view && node.canvas.view.file ? node.canvas.view.file.path : '';
+		const tags = new Set();
+		for (const m of (d.text || '').matchAll(/(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g)) if (!/^\d+$/.test(m[1])) tags.add(m[1]);
+		const links = [...(d.text || '').matchAll(/\[\[([^\]|#]+)/g)].map(m => m[1].trim());
+		if (d.type === 'file') links.push(d.file);
+		for (const l of links) {
+			const file = this.app.metadataCache.getFirstLinkpathDest(l, board);
+			const fm = file && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
+			if (fm) for (const t of [].concat(fm.tags || [])) tags.add(String(t).replace(/^#/, ''));
+		}
+		return tags;
+	}
+
+	matches(node, v) {
+		const d = node.getData();
+		if (v.colors.size && !v.colors.has(d.color || '')) return false;
+		if (!v.tags.size) return true;
+		const tags = this.cardTagSet(node);
+		return v.all ? [...v.tags].every(t => tags.has(t)) : [...v.tags].some(t => tags.has(t));
+	}
+
+	// Hidden = not matching the filter (groups always show), or below a folded card.
+	refreshView(canvas) {
+		const v = this.views.get(canvas);
+		if (!v) return;
+		const hidden = new Set();
+		if (v.colors.size || v.tags.size)
+			for (const node of canvas.nodes.values()) if (node.getData().type !== 'group' && !this.matches(node, v)) hidden.add(node.id);
+		const next = new Map();
+		for (const e of canvas.edges.values()) next.set(e.from.node.id, (next.get(e.from.node.id) || []).concat(e.to.node.id));
+		const folded = new Map();
+		for (const root of v.folded) {
+			const below = new Set();
+			const todo = [...(next.get(root) || [])];
+			while (todo.length) {
+				const id = todo.pop();
+				if (id === root || below.has(id)) continue;
+				below.add(id);
+				todo.push(...(next.get(id) || []));
+			}
+			folded.set(root, below.size);
+			for (const id of below) hidden.add(id);
+		}
+		v.hidden = hidden;
+		for (const node of canvas.nodes.values()) {
+			node.nodeEl.toggleClass('canvas-board-hidden', hidden.has(node.id));
+			if (folded.has(node.id)) node.nodeEl.setAttr('data-canvas-board-folded', `· ${folded.get(node.id)} folded`);
+			else node.nodeEl.removeAttribute('data-canvas-board-folded');
+		}
+		for (const e of canvas.edges.values()) {
+			const off = hidden.has(e.from.node.id) || hidden.has(e.to.node.id);
+			for (const el of [e.lineGroupEl, e.lineEndGroupEl, e.labelElement && e.labelElement.wrapperEl]) if (el) el.classList.toggle('canvas-board-hidden', off);
+		}
+		if ([...canvas.selection].some(x => hidden.has(x.id))) canvas.updateSelection(() => {});
+		if (canvas === this.activeCanvas()) this.updateViewLabel(canvas);
+	}
+
+	viewLabel(canvas) {
+		const v = this.views.get(canvas);
+		if (!v) return '';
+		const names = Object.fromEntries(COLORS.map(([label, color]) => [color, label.split(' ')[0]]));
+		const filter = [...v.colors].map(c => names[c] || c).concat([...v.tags].map(t => '#' + t));
+		const parts = [];
+		if (filter.length) parts.push(`filter: ${filter.join(', ')}${v.tags.size > 1 ? (v.all ? ' (all tags)' : ' (any tag)') : ''}`);
+		if (v.folded.size) parts.push(`${v.folded.size} folded`);
+		return parts.join(' · ');
+	}
+
+	updateViewLabel(canvas) {
+		const label = canvas ? this.viewLabel(canvas) : '';
+		this.viewEl.setText(label);
+		this.viewEl.toggle(!!label);
+	}
+
+	cardLabel(node) {
+		const d = node.getData();
+		const text = d.type === 'text' ? d.text : d.type === 'file' ? d.file : d.type === 'link' ? d.url : d.label;
+		return String(text || '(empty)').replace(/\s+/g, ' ').trim().slice(0, 200);
+	}
+
+	// Template cards go right of the selection, top-aligned, or at the middle of the view; they end up selected.
+	async insertTemplate(canvas, file) {
+		const tpl = JSON.parse(await this.app.vault.read(file));
+		const sel = [...canvas.selection].filter(x => !x.from).map(n => n.getData());
+		let at;
+		if (sel.length) at = { x: Math.max(...sel.map(n => n.x + n.width)) + 40, y: Math.min(...sel.map(n => n.y)) };
+		else { const b = canvas.getViewportBBox(); at = { x: Math.round((b.minX + b.maxX) / 2), y: Math.round((b.minY + b.maxY) / 2) }; }
+		const ops = this.cb.templateOps(tpl, at);
+		this.edit(canvas, ops);
+		const added = ops.filter(o => o.op === 'add').map(o => canvas.nodes.get(o.node.id)).filter(Boolean);
+		canvas.updateSelection(() => { canvas.selection.clear(); for (const n of added) canvas.selection.add(n); });
 	}
 
 	updateCount() {
 		const canvas = this.activeCanvas();
+		this.updateViewLabel(canvas);
 		if (!canvas) { this.countEl.setText(''); this.countEl.hide(); return; }
 		const cards = [...canvas.nodes.values()].map(n => n.getData()).filter(n => n.type !== 'group');
 		const names = { '': 'none', 1: 'red', 2: 'orange', 3: 'yellow', 4: 'green', 5: 'cyan', 6: 'purple' };
@@ -382,6 +600,56 @@ class NamePrompt extends Modal {
 			t.inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
 			setTimeout(() => t.inputEl.focus(), 0);
 		}).addButton(b => b.setButtonText('Create').setCta().onClick(submit));
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
+// Fuzzy pick from `items` (shown by `label`); Enter calls `onChoose`.
+class Picker extends FuzzySuggestModal {
+	constructor(app, placeholder, items, label, onChoose) {
+		super(app);
+		this.setPlaceholder(placeholder);
+		this.items = items;
+		this.label = label;
+		this.onChoose = onChoose;
+	}
+
+	getItems() { return this.items; }
+	getItemText(item) { return this.label(item); }
+	onChooseItem(item) { Promise.resolve(this.onChoose(item)).catch(e => new Notice(`Canvas board: ${e.message}`)); }
+}
+
+// Colors and the tags found on the canvas now; each toggle applies at once. Colors: any of them. Tags: any or all.
+class FilterModal extends Modal {
+	constructor(app, plugin, canvas) {
+		super(app);
+		this.plugin = plugin;
+		this.canvas = canvas;
+	}
+
+	onOpen() {
+		const { plugin, canvas, contentEl } = this;
+		const v = plugin.viewState(canvas);
+		const apply = () => plugin.refreshView(canvas);
+		const toggle = (set, key) => t => t.setValue(set.has(key)).onChange(on => { if (on) set.add(key); else set.delete(key); apply(); });
+		this.setTitle('Filter cards');
+		new Setting(contentEl).setName('Colors').setHeading();
+		for (const [label, color] of COLORS) new Setting(contentEl).setName(label).addToggle(toggle(v.colors, color));
+		new Setting(contentEl).setName('Tags').setHeading();
+		const tags = new Set();
+		for (const node of canvas.nodes.values()) for (const t of plugin.cardTagSet(node)) tags.add(t);
+		if (!tags.size) contentEl.createEl('p', { text: 'No tags on this canvas (card #tags, linked notes\' frontmatter tags).', cls: 'setting-item-description' });
+		else {
+			new Setting(contentEl).setName('Match').setDesc('Cards with any of the selected tags, or all of them.').addDropdown(dd => dd
+				.addOptions({ any: 'any tag', all: 'all tags' }).setValue(v.all ? 'all' : 'any').onChange(x => { v.all = x === 'all'; apply(); }));
+			for (const t of [...tags].sort()) new Setting(contentEl).setName('#' + t).addToggle(toggle(v.tags, t));
+		}
+		new Setting(contentEl)
+			.addButton(b => b.setButtonText('Show all').onClick(() => { plugin.showAll(canvas); this.close(); }))
+			.addButton(b => b.setButtonText('Done').setCta().onClick(() => this.close()));
 	}
 
 	onClose() {

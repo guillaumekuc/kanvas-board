@@ -2,3 +2,18 @@
 .status-bar-item.canvas-board-over {
 	color: var(--text-warning);
 }
+
+/* Filter and fold: cards and edges hidden on screen only (the .canvas file keeps them). */
+.canvas-board-hidden {
+	display: none !important;
+}
+
+/* Folded card: how many cards its branch hides. */
+.canvas-node[data-canvas-board-folded]::after {
+	content: attr(data-canvas-board-folded);
+	position: absolute;
+	right: 8px;
+	bottom: -22px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
