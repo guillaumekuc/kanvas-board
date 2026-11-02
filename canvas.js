@@ -496,7 +496,7 @@ function check(board) {
         const src = fs.readFileSync(abs(note), 'utf8');
         const fm = (src.match(/^---\n([\s\S]*?)\n---/) || [])[1];
         const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map(m => m[1]) : [];
-        if (keys.some(k => k !== 'context' && k !== 'tags')) add(`note frontmatter is not \`context\` only (${keys.join(', ') || 'none'})`);
+        if (keys.join() !== 'context') add(`note frontmatter is not \`context\` only (${keys.join(', ') || 'none'})`);
         if (noteContexts(fm).length !== 1) add('note does not have exactly one context');
         for (const s of ['Aim', 'Design']) if (!new RegExp(`^## ${s}\\s*$`, 'm').test(src)) add(`note has no ## ${s}`);
         if (!/^### Done when\s*$/m.test(src)) add('note has no ### Done when (under Aim)');
@@ -592,16 +592,14 @@ function freePath(dir, name, ext) {
   }
 }
 
-// Contexts in a note's frontmatter text: the `context:` list (or a single value). Notes not moved yet: their
-// `context/*` tags, in the readable spelling (GA → G&A, HW → H&W).
+// Contexts in a note's frontmatter text: the `context:` list (or a single value).
 function noteContexts(fm) {
   if (!fm) return [];
   const unq = s => s.trim().replace(/^(["'])(.*)\1$/, '$2');
   const m = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m.exec(fm);
-  if (m) return (m[1].trim() ? m[1].replace(/^\[|\]$/g, '').split(',') : m[2].split(/\r?\n/).filter(l => l.trim()).map(l => l.replace(/^\s+-\s*/, '')))
+  if (!m) return [];
+  return (m[1].trim() ? m[1].replace(/^\[|\]$/g, '').split(',') : m[2].split(/\r?\n/).filter(l => l.trim()).map(l => l.replace(/^\s+-\s*/, '')))
     .map(unq).filter(Boolean);
-  const readable = { GA: 'G&A', HW: 'H&W' };
-  return [...fm.matchAll(/^\s+- ["']?context\/([^\s"']+)/gm)].map(x => { const [a, ...r] = x[1].split('/'); return [readable[a] || a, ...r].join('/'); });
 }
 
 // Context of the note a card links, to file its archive note under the same context.

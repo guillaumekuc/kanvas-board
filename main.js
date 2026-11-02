@@ -660,18 +660,13 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return child && ((child.editMode && child.editMode.editor) || child.editor) || null;
 	}
 
-	// Context of the note a card links (`context:` list; notes not moved yet: their context/* tags), so its
-	// archive note keeps the same context.
+	// Context of the note a card links (its `context:` list), so its archive note keeps the same context.
 	cardContexts(node, board) {
 		const d = node.getData();
 		const target = d.type === 'file' ? d.file : ((d.text || '').match(/\[\[([^\]|#]+)/) || [])[1];
 		const file = target && this.app.metadataCache.getFirstLinkpathDest(target.trim(), board);
 		const fm = file && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
-		if (!fm) return undefined;
-		const readable = { GA: 'G&A', HW: 'H&W' };
-		const c = fm.context ? [].concat(fm.context).map(String)
-			: [].concat(fm.tags || []).filter(t => String(t).startsWith('context/'))
-				.map(t => { const [a, ...r] = String(t).slice(8).split('/'); return [readable[a] || a, ...r].join('/'); });
+		const c = fm && fm.context ? [].concat(fm.context).map(String) : [];
 		return c.length ? c : undefined;
 	}
 
