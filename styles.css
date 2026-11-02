@@ -17,3 +17,106 @@
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
 }
+
+/* Filter pane, top-left of each canvas (like Graph view's filters). */
+.canvas-board-pane {
+	position: absolute;
+	top: var(--size-4-2);
+	left: var(--size-4-2);
+	z-index: 10;
+	max-width: 280px;
+	max-height: calc(100% - 2 * var(--size-4-2));
+	overflow-y: auto;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-s);
+	font-size: var(--font-ui-small);
+}
+.canvas-board-pane-head {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	padding: var(--size-2-1);
+}
+.canvas-board-pane-badge {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	padding-right: var(--size-4-1);
+}
+.canvas-board-pane-body {
+	display: none;
+	padding: 0 var(--size-4-2) var(--size-4-2);
+}
+.canvas-board-pane.is-open .canvas-board-pane-body {
+	display: block;
+}
+.canvas-board-pane-section {
+	margin-top: var(--size-4-2);
+}
+.canvas-board-pane-heading {
+	display: flex;
+	gap: var(--size-4-2);
+	color: var(--text-muted);
+	font-weight: var(--font-semibold);
+	margin-bottom: var(--size-4-1);
+}
+.canvas-board-pane-heading span:first-child {
+	flex: 1;
+}
+.canvas-board-pane-reset {
+	font-weight: normal;
+	cursor: pointer;
+	color: var(--text-accent);
+}
+.canvas-board-pane-input {
+	width: 100%;
+	margin-bottom: var(--size-4-1);
+}
+.canvas-board-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-1);
+}
+.canvas-board-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	padding: 1px var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-l);
+	cursor: pointer;
+	user-select: none;
+}
+.canvas-board-chip.is-in {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+.canvas-board-chip.is-out {
+	text-decoration: line-through;
+	color: var(--text-faint);
+}
+.canvas-board-chip-x {
+	opacity: 0.7;
+}
+.canvas-board-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	border: 1px solid var(--background-modifier-border);
+}
+.canvas-board-pane-row {
+	padding: 2px var(--size-2-2);
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.canvas-board-pane-row:hover {
+	background: var(--background-modifier-hover);
+}
+.canvas-board-pane-foot {
+	margin-top: var(--size-4-3);
+}
