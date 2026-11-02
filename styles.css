@@ -3,17 +3,184 @@
 	color: var(--text-warning);
 }
 
-/* Filter and fold: cards and edges hidden on screen only (the .canvas file keeps them). */
+/* Filter and fold: cards and edges hidden on screen only (the .canvas file keeps them; folds are a card field). */
 .canvas-board-hidden {
 	display: none !important;
 }
 
-/* Folded card: how many cards its branch hides. */
-.canvas-node[data-canvas-board-folded]::after {
-	content: attr(data-canvas-board-folded);
+/* Folded card: how many cards its branch hides; click to unfold one level. */
+.canvas-board-folded {
 	position: absolute;
 	right: 8px;
 	bottom: -22px;
+	padding: 0 var(--size-2-2);
+	border-radius: var(--radius-s);
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
+	cursor: pointer;
+	user-select: none;
+}
+.canvas-board-folded:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+/* Key after a menu item's title. */
+.canvas-board-key {
+	margin-left: var(--size-4-3);
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+/* Undo button in a notice. */
+.canvas-board-notice-undo {
+	margin-left: var(--size-4-2);
+}
+
+/* Filter pane, top-left of each canvas (like Graph view's filters). */
+.canvas-board-pane {
+	position: absolute;
+	top: var(--size-4-2);
+	left: var(--size-4-2);
+	z-index: 10;
+	max-width: 280px;
+	max-height: calc(100% - 2 * var(--size-4-2));
+	overflow-y: auto;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-s);
+	font-size: var(--font-ui-small);
+}
+.canvas-board-pane-head {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	padding: var(--size-2-1);
+}
+.canvas-board-pane-badge {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	padding-right: var(--size-4-1);
+}
+.canvas-board-pane-body {
+	display: none;
+	padding: 0 var(--size-4-2) var(--size-4-2);
+}
+.canvas-board-pane.is-open .canvas-board-pane-body {
+	display: block;
+}
+.canvas-board-pane-section {
+	margin-top: var(--size-4-2);
+}
+.canvas-board-pane-heading {
+	display: flex;
+	gap: var(--size-4-2);
+	color: var(--text-muted);
+	font-weight: var(--font-semibold);
+	margin-bottom: var(--size-4-1);
+}
+.canvas-board-pane-heading span:first-child {
+	flex: 1;
+}
+.canvas-board-pane-reset {
+	padding: 0 var(--size-2-1);
+}
+.canvas-board-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-1);
+}
+.canvas-board-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	padding: 1px var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-l);
+	cursor: pointer;
+	user-select: none;
+}
+.canvas-board-chip.is-out {
+	text-decoration: line-through;
+	color: var(--text-faint);
+}
+.canvas-board-chip:hover {
+	background: var(--background-modifier-hover);
+}
+/* Color filter: one dot per color, on one line; a hidden color is faded. */
+.canvas-board-swatch {
+	display: inline-flex;
+	padding: 3px;
+	border-radius: 50%;
+	cursor: pointer;
+}
+.canvas-board-swatch:hover {
+	background: var(--background-modifier-hover);
+}
+.canvas-board-swatch .canvas-board-dot {
+	width: 14px;
+	height: 14px;
+}
+.canvas-board-swatch.is-out .canvas-board-dot {
+	opacity: 0.2;
+}
+.canvas-board-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	border: 1px solid var(--background-modifier-border);
+}
+.canvas-board-pane-row {
+	padding: 2px var(--size-2-2);
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.canvas-board-pane-row:hover {
+	background: var(--background-modifier-hover);
+}
+.canvas-board-pane-foot {
+	display: flex;
+	justify-content: center;
+	margin-top: var(--size-4-3);
+}
+
+/* Find bar (prototype): the notes' find bar classes, floating at the top center of the canvas. */
+.canvas-board-find {
+	position: absolute;
+	top: var(--size-4-2);
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 10;
+	width: min(480px, calc(100% - 2 * var(--size-4-4)));
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-s);
+}
+.canvas-board-find .document-search {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+}
+.canvas-board-find .document-search-input {
+	flex: 1;
+}
+.canvas-board-find .document-search-input {
+	position: relative; /* the count sits inside the field, at its right end, as in notes */
+}
+.canvas-board-find .document-search-count {
+	white-space: nowrap;
+}
+.canvas-board-find .document-search-buttons {
+	display: flex;
+}
+.canvas-node.canvas-board-find-match .canvas-node-container {
+	box-shadow: 0 0 0 3px var(--text-highlight-bg);
+}
+.canvas-node.canvas-board-find-match.is-current .canvas-node-container {
+	box-shadow: 0 0 0 3px var(--text-accent);
 }
