@@ -1152,12 +1152,26 @@ class CanvasBoardSettings extends PluginSettingTab {
 			.setPlaceholder(DEFAULTS[key])
 			.setValue(this.plugin.settings[key])
 			.onChange(async v => { this.plugin.settings[key] = v.trim() || DEFAULTS[key]; await this.plugin.saveData(this.plugin.settings); }));
-		text('Default board', 'Board used by "Run pass" when the active tab is not a canvas.', 'defaultBoard');
+		const heading = name => new Setting(containerEl).setName(name).setHeading();
+		new Setting(containerEl).setName('Hotkeys').setDesc('Every canvas board command can have a key; buttons and menu items show it.').addButton(b => b
+			.setButtonText('Open hotkeys')
+			.onClick(() => {
+				this.app.setting.openTabById('hotkeys');
+				const tab = this.app.setting.activeTab;
+				if (tab && tab.searchComponent) { tab.searchComponent.setValue('Canvas board'); if (tab.setQuery) tab.setQuery('Canvas board'); }
+			}));
+		heading('Board');
+		text('Default board', 'Board used by "Run pass" when the active tab is not a canvas, and by "Open the board" (ribbon).', 'defaultBoard');
+		text('Card count warning', 'The status bar card count turns to the warning color past this many cards (0: never).', 'cardWarning');
+		heading('Pass');
 		text('Claude path', 'Empty: ~/.local/bin/claude.exe if it exists, else claude on PATH.', 'claudePath');
+		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
+		heading('Layout');
 		new Setting(containerEl).setName('Layout direction').setDesc('Tidy layout and agent-made plan canvases: top to bottom or left to right ("depends on" prerequisites come first).').addDropdown(dd => dd
 			.addOptions({ TB: 'Top to bottom', LR: 'Left to right' })
 			.setValue(this.plugin.settings.layoutDirection)
 			.onChange(async v => { this.plugin.settings.layoutDirection = v; await this.plugin.saveData(this.plugin.settings); }));
+		heading('View');
 		new Setting(containerEl).setName('Fold direction').setDesc('Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Commands "Fold direction: …" switch it on the fly.').addDropdown(dd => dd
 			.addOptions({ out: 'Outgoing', in: 'Incoming' })
 			.setValue(this.plugin.settings.foldDirection)
@@ -1169,7 +1183,5 @@ class CanvasBoardSettings extends PluginSettingTab {
 				await this.plugin.saveData(this.plugin.settings);
 				for (const canvas of this.plugin.panes.keys()) this.plugin.refreshView(canvas);
 			}));
-		text('Card count warning', 'The status bar card count turns to the warning color past this many cards (0: never).', 'cardWarning');
-		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
 	}
 }
