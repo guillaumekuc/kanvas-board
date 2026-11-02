@@ -550,10 +550,13 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		this.viewEl.toggle(!!label);
 	}
 
-	cardLabel(node) {
+	cardText(node) {
 		const d = node.getData();
-		const text = d.type === 'text' ? d.text : d.type === 'file' ? d.file : d.type === 'link' ? d.url : d.label;
-		return String(text || '(empty)').replace(/\s+/g, ' ').trim().slice(0, 200);
+		return String((d.type === 'text' ? d.text : d.type === 'file' ? d.file : d.type === 'link' ? d.url : d.label) || '');
+	}
+
+	cardLabel(node) {
+		return (this.cardText(node) || '(empty)').replace(/\s+/g, ' ').trim().slice(0, 200);
 	}
 
 	// Template cards are centered on the visible canvas, whatever is selected; they end up selected.
