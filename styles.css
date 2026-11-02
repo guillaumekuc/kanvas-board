@@ -150,9 +150,10 @@
 .canvas-board-find .document-search-input {
 	flex: 1;
 }
+.canvas-board-find .document-search-input {
+	position: relative; /* the count sits inside the field, at its right end, as in notes */
+}
 .canvas-board-find .document-search-count {
-	color: var(--text-muted);
-	font-size: var(--font-ui-smaller);
 	white-space: nowrap;
 }
 .canvas-board-find .document-search-buttons {

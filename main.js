@@ -1,7 +1,7 @@
 // Canvas board: color hotkeys for selected canvas cards, a command that opens a terminal running the
 // canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
 // to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (collapse, expand, merge,
-// split, extract), archive/restore, view tools (search and jump, find bar, filter pane, fold), card templates and a status bar card count. Copies skill/SKILL.md to
+// split, extract), archive/restore, view tools (search current canvas, filter pane, fold), card templates and a status bar card count. Copies skill/SKILL.md to
 // .claude/skills/canvas-board/ on load.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
 const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, Scope, setIcon } = require('obsidian');
@@ -221,29 +221,15 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			},
 		});
 
-		// Search and jump, filter: the active canvas only. Filter and folds hide cards (styles.css). The filter is
+		// Search, filter: the active canvas only. Filter and folds hide cards (styles.css). The filter is
 		// view only (the file is untouched, it resets when the board is reopened); folds are in the file.
 		this.views = new WeakMap(); // canvas → { xcolors, xtags (hidden colors and tags), hidden (card ids) }
 		this.panes = new Map(); // canvas → FilterPane, one per open canvas
-		this.addCommand({
-			id: 'search',
-			name: 'Search cards and jump',
-			checkCallback: checking => {
-				const canvas = this.activeCanvas();
-				if (!canvas) return false;
-				if (!checking) new Picker(this.app, 'Card', [...canvas.nodes.values()], n => this.cardLabel(n), n => {
-					if (this.isHidden(canvas, n)) { this.showAll(canvas); new Notice('Canvas board: filter and folds cleared to show the card'); }
-					canvas.selectOnly(n);
-					canvas.zoomToSelection();
-				}).open();
-				return true;
-			},
-		});
-		// Prototype next to "Search cards and jump": a find bar like the one in notes (count, previous / next).
+		// A find bar like the one in notes (count, previous / next, all), named after Obsidian's "Search current file".
 		this.finds = new Map(); // canvas → FindBar
 		this.addCommand({
 			id: 'find',
-			name: 'Find in canvas (count, previous / next)',
+			name: 'Search current canvas',
 			checkCallback: checking => {
 				const canvas = this.activeCanvas();
 				if (!canvas) return false;
@@ -552,15 +538,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		}
 	}
 
+	// Status bar and closed pane: only how many cards are hidden (filter and folds); the pane says by what.
 	viewLabel(canvas) {
-		const v = this.viewState(canvas, false);
-		const names = Object.fromEntries(COLORS.map(([label, color]) => [color, label.split(' ')[0]]));
-		const filter = [...v.xcolors].map(c => names[c] || c).concat([...v.xtags].map(t => '#' + t));
-		const parts = [];
-		if (filter.length) parts.push(`hidden: ${filter.join(', ')}`);
-		const folds = this.folds(canvas).size;
-		if (folds) parts.push(`${folds} folded`);
-		return parts.join(' · ');
+		const n = this.viewState(canvas, false).hidden.size;
+		return n ? `${n} card${n > 1 ? 's' : ''} hidden` : '';
 	}
 
 	updateViewLabel(canvas) {
@@ -788,8 +769,9 @@ class Picker extends FuzzySuggestModal {
 // Find bar at the top of a canvas, built with the classes of the notes' find bar (document-search-*) so it looks
 // the same: matches are the cards whose text (or file, link, group label) contains the query, ignoring case, in
 // reading order (top to bottom, then left to right). Typing jumps to the first one; Enter / Shift+Enter or the
-// arrows go to the next / previous (it wraps), Escape or the cross closes. Every match is outlined, the current one
-// selected and zoomed to (a hidden one clears filter and folds first). Keys typed in the field never reach the canvas.
+// arrows go to the next / previous (it wraps), Alt+Enter or the "all" button selects every match and zooms to them
+// all, Escape or the cross closes. Every match is outlined, the current one selected and zoomed to (a hidden one
+// clears filter and folds first). Keys typed in the field never reach the canvas.
 class FindBar {
 	constructor(plugin, canvas) {
 		this.plugin = plugin;
@@ -799,9 +781,9 @@ class FindBar {
 		const el = this.el = canvas.wrapperEl.createDiv({ cls: 'document-search-container canvas-board-find' });
 		for (const ev of ['pointerdown', 'mousedown', 'wheel', 'dblclick', 'contextmenu']) el.addEventListener(ev, e => e.stopPropagation());
 		const box = el.createDiv({ cls: 'document-search' });
-		const field = box.createDiv({ cls: 'search-input-container document-search-input' });
+		const field = this.field = box.createDiv({ cls: 'search-input-container document-search-input' });
 		this.input = field.createEl('input', { type: 'search', attr: { placeholder: 'Find…', spellcheck: 'false' } });
-		this.countEl = box.createDiv({ cls: 'document-search-count' });
+		this.countEl = field.createDiv({ cls: 'document-search-count' }); // inside the field, as in notes (absolute)
 		const buttons = box.createDiv({ cls: 'document-search-buttons' });
 		const button = (icon, label, fn) => {
 			const b = buttons.createEl('button', { cls: 'document-search-button clickable-icon', attr: { 'aria-label': label } });
@@ -810,13 +792,16 @@ class FindBar {
 		};
 		button('arrow-up', 'Previous (Shift+Enter)', () => this.step(-1));
 		button('arrow-down', 'Next (Enter)', () => this.step(1));
+		const all = buttons.createEl('button', { cls: 'document-search-button', text: 'All', attr: { 'aria-label': 'Select all matches (Alt+Enter)' } });
+		all.addEventListener('click', () => this.selectAll());
 		const close = box.createDiv({ cls: 'document-search-close-button clickable-icon', attr: { 'aria-label': 'Close (Escape)' } });
 		setIcon(close, 'x');
 		close.addEventListener('click', () => this.close());
 		// Own key scope while the field has focus: canvas keys (Delete, arrows) stay off, global hotkeys still work.
 		this.scope = new Scope(plugin.app.scope);
 		this.input.addEventListener('keydown', e => {
-			if (e.key === 'Enter') { e.preventDefault(); this.step(e.shiftKey ? -1 : 1); }
+			if (e.key === 'Enter' && e.altKey) { e.preventDefault(); this.selectAll(); }
+			else if (e.key === 'Enter') { e.preventDefault(); this.step(e.shiftKey ? -1 : 1); }
 			else if (e.key === 'Escape') { e.preventDefault(); this.close(); }
 		});
 		this.input.addEventListener('focus', () => plugin.app.keymap.pushScope(this.scope));
@@ -855,6 +840,18 @@ class FindBar {
 		this.show();
 	}
 
+	// Every match selected (so it can be moved, colored...) and in view; Enter goes back to one at a time.
+	selectAll() {
+		const { canvas, plugin, matches } = this;
+		if (!matches.length) return;
+		if (matches.some(n => plugin.isHidden(canvas, n))) { plugin.showAll(canvas); new Notice('Canvas board: filter and folds cleared to show the cards'); }
+		for (const n of matches) n.nodeEl.addClass('is-current');
+		canvas.updateSelection(() => { canvas.selection.clear(); for (const n of matches) canvas.selection.add(n); });
+		canvas.zoomToSelection();
+		this.countEl.setText(`all ${matches.length}`);
+		this.input.focus();
+	}
+
 	mark(nodes) {
 		for (const n of this.canvas.nodes.values()) n.nodeEl.removeClass('canvas-board-find-match', 'is-current');
 		for (const n of nodes) n.nodeEl.addClass('canvas-board-find-match');
@@ -864,6 +861,7 @@ class FindBar {
 		const { canvas, plugin } = this;
 		const q = this.input.value.trim();
 		this.countEl.setText(!q ? '' : this.matches.length ? `${this.index + 1} / ${this.matches.length}` : 'No results');
+		this.field.toggleClass('mod-no-match', !!q && !this.matches.length);
 		const node = this.matches[this.index];
 		if (!node) return;
 		for (const n of this.matches) n.nodeEl.toggleClass('is-current', n === node);
