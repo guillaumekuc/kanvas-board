@@ -498,7 +498,8 @@ function check(board) {
         const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map(m => m[1]) : [];
         if (keys.join() !== 'tags') add(`note frontmatter is not \`tags\` only (${keys.join(', ') || 'none'})`);
         if ([...(fm || '').matchAll(/context\//g)].length !== 1) add('note does not have exactly one context/* tag');
-        for (const s of ['Aim', 'Done when', 'Design']) if (!new RegExp(`^## ${s}\\s*$`, 'm').test(src)) add(`note has no ## ${s}`);
+        for (const s of ['Aim', 'Design']) if (!new RegExp(`^## ${s}\\s*$`, 'm').test(src)) add(`note has no ## ${s}`);
+        if (!/^### Done when\s*$/m.test(src)) add('note has no ### Done when (under Aim)');
         if (n.color === '4' && !/^## Output\s*$/m.test(src)) add('green card, note has no ## Output');
         if (n.color === '2' && Date.now() - fs.statSync(abs(note)).mtimeMs > ORANGE_STALE_MS) add('orange card, note untouched for 1h+ (interrupted pass?)');
       }
