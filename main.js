@@ -118,7 +118,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		};
 		const isText = n => n.getData().type === 'text';
 
-		canvasCommand('collapse', 'Collapse selected cards into a subcanvas', ['Collapse into a subcanvas', 'fold-vertical'], (c, sel) => sel.length > 0, (canvas, sel) =>
+		canvasCommand('collapse', 'Collapse to subcanvas', ['Collapse to subcanvas', 'fold-vertical'], (c, sel) => sel.length > 0, (canvas, sel) =>
 			new NamePrompt(this.app, 'Subcanvas name', async name => {
 				const board = this.activeFile();
 				const dir = board.parent && board.parent.path !== '/' ? board.parent.path + '/' : '';
@@ -129,7 +129,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				this.undoNotice(canvas, `collapsed ${sel.length} card${sel.length > 1 ? 's' : ''} into ${file}`, [file]);
 			}).open());
 
-		canvasCommand('expand', 'Expand subcanvas card', ['Expand subcanvas', 'unfold-vertical'], (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]), async (canvas, [node]) => {
+		canvasCommand('expand', 'Expand subcanvas', ['Expand subcanvas', 'unfold-vertical'], (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]), async (canvas, [node]) => {
 			const file = this.linkedCanvas(node);
 			const sub = JSON.parse(await this.app.vault.read(file));
 			this.edit(canvas, cb.expandOps(canvas.getData(), node.id, { nodes: sub.nodes || [], edges: sub.edges || [] }));
@@ -145,7 +145,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				this.edit(canvas, cb.splitOps(canvas.getData(), node.id, by)));
 
 		// The card being edited, with text selected: the selection becomes a new card.
-		canvasCommand('extract', 'Extract selection to a new card', ['Extract selection to a new card', 'text-select'], (c, sel) => sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]), (canvas, [node]) => {
+		canvasCommand('extract', 'Extract current selection to a new card', ['Extract current selection to a new card', 'text-select'], (c, sel) => sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]), (canvas, [node]) => {
 			const editor = this.cardEditor(node);
 			const part = editor.getSelection();
 			if (!part.trim()) throw new Error('select some text in the card first');
@@ -178,11 +178,11 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		// at level N, so a branch opens in stages, like folders. Folds are stored on the card (see foldOf), so Ctrl+Z
 		// undoes them. With several cards selected, each one that can be folded (or unfolded) is.
 		const canFold = (c, n) => !this.foldOf(n) && this.branchLinks(c, this.settings.foldDirection).has(n.id);
-		canvasCommand('fold', 'Fold branch of the selected cards', ['Fold branch', 'chevrons-down-up'], (c, sel) => sel.some(n => canFold(c, n)), (canvas, sel) =>
+		canvasCommand('fold', 'Fold branch', ['Fold branch', 'chevrons-down-up'], (c, sel) => sel.some(n => canFold(c, n)), (canvas, sel) =>
 			this.setFolds(canvas, new Map(sel.filter(n => canFold(canvas, n)).map(n => [n.id, this.settings.foldDirection]))));
-		for (const [levels, id, name, menu] of [[1, 'unfold', 'Unfold one level of the selected cards', ['Unfold one level', 'chevron-down']],
-			[2, 'unfold-2', 'Unfold two levels of the selected cards', null], [3, 'unfold-3', 'Unfold three levels of the selected cards', null],
-			[Infinity, 'unfold-all', 'Unfold the whole branch of the selected cards', ['Unfold whole branch', 'chevrons-up-down']]])
+		for (const [levels, id, name, menu] of [[1, 'unfold', 'Unfold branch 1 level', ['Unfold 1 level', 'chevron-down']],
+			[2, 'unfold-2', 'Unfold branch 2 levels', null], [3, 'unfold-3', 'Unfold branch 3 levels', null],
+			[Infinity, 'unfold-all', 'Unfold whole branch', ['Unfold whole branch', 'chevrons-up-down']]])
 			canvasCommand(id, name, menu, (c, sel) => sel.some(n => this.unfoldTargets(c, n.id).length), (canvas, sel) =>
 				this.unfold(canvas, [...new Set(sel.flatMap(n => this.unfoldTargets(canvas, n.id)))], levels));
 		for (const [dir, label] of [['out', 'outgoing (cards it points to)'], ['in', 'incoming (cards pointing to it)']])
@@ -211,7 +211,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			}).open());
 		this.addCommand({
 			id: 'template-insert',
-			name: 'New cards from template',
+			name: 'Insert cards from template',
 			checkCallback: checking => {
 				const canvas = this.activeCanvas();
 				if (!canvas) return false;
@@ -246,7 +246,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		});
 		this.addCommand({
 			id: 'filter',
-			name: 'Filter cards by color or tag (open or close the filter pane)',
+			name: 'Toggle filter pane',
 			checkCallback: checking => {
 				const canvas = this.activeCanvas();
 				if (!canvas) return false;
@@ -256,7 +256,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		});
 		this.addCommand({
 			id: 'show-all',
-			name: 'Show all cards (clear filter and folds)',
+			name: 'Unhide all',
 			checkCallback: checking => {
 				const canvas = this.activeCanvas();
 				if (!canvas || !this.viewLabel(canvas)) return false;
@@ -678,7 +678,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				badge.addEventListener('click', e => { e.stopPropagation(); this.unfold(canvas, [node.id], 1); });
 			}
 			badge.setText(`· ${folded.get(node.id)} folded`);
-			badge.setAttr('aria-label', this.keyedLabel('Unfold one level', 'unfold'));
+			badge.setAttr('aria-label', this.keyedLabel('Unfold 1 level', 'unfold'));
 		}
 		for (const e of canvas.edges.values()) {
 			const off = hidden.has(e.from.node.id) || hidden.has(e.to.node.id);
@@ -1067,7 +1067,7 @@ class FilterPane {
 		this.foldedEl = this.foldedSection.createDiv({ cls: 'canvas-board-pane-list' });
 
 		const foot = this.body.createDiv({ cls: 'canvas-board-pane-foot' });
-		const all = foot.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': 'Show all (clear filter and folds)' } });
+		const all = foot.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': 'Unhide all (clear filter and folds)' } });
 		setIcon(all, 'eye');
 		all.addEventListener('click', () => plugin.showAll(canvas));
 		this.toggle(false);
