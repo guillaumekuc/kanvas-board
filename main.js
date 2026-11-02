@@ -552,15 +552,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		}
 	}
 
+	// Status bar and closed pane: only how many cards are hidden (filter and folds); the pane says by what.
 	viewLabel(canvas) {
-		const v = this.viewState(canvas, false);
-		const names = Object.fromEntries(COLORS.map(([label, color]) => [color, label.split(' ')[0]]));
-		const filter = [...v.xcolors].map(c => names[c] || c).concat([...v.xtags].map(t => '#' + t));
-		const parts = [];
-		if (filter.length) parts.push(`hidden: ${filter.join(', ')}`);
-		const folds = this.folds(canvas).size;
-		if (folds) parts.push(`${folds} folded`);
-		return parts.join(' · ');
+		const n = this.viewState(canvas, false).hidden.size;
+		return n ? `${n} card${n > 1 ? 's' : ''} hidden` : '';
 	}
 
 	updateViewLabel(canvas) {
