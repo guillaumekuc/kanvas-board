@@ -4,7 +4,7 @@
 // split, extract), archive/restore, view tools (search and jump, filter pane, fold), card templates and a status bar card count. Copies skill/SKILL.md to
 // .claude/skills/canvas-board/ on load.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
-const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, AbstractInputSuggest, setIcon } = require('obsidian');
+const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, setIcon } = require('obsidian');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -333,9 +333,9 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		});
 	}
 
-	// Filter and fold state of an open canvas. `create` false only reads (an empty state, not stored).
+	// Filter state of an open canvas. `create` false only reads (an empty state, not stored).
 	viewState(canvas, create = true) {
-		const empty = () => ({ colors: new Set(), xcolors: new Set(), tags: new Set(), xtags: new Set(), all: false, folded: new Map(), hidden: new Set() });
+		const empty = () => ({ xcolors: new Set(), xtags: new Set(), hidden: new Set() });
 		let v = this.views.get(canvas);
 		if (v || !create) return v || empty();
 		v = empty();
@@ -455,26 +455,21 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return tags;
 	}
 
-	// Shown colors (any of them), hidden colors, shown tags (any or all), hidden tags (any one hides).
+	// Every color and tag shows by default; a hidden color, or any hidden tag, hides the card.
 	matches(node, v) {
-		const color = node.getData().color || '';
-		if (v.colors.size && !v.colors.has(color)) return false;
-		if (v.xcolors.has(color)) return false;
-		if (!v.tags.size && !v.xtags.size) return true;
+		if (v.xcolors.has(node.getData().color || '')) return false;
+		if (!v.xtags.size) return true;
 		const tags = this.cardTagSet(node);
-		if ([...v.xtags].some(t => tags.has(t))) return false;
-		if (!v.tags.size) return true;
-		return v.all ? [...v.tags].every(t => tags.has(t)) : [...v.tags].some(t => tags.has(t));
+		return ![...v.xtags].some(t => tags.has(t));
 	}
 
 	filtering(v) {
-		return !!(v.colors.size || v.xcolors.size || v.tags.size || v.xtags.size);
+		return !!(v.xcolors.size || v.xtags.size);
 	}
 
 	// Hidden = not matching the filter (groups always show), or below a folded card.
 	refreshView(canvas) {
-		const v = this.views.get(canvas);
-		if (!v) return;
+		const v = this.viewState(canvas);
 		const hidden = new Set();
 		if (this.filtering(v))
 			for (const node of canvas.nodes.values()) if (node.getData().type !== 'group' && !this.matches(node, v)) hidden.add(node.id);
@@ -506,14 +501,13 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 	}
 
 	viewLabel(canvas) {
-		const v = this.views.get(canvas);
-		if (!v) return '';
+		const v = this.viewState(canvas, false);
 		const names = Object.fromEntries(COLORS.map(([label, color]) => [color, label.split(' ')[0]]));
-		const filter = [...v.colors].map(c => names[c] || c).concat([...v.tags].map(t => '#' + t),
-			[...v.xcolors].map(c => 'not ' + (names[c] || c)), [...v.xtags].map(t => 'not #' + t));
+		const filter = [...v.xcolors].map(c => names[c] || c).concat([...v.xtags].map(t => '#' + t));
 		const parts = [];
-		if (filter.length) parts.push(`filter: ${filter.join(', ')}${v.tags.size > 1 ? (v.all ? ' (all tags)' : ' (any tag)') : ''}`);
-		if (v.folded.size) parts.push(`${v.folded.size} folded`);
+		if (filter.length) parts.push(`hidden: ${filter.join(', ')}`);
+		const folds = this.folds(canvas).size;
+		if (folds) parts.push(`${folds} folded`);
 		return parts.join(' · ');
 	}
 
@@ -736,30 +730,8 @@ class Picker extends FuzzySuggestModal {
 	onChooseItem(item) { Promise.resolve(this.onChoose(item)).catch(e => new Notice(`Canvas board: ${e.message}`)); }
 }
 
-// Tag field: suggests the canvas's tags not picked yet; picking one calls `onPick`.
-class TagSuggest extends AbstractInputSuggest {
-	constructor(app, inputEl, tags, onPick) {
-		super(app, inputEl);
-		this.tags = tags;
-		this.onPick = onPick;
-	}
-
-	getSuggestions(query) {
-		const q = query.replace(/^#/, '').toLowerCase();
-		return this.tags().filter(t => t.toLowerCase().includes(q));
-	}
-
-	renderSuggestion(tag, el) { el.setText('#' + tag); }
-
-	selectSuggestion(tag) {
-		this.onPick(tag);
-		this.setValue('');
-		this.close();
-	}
-}
-
 // Filter pane in the top-left corner of a canvas, like Graph view's filters: closed, a filter button; open,
-// color chips (click: show only, again: hide, again: off), shown / hidden tag fields with suggestions, the
+// one dot per color and one chip per tag on the canvas, all shown at first (click: hide, again: show), the
 // folded cards, reset buttons and Show all. Every change applies at once.
 class FilterPane {
 	constructor(plugin, canvas) {
@@ -790,31 +762,11 @@ class FilterPane {
 			return s;
 		};
 
-		this.colorsEl = section('Colors', () => { v().colors.clear(); v().xcolors.clear(); }).createDiv({ cls: 'canvas-board-chips' });
+		this.colorsEl = section('Colors', () => v().xcolors.clear()).createDiv({ cls: 'canvas-board-chips' });
+		this.tagsSection = section('Tags', () => v().xtags.clear());
+		this.tagsEl = this.tagsSection.createDiv({ cls: 'canvas-board-chips' });
 
-		const tagField = (title, key, placeholder) => {
-			const s = section(title, () => v()[key].clear());
-			const input = s.createEl('input', { type: 'text', cls: 'canvas-board-pane-input', attr: { placeholder } });
-			// A card selected while typing would take Backspace/Delete: nothing stays selected.
-			input.addEventListener('focus', () => canvas.deselectAll && canvas.deselectAll());
-			const pick = tag => { v()[key].add(tag); apply(); };
-			const free = () => [...this.tags()].filter(t => !v().tags.has(t) && !v().xtags.has(t)).sort();
-			if (AbstractInputSuggest) new TagSuggest(plugin.app, input, free, pick);
-			input.addEventListener('keydown', e => {
-				if (e.key !== 'Enter') return;
-				const t = input.value.trim().replace(/^#/, '');
-				if (free().includes(t)) { pick(t); input.value = ''; }
-			});
-			return s.createDiv({ cls: 'canvas-board-chips' });
-		};
-		const shown = tagField('Show tags', 'tags', 'Only cards with #tag');
-		const mode = shown.parentElement.querySelector('.canvas-board-pane-heading').createSpan({ cls: 'canvas-board-pane-reset' });
-		mode.addEventListener('click', () => { v().all = !v().all; apply(); });
-		this.modeEl = mode;
-		this.shownEl = shown;
-		this.hiddenEl = tagField('Hide tags', 'xtags', 'Hide cards with #tag');
-
-		this.foldedSection = section('Folded', () => v().folded.clear());
+		this.foldedSection = section('Folded', () => plugin.setFolds(canvas, new Map([...plugin.folds(canvas).keys()].map(id => [id, null]))));
 		this.foldedEl = this.foldedSection.createDiv({ cls: 'canvas-board-pane-list' });
 
 		const foot = this.body.createDiv({ cls: 'canvas-board-pane-foot' });
@@ -833,7 +785,6 @@ class FilterPane {
 		this.el.toggleClass('is-open', open);
 		this.key = '';
 		this.update();
-		if (open) { const i = this.body.querySelector('input'); if (i) i.focus(); }
 	}
 
 	// Redraws the chips and lists only when something changed (called every 2 s), never the text fields.
@@ -842,41 +793,36 @@ class FilterPane {
 		const v = plugin.viewState(canvas, false);
 		const counts = {};
 		for (const n of canvas.nodes.values()) { const d = n.getData(); if (d.type !== 'group') counts[d.color || ''] = (counts[d.color || ''] || 0) + 1; }
-		const active = plugin.filtering(v) || v.folded.size > 0;
+		const folds = plugin.folds(canvas);
+		const active = plugin.filtering(v) || folds.size > 0;
 		this.badge.setText(active ? plugin.viewLabel(canvas) : '');
 		this.badge.toggle(!this.isOpen && active);
 		if (!this.isOpen) return;
-		const key = JSON.stringify([counts, [...v.colors], [...v.xcolors], [...v.tags], [...v.xtags], v.all, [...v.folded], v.hidden.size]);
+		const state = plugin.viewState(canvas);
+		const tags = [...new Set([...this.tags(), ...state.xtags])].sort(); // a hidden tag stays listed, to show it again
+		const key = JSON.stringify([counts, [...state.xcolors], tags, [...state.xtags], [...folds], state.hidden.size]);
 		if (key === this.key) return;
 		this.key = key;
-		const state = plugin.viewState(canvas);
 		const apply = () => plugin.refreshView(canvas);
+		const toggle = (set, x) => { if (set.has(x)) set.delete(x); else set.add(x); apply(); };
 
+		// Dots only, on one line; the name and card count are in the tooltip.
 		this.colorsEl.empty();
 		for (const [label, color] of COLORS) {
-			const name = label.split(' ')[0];
-			const chip = this.colorsEl.createDiv({ cls: 'canvas-board-chip', attr: { 'aria-label': `${label}: click to show only, again to hide, again to clear` } });
-			chip.toggleClass('is-in', state.colors.has(color));
-			chip.toggleClass('is-out', state.xcolors.has(color));
+			const out = state.xcolors.has(color);
+			const chip = this.colorsEl.createDiv({ cls: 'canvas-board-swatch', attr: { 'aria-label': `${label.split(' ')[0]} · ${counts[color] || 0} cards · click to ${out ? 'show' : 'hide'}` } });
+			chip.toggleClass('is-out', out);
 			chip.createSpan({ cls: 'canvas-board-dot', attr: { style: color ? `background: var(--canvas-color-${color})` : '' } });
-			chip.createSpan({ text: `${name} ${counts[color] || 0}` });
-			chip.addEventListener('click', () => {
-				if (state.colors.has(color)) { state.colors.delete(color); state.xcolors.add(color); }
-				else if (state.xcolors.has(color)) state.xcolors.delete(color);
-				else state.colors.add(color);
-				apply();
-			});
+			chip.addEventListener('click', () => toggle(state.xcolors, color));
 		}
 
-		this.modeEl.setText(state.all ? 'all' : 'any');
-		this.modeEl.setAttr('aria-label', 'Cards with any of these tags, or all of them: click to switch');
-		for (const [el, key] of [[this.shownEl, 'tags'], [this.hiddenEl, 'xtags']]) {
-			el.empty();
-			for (const t of [...state[key]].sort()) {
-				const chip = el.createDiv({ cls: 'canvas-board-chip is-' + (key === 'tags' ? 'in' : 'out'), text: '#' + t });
-				const x = chip.createSpan({ cls: 'canvas-board-chip-x', text: '×' });
-				x.addEventListener('click', () => { state[key].delete(t); apply(); });
-			}
+		this.tagsEl.empty();
+		this.tagsSection.toggle(tags.length > 0);
+		for (const t of tags) {
+			const out = state.xtags.has(t);
+			const chip = this.tagsEl.createDiv({ cls: 'canvas-board-chip', text: '#' + t, attr: { 'aria-label': `click to ${out ? 'show' : 'hide'}` } });
+			chip.toggleClass('is-out', out);
+			chip.addEventListener('click', () => toggle(state.xtags, t));
 		}
 
 		this.foldedEl.empty();

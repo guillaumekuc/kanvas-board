@@ -69,10 +69,6 @@
 	cursor: pointer;
 	color: var(--text-accent);
 }
-.canvas-board-pane-input {
-	width: 100%;
-	margin-bottom: var(--size-4-1);
-}
 .canvas-board-chips {
 	display: flex;
 	flex-wrap: wrap;
@@ -88,17 +84,29 @@
 	cursor: pointer;
 	user-select: none;
 }
-.canvas-board-chip.is-in {
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
-	border-color: var(--interactive-accent);
-}
 .canvas-board-chip.is-out {
 	text-decoration: line-through;
 	color: var(--text-faint);
 }
-.canvas-board-chip-x {
-	opacity: 0.7;
+.canvas-board-chip:hover {
+	background: var(--background-modifier-hover);
+}
+/* Color filter: one dot per color, on one line; a hidden color is faded. */
+.canvas-board-swatch {
+	display: inline-flex;
+	padding: 3px;
+	border-radius: 50%;
+	cursor: pointer;
+}
+.canvas-board-swatch:hover {
+	background: var(--background-modifier-hover);
+}
+.canvas-board-swatch .canvas-board-dot {
+	width: 14px;
+	height: 14px;
+}
+.canvas-board-swatch.is-out .canvas-board-dot {
+	opacity: 0.2;
 }
 .canvas-board-dot {
 	width: 10px;
