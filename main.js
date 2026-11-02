@@ -25,6 +25,7 @@ const DEFAULTS = {
 	claudePath: '',
 	layoutDirection: 'TB',
 	cardWarning: '60',
+	hideTagBranches: true, // a hidden tag also hides the cards below its cards (in the fold direction)
 	foldDirection: 'out', // fold hides the cards a card points to (out) or the cards pointing to it (in)
 	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
 };
@@ -467,12 +468,20 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return !!(v.xcolors.size || v.xtags.size);
 	}
 
-	// Hidden = not matching the filter (groups always show), or below a folded card.
+	// Hidden = not matching the filter (groups always show), or below a folded card. With the setting "Hide cards
+	// under hidden tags", a card hidden by a tag also hides its branch, as a fold in the fold direction would.
 	refreshView(canvas) {
 		const v = this.viewState(canvas);
 		const hidden = new Set();
 		if (this.filtering(v))
 			for (const node of canvas.nodes.values()) if (node.getData().type !== 'group' && !this.matches(node, v)) hidden.add(node.id);
+		if (v.xtags.size && this.settings.hideTagBranches)
+			for (const node of canvas.nodes.values()) {
+				const tags = this.cardTagSet(node);
+				if (![...v.xtags].some(t => tags.has(t))) continue;
+				for (const id of this.branchLevels(canvas, node.id, this.settings.foldDirection).flat())
+					if (canvas.nodes.get(id) && canvas.nodes.get(id).getData().type !== 'group') hidden.add(id);
+			}
 		const folded = new Map();
 		for (const [root, dir] of this.folds(canvas)) {
 			const below = this.branchLevels(canvas, root, dir).flat();
@@ -756,7 +765,8 @@ class FilterPane {
 			const h = s.createDiv({ cls: 'canvas-board-pane-heading' });
 			h.createSpan({ text: title });
 			if (reset) {
-				const r = h.createSpan({ cls: 'canvas-board-pane-reset', text: 'reset' });
+				const r = h.createSpan({ cls: 'clickable-icon canvas-board-pane-reset', attr: { 'aria-label': 'Reset' } });
+				setIcon(r, 'rotate-ccw');
 				r.addEventListener('click', () => { reset(); apply(); });
 			}
 			return s;
@@ -770,7 +780,9 @@ class FilterPane {
 		this.foldedEl = this.foldedSection.createDiv({ cls: 'canvas-board-pane-list' });
 
 		const foot = this.body.createDiv({ cls: 'canvas-board-pane-foot' });
-		foot.createEl('button', { text: 'Show all' }).addEventListener('click', () => plugin.showAll(canvas));
+		const all = foot.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': 'Show all (clear filter and folds)' } });
+		setIcon(all, 'eye');
+		all.addEventListener('click', () => plugin.showAll(canvas));
 		this.toggle(false);
 	}
 
@@ -863,6 +875,13 @@ class CanvasBoardSettings extends PluginSettingTab {
 			.addOptions({ out: 'Outgoing', in: 'Incoming' })
 			.setValue(this.plugin.settings.foldDirection)
 			.onChange(async v => { this.plugin.settings.foldDirection = v; await this.plugin.saveData(this.plugin.settings); }));
+		new Setting(containerEl).setName('Hide cards under hidden tags').setDesc('Hiding a tag in the filter pane also hides the branch of each card that has it, in the fold direction.').addToggle(t => t
+			.setValue(this.plugin.settings.hideTagBranches)
+			.onChange(async v => {
+				this.plugin.settings.hideTagBranches = v;
+				await this.plugin.saveData(this.plugin.settings);
+				for (const canvas of this.plugin.panes.keys()) this.plugin.refreshView(canvas);
+			}));
 		text('Card count warning', 'The status bar card count turns to the warning color past this many cards (0: never).', 'cardWarning');
 		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
 	}
