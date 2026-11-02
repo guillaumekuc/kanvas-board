@@ -163,7 +163,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			const d = canvas.getData();
 			if (!this.app.vault.getAbstractFileByPath(cb.ARCHIVE_DIR)) await this.app.vault.createFolder(cb.ARCHIVE_DIR);
 			for (const node of sel) {
-				const a = cb.archiveNote(d, node.id, board, window.moment().format('YYYY-MM-DD'), this.cardTags(node, board));
+				const a = cb.archiveNote(d, node.id, board, window.moment().format('YYYY-MM-DD'), this.cardContexts(node, board));
 				await this.app.vault.create(this.freePath(cb.ARCHIVE_DIR + '/', a.name, '.md'), a.content);
 			}
 			this.edit(canvas, sel.map(n => ({ op: 'remove', id: n.id })));
@@ -660,14 +660,14 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return child && ((child.editMode && child.editMode.editor) || child.editor) || null;
 	}
 
-	// context/* tags of the note a card links, so its archive note keeps the same context.
-	cardTags(node, board) {
+	// Context of the note a card links (its `context:` list), so its archive note keeps the same context.
+	cardContexts(node, board) {
 		const d = node.getData();
 		const target = d.type === 'file' ? d.file : ((d.text || '').match(/\[\[([^\]|#]+)/) || [])[1];
 		const file = target && this.app.metadataCache.getFirstLinkpathDest(target.trim(), board);
 		const fm = file && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
-		const tags = fm && [].concat(fm.tags || []).filter(t => String(t).startsWith('context/'));
-		return tags && tags.length ? tags : undefined;
+		const c = fm && fm.context ? [].concat(fm.context).map(String) : [];
+		return c.length ? c : undefined;
 	}
 
 	async restore(note) {

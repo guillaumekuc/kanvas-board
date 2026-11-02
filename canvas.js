@@ -235,14 +235,14 @@ const noteName = text => (String(text).split('\n').find(l => l.trim()) || 'Card'
   .replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, '').replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2').replace(/[#^|[\]*_`>:\\/"?<]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60).trim() || 'Card';
 const yamlStr = s => JSON.stringify(String(s));
 
-// Returns { name, content, ops }. `tags` is the archived card's note tags when it links one, else context/GA.
-function archiveNote(d, id, board, date, tags = ['context/GA']) {
+// Returns { name, content, ops }. `contexts`: the context of the note the archived card links, else G&A.
+function archiveNote(d, id, board, date, contexts = ['G&A']) {
   const n = d.nodes.find(n => n.id === id);
   if (!n) throw new Error('no node ' + id);
   const edges = d.edges.filter(e => e.fromNode === id || e.toNode === id)
     .map(e => yamlStr([e.id, e.fromNode, e.fromSide || '', e.toNode, e.toSide || '', e.label || ''].join(' | ')));
   const fm = [
-    '---', 'tags:', ...tags.map(t => `  - ${t}`),
+    '---', 'context:', ...contexts.map(c => `  - ${c}`),
     `archived-from: "[[${board}]]"`, `archived: ${date}`, `card-id: ${yamlStr(n.id)}`, `card-type: ${n.type}`,
     ...(n.type === 'file' ? [`card-file: ${yamlStr(n.file)}`] : []), ...(n.type === 'link' ? [`card-url: ${yamlStr(n.url)}`] : []),
     `x: ${n.x}`, `y: ${n.y}`, `width: ${n.width}`, `height: ${n.height}`, `color: ${yamlStr(n.color || '')}`,
@@ -496,8 +496,8 @@ function check(board) {
         const src = fs.readFileSync(abs(note), 'utf8');
         const fm = (src.match(/^---\n([\s\S]*?)\n---/) || [])[1];
         const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map(m => m[1]) : [];
-        if (keys.join() !== 'tags') add(`note frontmatter is not \`tags\` only (${keys.join(', ') || 'none'})`);
-        if ([...(fm || '').matchAll(/context\//g)].length !== 1) add('note does not have exactly one context/* tag');
+        if (keys.join() !== 'context') add(`note frontmatter is not \`context\` only (${keys.join(', ') || 'none'})`);
+        if (noteContexts(fm).length !== 1) add('note does not have exactly one context');
         for (const s of ['Aim', 'Design']) if (!new RegExp(`^## ${s}\\s*$`, 'm').test(src)) add(`note has no ## ${s}`);
         if (!/^### Done when\s*$/m.test(src)) add('note has no ### Done when (under Aim)');
         if (n.color === '4' && !/^## Output\s*$/m.test(src)) add('green card, note has no ## Output');
@@ -592,12 +592,22 @@ function freePath(dir, name, ext) {
   }
 }
 
-// Tags of the note a card links, to file its archive note under the same context.
-function cardTags(n) {
+// Contexts in a note's frontmatter text: the `context:` list (or a single value).
+function noteContexts(fm) {
+  if (!fm) return [];
+  const unq = s => s.trim().replace(/^(["'])(.*)\1$/, '$2');
+  const m = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m.exec(fm);
+  if (!m) return [];
+  return (m[1].trim() ? m[1].replace(/^\[|\]$/g, '').split(',') : m[2].split(/\r?\n/).filter(l => l.trim()).map(l => l.replace(/^\s+-\s*/, '')))
+    .map(unq).filter(Boolean);
+}
+
+// Context of the note a card links, to file its archive note under the same context.
+function cardContexts(n) {
   const { note } = cardLinks(n);
   const fm = note && (fs.readFileSync(abs(note), 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1];
-  const tags = fm ? [...fm.matchAll(/^\s+- (context\/\S+)$/gm)].map(m => m[1]) : [];
-  return tags.length ? tags : undefined;
+  const c = noteContexts(fm);
+  return c.length ? c : undefined;
 }
 
 const toTrash = rel => { const dest = abs(path.posix.join('.trash', path.posix.basename(rel))); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.renameSync(abs(rel), dest); };
@@ -670,7 +680,7 @@ if (require.main === module) {
       const ids = rest[0].split(',');
       for (const id of ids) {
         const n = d.nodes.find(n => n.id === id);
-        const a = archiveNote(d, id, board, today(), n && cardTags(n));
+        const a = archiveNote(d, id, board, today(), n && cardContexts(n));
         const file = freePath(ARCHIVE_DIR, a.name, '.md');
         fs.mkdirSync(abs(ARCHIVE_DIR), { recursive: true });
         fs.writeFileSync(abs(file), a.content);
