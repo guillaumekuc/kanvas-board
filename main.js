@@ -103,10 +103,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		// `menu` is [title, Lucide icon], or null for a command with no menu item.
 		const actions = [];
 		const runAction = (run, canvas, sel) => Promise.resolve(run(canvas, sel)).catch(e => new Notice(`Canvas board: ${e.message}`));
-		const canvasCommand = (id, name, menu, test, run, hotkeys) => {
+		const canvasCommand = (id, name, menu, test, run) => {
 			if (menu) actions.push({ menu, test, run });
 			this.addCommand({
-				id, name, hotkeys,
+				id, name,
 				checkCallback: checking => {
 					const canvas = this.activeCanvas();
 					if (!canvas || !test(canvas, [...canvas.selection])) return false;
@@ -167,7 +167,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			}
 			this.edit(canvas, sel.map(n => ({ op: 'remove', id: n.id })));
 			new Notice(`Canvas board: archived ${sel.length} card${sel.length > 1 ? 's' : ''}`);
-		}, [{ modifiers: ['Alt'], key: 'a' }]);
+		});
 
 		// Fold hides the cards linked to a card, following edges in the "Fold direction" setting (out: the cards it
 		// points to, then on; in: the cards pointing to it, then on). Unfold shows N levels again and folds the cards
