@@ -192,7 +192,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			}).open());
 		this.addCommand({
 			id: 'template-insert',
-			name: 'New cards from template (next to the selection)',
+			name: 'New cards from template',
 			checkCallback: checking => {
 				const canvas = this.activeCanvas();
 				if (!canvas) return false;
@@ -419,13 +419,14 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return String(text || '(empty)').replace(/\s+/g, ' ').trim().slice(0, 200);
 	}
 
-	// Template cards go right of the selection, top-aligned, or at the middle of the view; they end up selected.
+	// Template cards are centered on the visible canvas, whatever is selected; they end up selected.
 	async insertTemplate(canvas, file) {
 		const tpl = JSON.parse(await this.app.vault.read(file));
-		const sel = [...canvas.selection].filter(x => !x.from).map(n => n.getData());
-		let at;
-		if (sel.length) at = { x: Math.max(...sel.map(n => n.x + n.width)) + 40, y: Math.min(...sel.map(n => n.y)) };
-		else { const b = canvas.getViewportBBox(); at = { x: Math.round((b.minX + b.maxX) / 2), y: Math.round((b.minY + b.maxY) / 2) }; }
+		const nodes = tpl.nodes || [];
+		const b = canvas.getViewportBBox();
+		const w = nodes.length ? Math.max(...nodes.map(n => n.x + n.width)) - Math.min(...nodes.map(n => n.x)) : 0;
+		const h = nodes.length ? Math.max(...nodes.map(n => n.y + n.height)) - Math.min(...nodes.map(n => n.y)) : 0;
+		const at = { x: Math.round((b.minX + b.maxX - w) / 2), y: Math.round((b.minY + b.maxY - h) / 2) };
 		const ops = this.cb.templateOps(tpl, at);
 		this.edit(canvas, ops);
 		const added = ops.filter(o => o.op === 'add').map(o => canvas.nodes.get(o.node.id)).filter(Boolean);
