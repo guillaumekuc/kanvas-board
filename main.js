@@ -765,7 +765,8 @@ class FilterPane {
 			const h = s.createDiv({ cls: 'canvas-board-pane-heading' });
 			h.createSpan({ text: title });
 			if (reset) {
-				const r = h.createSpan({ cls: 'canvas-board-pane-reset', text: 'reset' });
+				const r = h.createSpan({ cls: 'clickable-icon canvas-board-pane-reset', attr: { 'aria-label': 'Reset' } });
+				setIcon(r, 'rotate-ccw');
 				r.addEventListener('click', () => { reset(); apply(); });
 			}
 			return s;
@@ -779,7 +780,9 @@ class FilterPane {
 		this.foldedEl = this.foldedSection.createDiv({ cls: 'canvas-board-pane-list' });
 
 		const foot = this.body.createDiv({ cls: 'canvas-board-pane-foot' });
-		foot.createEl('button', { text: 'Show all' }).addEventListener('click', () => plugin.showAll(canvas));
+		const all = foot.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': 'Show all (clear filter and folds)' } });
+		setIcon(all, 'eye');
+		all.addEventListener('click', () => plugin.showAll(canvas));
 		this.toggle(false);
 	}
 

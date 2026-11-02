@@ -65,9 +65,7 @@
 	flex: 1;
 }
 .canvas-board-pane-reset {
-	font-weight: normal;
-	cursor: pointer;
-	color: var(--text-accent);
+	padding: 0 var(--size-2-1);
 }
 .canvas-board-chips {
 	display: flex;
@@ -126,5 +124,7 @@
 	background: var(--background-modifier-hover);
 }
 .canvas-board-pane-foot {
+	display: flex;
+	justify-content: center;
 	margin-top: var(--size-4-3);
 }
