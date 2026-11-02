@@ -128,3 +128,39 @@
 	justify-content: center;
 	margin-top: var(--size-4-3);
 }
+
+/* Find bar (prototype): the notes' find bar classes, floating at the top center of the canvas. */
+.canvas-board-find {
+	position: absolute;
+	top: var(--size-4-2);
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 10;
+	width: min(480px, calc(100% - 2 * var(--size-4-4)));
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-s);
+}
+.canvas-board-find .document-search {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+}
+.canvas-board-find .document-search-input {
+	flex: 1;
+}
+.canvas-board-find .document-search-count {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+}
+.canvas-board-find .document-search-buttons {
+	display: flex;
+}
+.canvas-node.canvas-board-find-match .canvas-node-container {
+	box-shadow: 0 0 0 3px var(--text-highlight-bg);
+}
+.canvas-node.canvas-board-find-match.is-current .canvas-node-container {
+	box-shadow: 0 0 0 3px var(--text-accent);
+}

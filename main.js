@@ -1,10 +1,10 @@
 // Canvas board: color hotkeys for selected canvas cards, a command that opens a terminal running the
 // canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
 // to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (collapse, expand, merge,
-// split, extract), archive/restore, view tools (search and jump, filter pane, fold), card templates and a status bar card count. Copies skill/SKILL.md to
+// split, extract), archive/restore, view tools (search and jump, find bar, filter pane, fold), card templates and a status bar card count. Copies skill/SKILL.md to
 // .claude/skills/canvas-board/ on load.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
-const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, setIcon } = require('obsidian');
+const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, Scope, setIcon } = require('obsidian');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -239,6 +239,22 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				return true;
 			},
 		});
+		// Prototype next to "Search cards and jump": a find bar like the one in notes (count, previous / next).
+		this.finds = new Map(); // canvas → FindBar
+		this.addCommand({
+			id: 'find',
+			name: 'Find in canvas (count, previous / next)',
+			checkCallback: checking => {
+				const canvas = this.activeCanvas();
+				if (!canvas) return false;
+				if (!checking) {
+					let f = this.finds.get(canvas);
+					if (!f) { f = new FindBar(this, canvas); this.finds.set(canvas, f); }
+					f.open();
+				}
+				return true;
+			},
+		});
 		this.addCommand({
 			id: 'filter',
 			name: 'Filter cards by color or tag (open or close the filter pane)',
@@ -318,6 +334,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				this.pane(canvas).update();
 			}
 			for (const [canvas, pane] of this.panes) if (!open.has(canvas)) { pane.destroy(); this.panes.delete(canvas); }
+			for (const [canvas, f] of this.finds) if (!open.has(canvas)) { f.destroy(); this.finds.delete(canvas); }
 		};
 		this.registerEvent(this.app.workspace.on('active-leaf-change', tick));
 		this.registerInterval(window.setInterval(tick, 2000));
@@ -325,6 +342,8 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		this.register(() => {
 			for (const pane of this.panes.values()) pane.destroy();
 			this.panes.clear();
+			for (const f of this.finds.values()) f.destroy();
+			this.finds.clear();
 			for (const l of this.app.workspace.getLeavesOfType('canvas')) {
 				const canvas = l.view.canvas;
 				if (!this.views.has(canvas)) continue;
@@ -764,6 +783,101 @@ class Picker extends FuzzySuggestModal {
 	getItems() { return this.items; }
 	getItemText(item) { return this.label(item); }
 	onChooseItem(item) { Promise.resolve(this.onChoose(item)).catch(e => new Notice(`Canvas board: ${e.message}`)); }
+}
+
+// Find bar at the top of a canvas, built with the classes of the notes' find bar (document-search-*) so it looks
+// the same: matches are the cards whose text (or file, link, group label) contains the query, ignoring case, in
+// reading order (top to bottom, then left to right). Typing jumps to the first one; Enter / Shift+Enter or the
+// arrows go to the next / previous (it wraps), Escape or the cross closes. Every match is outlined, the current one
+// selected and zoomed to (a hidden one clears filter and folds first). Keys typed in the field never reach the canvas.
+class FindBar {
+	constructor(plugin, canvas) {
+		this.plugin = plugin;
+		this.canvas = canvas;
+		this.matches = [];
+		this.index = -1;
+		const el = this.el = canvas.wrapperEl.createDiv({ cls: 'document-search-container canvas-board-find' });
+		for (const ev of ['pointerdown', 'mousedown', 'wheel', 'dblclick', 'contextmenu']) el.addEventListener(ev, e => e.stopPropagation());
+		const box = el.createDiv({ cls: 'document-search' });
+		const field = box.createDiv({ cls: 'search-input-container document-search-input' });
+		this.input = field.createEl('input', { type: 'search', attr: { placeholder: 'Find…', spellcheck: 'false' } });
+		this.countEl = box.createDiv({ cls: 'document-search-count' });
+		const buttons = box.createDiv({ cls: 'document-search-buttons' });
+		const button = (icon, label, fn) => {
+			const b = buttons.createEl('button', { cls: 'document-search-button clickable-icon', attr: { 'aria-label': label } });
+			setIcon(b, icon);
+			b.addEventListener('click', fn);
+		};
+		button('arrow-up', 'Previous (Shift+Enter)', () => this.step(-1));
+		button('arrow-down', 'Next (Enter)', () => this.step(1));
+		const close = box.createDiv({ cls: 'document-search-close-button clickable-icon', attr: { 'aria-label': 'Close (Escape)' } });
+		setIcon(close, 'x');
+		close.addEventListener('click', () => this.close());
+		// Own key scope while the field has focus: canvas keys (Delete, arrows) stay off, global hotkeys still work.
+		this.scope = new Scope(plugin.app.scope);
+		this.input.addEventListener('keydown', e => {
+			if (e.key === 'Enter') { e.preventDefault(); this.step(e.shiftKey ? -1 : 1); }
+			else if (e.key === 'Escape') { e.preventDefault(); this.close(); }
+		});
+		this.input.addEventListener('focus', () => plugin.app.keymap.pushScope(this.scope));
+		this.input.addEventListener('blur', () => plugin.app.keymap.popScope(this.scope));
+		this.input.addEventListener('input', () => this.search());
+		el.hide();
+	}
+
+	open() {
+		this.el.show();
+		this.input.focus();
+		this.input.select();
+		if (this.input.value) this.search();
+	}
+
+	close() {
+		this.mark([]);
+		this.el.hide();
+		this.input.blur();
+	}
+
+	search() {
+		const q = this.input.value.trim().toLowerCase();
+		const p = this.plugin;
+		this.matches = !q ? [] : [...this.canvas.nodes.values()]
+			.filter(n => p.cardText(n).toLowerCase().includes(q))
+			.sort((a, b) => a.y - b.y || a.x - b.x);
+		this.index = this.matches.length ? 0 : -1;
+		this.mark(this.matches);
+		this.show();
+	}
+
+	step(d) {
+		if (!this.matches.length) return;
+		this.index = (this.index + d + this.matches.length) % this.matches.length;
+		this.show();
+	}
+
+	mark(nodes) {
+		for (const n of this.canvas.nodes.values()) n.nodeEl.removeClass('canvas-board-find-match', 'is-current');
+		for (const n of nodes) n.nodeEl.addClass('canvas-board-find-match');
+	}
+
+	show() {
+		const { canvas, plugin } = this;
+		const q = this.input.value.trim();
+		this.countEl.setText(!q ? '' : this.matches.length ? `${this.index + 1} / ${this.matches.length}` : 'No results');
+		const node = this.matches[this.index];
+		if (!node) return;
+		for (const n of this.matches) n.nodeEl.toggleClass('is-current', n === node);
+		if (plugin.isHidden(canvas, node)) { plugin.showAll(canvas); new Notice('Canvas board: filter and folds cleared to show the card'); }
+		canvas.selectOnly(node);
+		canvas.zoomToSelection();
+		this.input.focus();
+	}
+
+	destroy() {
+		this.mark([]);
+		this.plugin.app.keymap.popScope(this.scope);
+		this.el.remove();
+	}
 }
 
 // Filter pane in the top-left corner of a canvas, like Graph view's filters: closed, a filter button; open,
