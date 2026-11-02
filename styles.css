@@ -3,7 +3,7 @@
 	color: var(--text-warning);
 }
 
-/* Filter and fold: cards and edges hidden on screen only (the .canvas file keeps them). */
+/* Filter and fold: cards and edges hidden on screen only (the .canvas file keeps them; folds are a card field). */
 .canvas-board-hidden {
 	display: none !important;
 }

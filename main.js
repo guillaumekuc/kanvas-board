@@ -170,18 +170,16 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		}, [{ modifiers: ['Alt'], key: 'a' }]);
 
 		// Fold hides the cards linked to a card, following edges in the "Fold direction" setting (out: the cards it
-		// points to, then on; in: the cards pointing to it, then on); view only, like the filter. Unfold shows N
-		// levels again and folds the cards at level N, so a branch opens in stages, like folders.
-		const folded = (c, n) => this.viewState(c, false).folded.has(n.id);
-		canvasCommand('fold', 'Fold branch of the selected card', ['Fold branch', 'chevrons-down-up'], (c, [n, ...rest]) =>
-			!!n && !rest.length && !folded(c, n) && this.branchLinks(c, this.settings.foldDirection).has(n.id), (canvas, [node]) => {
-			this.viewState(canvas).folded.set(node.id, this.settings.foldDirection);
-			this.refreshView(canvas);
-		});
-		for (const [levels, id, name, menu] of [[1, 'unfold', 'Unfold one level of the selected card', ['Unfold one level', 'chevron-down']],
-			[2, 'unfold-2', 'Unfold two levels of the selected card', null], [3, 'unfold-3', 'Unfold three levels of the selected card', null],
-			[Infinity, 'unfold-all', 'Unfold the whole branch of the selected card', ['Unfold whole branch', 'chevrons-up-down']]])
-			canvasCommand(id, name, menu, (c, [n, ...rest]) => !!n && !rest.length && folded(c, n), (canvas, [node]) => this.unfold(canvas, node.id, levels));
+		// points to, then on; in: the cards pointing to it, then on). Unfold shows N levels again and folds the cards
+		// at level N, so a branch opens in stages, like folders. Folds are stored on the card (see foldOf), so Ctrl+Z
+		// undoes them. With several cards selected, each one that can be folded (or unfolded) is.
+		const canFold = (c, n) => !this.foldOf(n) && this.branchLinks(c, this.settings.foldDirection).has(n.id);
+		canvasCommand('fold', 'Fold branch of the selected cards', ['Fold branch', 'chevrons-down-up'], (c, sel) => sel.some(n => canFold(c, n)), (canvas, sel) =>
+			this.setFolds(canvas, new Map(sel.filter(n => canFold(canvas, n)).map(n => [n.id, this.settings.foldDirection]))));
+		for (const [levels, id, name, menu] of [[1, 'unfold', 'Unfold one level of the selected cards', ['Unfold one level', 'chevron-down']],
+			[2, 'unfold-2', 'Unfold two levels of the selected cards', null], [3, 'unfold-3', 'Unfold three levels of the selected cards', null],
+			[Infinity, 'unfold-all', 'Unfold the whole branch of the selected cards', ['Unfold whole branch', 'chevrons-up-down']]])
+			canvasCommand(id, name, menu, (c, sel) => sel.some(n => this.foldOf(n)), (canvas, sel) => this.unfold(canvas, sel.filter(n => this.foldOf(n)).map(n => n.id), levels));
 		for (const [dir, label] of [['out', 'outgoing (cards it points to)'], ['in', 'incoming (cards pointing to it)']])
 			this.addCommand({
 				id: `fold-direction-${dir}`,
@@ -221,9 +219,9 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			},
 		});
 
-		// Search and jump, filter: the active canvas only. Filter and folds hide cards (styles.css), the file is
-		// untouched, and both reset when the board is reopened.
-		this.views = new WeakMap(); // canvas → { colors, xcolors, tags, xtags, all, folded (id → direction), hidden }
+		// Search and jump, filter: the active canvas only. Filter and folds hide cards (styles.css). The filter is
+		// view only (the file is untouched, it resets when the board is reopened); folds are in the file.
+		this.views = new WeakMap(); // canvas → { xcolors, xtags (hidden colors and tags), hidden (card ids) }
 		this.panes = new Map(); // canvas → FilterPane, one per open canvas
 		this.addCommand({
 			id: 'search',
@@ -314,7 +312,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				const canvas = l.view.canvas;
 				if (!canvas || !canvas.wrapperEl) continue;
 				open.add(canvas);
-				if (this.views.has(canvas)) this.refreshView(canvas);
+				this.refreshView(canvas); // folds come with the file: every canvas
 				this.pane(canvas).update();
 			}
 			for (const [canvas, pane] of this.panes) if (!open.has(canvas)) { pane.destroy(); this.panes.delete(canvas); }
@@ -329,7 +327,8 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				const canvas = l.view.canvas;
 				if (!this.views.has(canvas)) continue;
 				delete canvas.updateSelection;
-				this.showAll(canvas);
+				delete canvas.applyHistory;
+				this.paint(canvas, new Set(), new Map()); // folds stay in the file, only the screen is cleared
 			}
 		});
 	}
@@ -349,6 +348,14 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				for (const x of [...this.selection]) if (v.hidden.has(x.id) || (x.from && (v.hidden.has(x.from.node.id) || v.hidden.has(x.to.node.id)))) this.selection.delete(x);
 			});
 		};
+		// Undo / redo may bring folds back or take them away: redraw at once.
+		const plugin = this;
+		const history = canvas.applyHistory;
+		if (history) canvas.applyHistory = function (...a) {
+			const r = history.apply(this, a);
+			plugin.refreshView(this);
+			return r;
+		};
 		return v;
 	}
 
@@ -356,9 +363,41 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return this.viewState(canvas, false).hidden.has(node.id);
 	}
 
+	// Clears the filter and unfolds every card (one undo step for the folds).
 	showAll(canvas) {
 		const v = this.viewState(canvas, false);
-		for (const k of ['colors', 'xcolors', 'tags', 'xtags', 'folded']) v[k].clear();
+		v.xcolors.clear();
+		v.xtags.clear();
+		const folds = this.folds(canvas);
+		if (folds.size) this.setFolds(canvas, new Map([...folds.keys()].map(id => [id, null])));
+		else this.refreshView(canvas);
+	}
+
+	// A fold is stored on the card as "canvasBoard": {"folded": "in" | "out"} (the fold direction). JSON Canvas
+	// 1.0 has no such field; other readers ignore it and show every card. Obsidian keeps it (node.unknownData).
+	foldOf(node) {
+		const cb = node.getData().canvasBoard;
+		return (cb && cb.folded) || null;
+	}
+
+	folds(canvas) {
+		const m = new Map();
+		for (const n of canvas.nodes.values()) { const dir = this.foldOf(n); if (dir) m.set(n.id, dir); }
+		return m;
+	}
+
+	// `changes`: card id → direction to fold, or null to unfold. One canvas edit, one undo step.
+	setFolds(canvas, changes) {
+		if (!changes.size) return;
+		const d = canvas.getData();
+		for (const n of d.nodes) {
+			if (!changes.has(n.id)) continue;
+			const cb = { ...(n.canvasBoard || {}) };
+			const dir = changes.get(n.id);
+			if (dir) cb.folded = dir; else delete cb.folded;
+			if (Object.keys(cb).length) n.canvasBoard = cb; else delete n.canvasBoard;
+		}
+		this.edit(canvas, [], d);
 		this.refreshView(canvas);
 	}
 
@@ -393,32 +432,26 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return levels;
 	}
 
-	// Shows `levels` levels of a folded branch; the cards at the last shown level that lead further get folded.
-	unfold(canvas, id, levels) {
-		const v = this.viewState(canvas);
-		const dir = v.folded.get(id);
-		if (!dir) return;
-		v.folded.delete(id);
-		const below = this.branchLevels(canvas, id, dir);
-		const links = this.branchLinks(canvas, dir);
-		if (levels < below.length) for (const x of below[levels - 1]) if ((links.get(x) || []).length) v.folded.set(x, dir);
-		this.refreshView(canvas);
+	// Shows `levels` levels of each folded branch; the cards at the last shown level that lead further get folded.
+	unfold(canvas, ids, levels) {
+		const changes = new Map();
+		for (const id of ids) {
+			const node = canvas.nodes.get(id);
+			const dir = node && this.foldOf(node);
+			if (!dir) continue;
+			changes.set(id, null);
+			const below = this.branchLevels(canvas, id, dir);
+			const links = this.branchLinks(canvas, dir);
+			if (levels < below.length) for (const x of below[levels - 1]) if ((links.get(x) || []).length) changes.set(x, dir);
+		}
+		this.setFolds(canvas, changes);
 	}
 
-	// Tags of a card (no #): `#tags` in its text and the frontmatter tags of the notes it links or shows. Exact
-	// match only: #tag1 is not #tag10.
+	// Tags of a card (no #): the `#tags` in its own text, never those of the notes it links. Exact match only:
+	// #tag1 is not #tag10.
 	cardTagSet(node) {
-		const d = node.getData();
-		const board = node.canvas.view && node.canvas.view.file ? node.canvas.view.file.path : '';
 		const tags = new Set();
-		for (const m of (d.text || '').matchAll(/(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g)) if (!/^\d+$/.test(m[1])) tags.add(m[1]);
-		const links = [...(d.text || '').matchAll(/\[\[([^\]|#]+)/g)].map(m => m[1].trim());
-		if (d.type === 'file') links.push(d.file);
-		for (const l of links) {
-			const file = this.app.metadataCache.getFirstLinkpathDest(l, board);
-			const fm = file && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
-			if (fm) for (const t of [].concat(fm.tags || [])) tags.add(String(t).replace(/^#/, ''));
-		}
+		for (const m of (node.getData().text || '').matchAll(/(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g)) if (!/^\d+$/.test(m[1])) tags.add(m[1]);
 		return tags;
 	}
 
@@ -446,12 +479,21 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		if (this.filtering(v))
 			for (const node of canvas.nodes.values()) if (node.getData().type !== 'group' && !this.matches(node, v)) hidden.add(node.id);
 		const folded = new Map();
-		for (const [root, dir] of v.folded) {
+		for (const [root, dir] of this.folds(canvas)) {
 			const below = this.branchLevels(canvas, root, dir).flat();
 			folded.set(root, below.length);
 			for (const id of below) hidden.add(id);
 		}
 		v.hidden = hidden;
+		this.paint(canvas, hidden, folded);
+		if ([...canvas.selection].some(x => hidden.has(x.id))) canvas.updateSelection(() => {});
+		if (canvas === this.activeCanvas()) this.updateViewLabel(canvas);
+		const pane = this.panes.get(canvas);
+		if (pane) pane.update();
+	}
+
+	// Hides the `hidden` cards and their edges; `folded` (id → count) gets the "· N folded" badge.
+	paint(canvas, hidden, folded) {
 		for (const node of canvas.nodes.values()) {
 			node.nodeEl.toggleClass('canvas-board-hidden', hidden.has(node.id));
 			if (folded.has(node.id)) node.nodeEl.setAttr('data-canvas-board-folded', `· ${folded.get(node.id)} folded`);
@@ -461,10 +503,6 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			const off = hidden.has(e.from.node.id) || hidden.has(e.to.node.id);
 			for (const el of [e.lineGroupEl, e.lineEndGroupEl, e.labelElement && e.labelElement.wrapperEl]) if (el) el.classList.toggle('canvas-board-hidden', off);
 		}
-		if ([...canvas.selection].some(x => hidden.has(x.id))) canvas.updateSelection(() => {});
-		if (canvas === this.activeCanvas()) this.updateViewLabel(canvas);
-		const pane = this.panes.get(canvas);
-		if (pane) pane.update();
 	}
 
 	viewLabel(canvas) {
@@ -535,15 +573,18 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		}
 	}
 
-	// One undo step: the state before is pushed, then the edited data is set. `d` is passed when the caller
-	// already changed it (extract).
+	// One undo step: the state before is pushed (unless the history already ends with it), then the edited data
+	// is set, which pushes it, so Ctrl+Z and Ctrl+Y each take one step. `d` is passed when the caller already changed it (extract).
 	edit(canvas, ops, d = canvas.getData()) {
 		const before = canvas.getData();
 		const retyped = this.cb.applyOps(d, ops);
-		canvas.pushHistory && canvas.pushHistory(before);
+		const h = canvas.history;
+		const last = h && h.data && h.data[h.current];
+		const same = x => JSON.stringify(x, (k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort()) : v); // key order aside
+		if (canvas.pushHistory && (!last || same(last) !== same(before))) canvas.pushHistory(before);
 		if (retyped.length) canvas.setData({ ...d, nodes: d.nodes.filter(n => !retyped.includes(n.id)) });
-		canvas.setData(d);
-		canvas.requestSave();
+		canvas.setData(d); // pushes the new state
+		canvas.requestSave(false); // without false it pushes it again a moment later: one more Ctrl+Z needed
 	}
 
 	activeFile() {
@@ -839,12 +880,12 @@ class FilterPane {
 		}
 
 		this.foldedEl.empty();
-		this.foldedSection.toggle(state.folded.size > 0);
-		for (const id of state.folded.keys()) {
+		this.foldedSection.toggle(folds.size > 0);
+		for (const id of folds.keys()) {
 			const node = canvas.nodes.get(id);
 			if (!node) continue;
 			const row = this.foldedEl.createDiv({ cls: 'canvas-board-pane-row', text: plugin.cardLabel(node).slice(0, 60), attr: { 'aria-label': 'Click to unfold the whole branch' } });
-			row.addEventListener('click', () => plugin.unfold(canvas, id, Infinity));
+			row.addEventListener('click', () => plugin.unfold(canvas, [id], Infinity));
 		}
 	}
 
