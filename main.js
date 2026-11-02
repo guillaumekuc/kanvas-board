@@ -102,10 +102,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		// Refactor and archive commands: one undo step each (Ctrl+Z), same code as canvas.js for agents.
 		// Each is also a right-click item (label `menu`) on the cards it applies to.
 		// `menu` is [title, Lucide icon], or null for a command with no menu item.
-		const actions = [];
-		const runAction = (run, canvas, sel) => Promise.resolve(run(canvas, sel)).catch(e => new Notice(`Canvas board: ${e.message}`));
+		const actions = this.actions = [];
+		const runAction = this.runAction = (run, canvas, sel) => Promise.resolve(run(canvas, sel)).catch(e => new Notice(`Canvas board: ${e.message}`));
 		const canvasCommand = (id, name, menu, test, run) => {
-			if (menu) actions.push({ menu, test, run });
+			actions.push({ id, menu, test, run });
 			this.addCommand({
 				id, name,
 				checkCallback: checking => {
@@ -126,6 +126,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				const { ops, sub } = cb.collapseOps(canvas.getData(), sel.map(n => n.id), file, name);
 				await this.app.vault.create(file, JSON.stringify(sub, null, '\t'));
 				this.edit(canvas, ops);
+				this.undoNotice(canvas, `collapsed ${sel.length} card${sel.length > 1 ? 's' : ''} into ${file}`, [file]);
 			}).open());
 
 		canvasCommand('expand', 'Expand subcanvas card', ['Expand subcanvas', 'unfold-vertical'], (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]), async (canvas, [node]) => {
@@ -162,12 +163,14 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			const board = this.activeFile().path;
 			const d = canvas.getData();
 			if (!this.app.vault.getAbstractFileByPath(cb.ARCHIVE_DIR)) await this.app.vault.createFolder(cb.ARCHIVE_DIR);
+			const notes = [];
 			for (const node of sel) {
 				const a = cb.archiveNote(d, node.id, board, window.moment().format('YYYY-MM-DD'), this.cardContexts(node, board));
-				await this.app.vault.create(this.freePath(cb.ARCHIVE_DIR + '/', a.name, '.md'), a.content);
+				notes.push(this.freePath(cb.ARCHIVE_DIR + '/', a.name, '.md'));
+				await this.app.vault.create(notes[notes.length - 1], a.content);
 			}
 			this.edit(canvas, sel.map(n => ({ op: 'remove', id: n.id })));
-			new Notice(`Canvas board: archived ${sel.length} card${sel.length > 1 ? 's' : ''}`);
+			this.undoNotice(canvas, `archived ${sel.length} card${sel.length > 1 ? 's' : ''}`, notes);
 		});
 
 		// Fold hides the cards linked to a card, following edges in the "Fold direction" setting (out: the cards it
@@ -264,8 +267,8 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 
 		// Right-click on one card, on a selection, or inside a card being edited (Extract).
 		const addActions = (menu, canvas, sel) => {
-			for (const a of actions) if (a.test(canvas, sel))
-				menu.addItem(item => item.setTitle(a.menu[0]).setIcon(a.menu[1]).setSection('canvas-board').onClick(() => runAction(a.run, canvas, sel)));
+			for (const a of actions) if (a.menu && a.test(canvas, sel))
+				menu.addItem(item => item.setTitle(this.keyedTitle(a.menu[0], a.id)).setIcon(a.menu[1]).setSection('canvas-board').onClick(() => runAction(a.run, canvas, sel)));
 		};
 		this.registerEvent(this.app.workspace.on('canvas:selection-menu', (menu, canvas) => addActions(menu, canvas, [...canvas.selection])));
 		this.registerEvent(this.app.workspace.on('canvas:node-menu', (menu, node) =>
@@ -301,6 +304,12 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			name: 'Run pass (recheck the board)',
 			callback: () => this.runPass(),
 		});
+		this.addCommand({
+			id: 'open-board',
+			name: 'Open the board',
+			callback: () => this.openBoard(),
+		});
+		this.addRibbonIcon('kanban-square', 'Open the board (Canvas board)', () => this.openBoard());
 
 		// Card count of the active canvas in the status bar: boards get hard to manage past a threshold.
 		// Next to it, the active filter and folds; click to change them.
@@ -316,6 +325,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				const canvas = l.view.canvas;
 				if (!canvas || !canvas.wrapperEl) continue;
 				open.add(canvas);
+				this.decorate(l.view);
 				this.refreshView(canvas); // folds come with the file: every canvas
 				this.pane(canvas).update();
 			}
@@ -332,12 +342,142 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			this.finds.clear();
 			for (const l of this.app.workspace.getLeavesOfType('canvas')) {
 				const canvas = l.view.canvas;
+				this.undecorate(l.view);
 				if (!this.views.has(canvas)) continue;
 				delete canvas.updateSelection;
 				delete canvas.applyHistory;
 				this.paint(canvas, new Set(), new Map()); // folds stay in the file, only the screen is cleared
 			}
 		});
+	}
+
+	// --- Presentation: where the commands show on screen ---------------------------------------------------------
+	// Control bar and selection toolbar are undocumented canvas DOM (.canvas-controls, canvas.menu.render), like
+	// folds and the filter pane: an Obsidian update may drop those buttons, the commands stay. Header action and
+	// ribbon icon are documented API. See "Undocumented Obsidian internals" in the SOP.
+
+	// Hotkey of a plugin command as Obsidian prints it ("Alt + ↑"), or ''.
+	hotkey(id) {
+		const hm = this.app.hotkeyManager;
+		try { return (hm && hm.printHotkeyForCommand && hm.printHotkeyForCommand(`${this.manifest.id}:${id}`)) || ''; } catch (e) { return ''; }
+	}
+
+	// Tooltip with its key, the way the canvas's own buttons show it ("Zoom to selection\n(Shift + 2)").
+	keyedLabel(label, id) {
+		const k = this.hotkey(id);
+		return k ? `${label}\n(${k})` : label;
+	}
+
+	// Menu item title with its key, muted, after the label.
+	keyedTitle(label, id) {
+		const k = this.hotkey(id);
+		if (!k) return label;
+		return createFragment(f => { f.appendText(label); f.createSpan({ cls: 'canvas-board-key', text: k }); });
+	}
+
+	// A notice with an Undo button: one canvas undo step and the files the action made go to the trash. Only while
+	// the board has not changed since (else the undo would take back something else).
+	undoNotice(canvas, msg, files = []) {
+		const h = canvas.history;
+		const at = h ? h.current : null;
+		const frag = createFragment(f => {
+			f.appendText(`Canvas board: ${msg} `);
+			const b = f.createEl('button', { cls: 'canvas-board-notice-undo', text: 'Undo' });
+			b.addEventListener('click', async () => {
+				if (!h || h.current !== at) { new Notice('Canvas board: the board changed since, use Ctrl+Z'); return; }
+				canvas.undo();
+				for (const p of files) { const file = this.app.vault.getAbstractFileByPath(p); if (file) await this.app.fileManager.trashFile(file); }
+			});
+		});
+		new Notice(frag, 8000);
+	}
+
+	async openBoard() {
+		const board = this.settings.defaultBoard;
+		const leaf = this.app.workspace.getLeavesOfType('canvas').find(l => l.view.file && l.view.file.path === board);
+		if (leaf) { this.app.workspace.setActiveLeaf(leaf, { focus: true }); return; }
+		const file = this.app.vault.getAbstractFileByPath(board);
+		if (!file) { new Notice(`Canvas board: ${board} not found (setting "Default board")`); return; }
+		await this.app.workspace.getLeaf(false).openFile(file);
+	}
+
+	// Runs a plugin command on this canvas view (made active first: a click on its buttons may not focus it).
+	runOn(view, id) {
+		const leaf = this.app.workspace.getLeavesOfType('canvas').find(l => l.view === view);
+		if (leaf && this.app.workspace.activeLeaf !== leaf) this.app.workspace.setActiveLeaf(leaf, { focus: true });
+		this.app.commands.executeCommandById(`${this.manifest.id}:${id}`);
+	}
+
+	// Buttons on a canvas view, added once (tick runs every 2 s and adds back what the canvas redrew away).
+	decorate(view) {
+		const canvas = view.canvas;
+		// View header: Run pass, a command about the whole board.
+		if (!view.canvasBoardAction && view.addAction)
+			view.canvasBoardAction = view.addAction('play', 'Run pass', () => this.runPass());
+		if (view.canvasBoardAction) view.canvasBoardAction.setAttr('aria-label', this.keyedLabel('Run pass', 'run-pass'));
+		// Control bar (top right): Search, Filter, Tidy layout, above Canvas help.
+		const controls = canvas.wrapperEl && canvas.wrapperEl.querySelector('.canvas-controls');
+		if (controls) {
+			let group = controls.querySelector('.canvas-board-controls');
+			if (!group) {
+				group = createDiv({ cls: 'canvas-control-group mod-raised canvas-board-controls' });
+				const help = controls.lastElementChild;
+				controls.insertBefore(group, help);
+				for (const [id, label, icon] of [['find', 'Search current canvas', 'search'], ['filter', 'Filter cards', 'filter'], ['tidy-layout', 'Tidy layout', 'layout-grid']]) {
+					const b = group.createDiv({ cls: 'canvas-control-item', attr: { 'data-command': id, 'data-label': label, 'data-tooltip-position': 'left' } });
+					setIcon(b, icon);
+					b.addEventListener('click', () => this.runOn(view, id));
+				}
+			}
+			for (const b of group.children) b.setAttr('aria-label', this.keyedLabel(b.dataset.label, b.dataset.command));
+		}
+		// Selection toolbar: Fold, Unfold, Archive after the canvas's own buttons, when they apply.
+		const menu = canvas.menu;
+		if (menu && menu.render && !menu.canvasBoardRender) {
+			const orig = menu.canvasBoardRender = menu.render;
+			const plugin = this;
+			menu.render = function (...a) {
+				const r = orig.apply(this, a);
+				try { plugin.menuButtons(canvas); } catch (e) { console.error('canvas-board: selection toolbar', e); }
+				return r;
+			};
+			// The color picker opens on click: its swatches get the state as tooltip.
+			menu.canvasBoardObserver = new MutationObserver(() => {
+				for (const item of menu.menuEl.querySelectorAll('.canvas-color-picker-item:not(.canvas-color-picker-custom)')) {
+					if (item.hasAttribute('aria-label')) continue;
+					const c = (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || '';
+					const row = COLORS.find(x => x[1] === c);
+					if (row) item.setAttrs({ 'aria-label': this.keyedLabel(row[0], `color-${row[2]}`), 'data-tooltip-position': 'top' });
+				}
+			});
+			menu.canvasBoardObserver.observe(menu.menuEl, { childList: true, subtree: true });
+		}
+	}
+
+	menuButtons(canvas) {
+		const el = canvas.menu.menuEl;
+		const sel = [...canvas.selection];
+		if (!sel.length || !el.childElementCount || el.querySelector('.canvas-board-menu-btn')) return;
+		for (const id of ['fold', 'unfold', 'archive']) {
+			const a = this.actions.find(x => x.id === id);
+			if (!a || !a.test(canvas, sel)) continue;
+			const b = el.createEl('button', { cls: 'clickable-icon canvas-board-menu-btn', attr: { 'aria-label': this.keyedLabel(a.menu[0], id), 'data-tooltip-position': 'top' } });
+			setIcon(b, a.menu[1]);
+			b.addEventListener('click', () => this.runAction(a.run, canvas, [...canvas.selection]));
+		}
+	}
+
+	undecorate(view) {
+		const canvas = view.canvas;
+		if (view.canvasBoardAction) { view.canvasBoardAction.remove(); delete view.canvasBoardAction; }
+		if (canvas.wrapperEl) for (const el of canvas.wrapperEl.querySelectorAll('.canvas-board-controls, .canvas-board-menu-btn')) el.remove();
+		const menu = canvas.menu;
+		if (menu && menu.canvasBoardRender) {
+			menu.render = menu.canvasBoardRender;
+			delete menu.canvasBoardRender;
+			menu.canvasBoardObserver.disconnect();
+			delete menu.canvasBoardObserver;
+		}
 	}
 
 	// Filter state of an open canvas. `create` false only reads (an empty state, not stored).
@@ -525,12 +665,20 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		if (pane) pane.update();
 	}
 
-	// Hides the `hidden` cards and their edges; `folded` (id → count) gets the "· N folded" badge.
+	// Hides the `hidden` cards and their edges; `folded` (id → count) gets the "· N folded" badge, a click on it
+	// unfolds one level.
 	paint(canvas, hidden, folded) {
 		for (const node of canvas.nodes.values()) {
 			node.nodeEl.toggleClass('canvas-board-hidden', hidden.has(node.id));
-			if (folded.has(node.id)) node.nodeEl.setAttr('data-canvas-board-folded', `· ${folded.get(node.id)} folded`);
-			else node.nodeEl.removeAttribute('data-canvas-board-folded');
+			let badge = node.nodeEl.querySelector(':scope > .canvas-board-folded');
+			if (!folded.has(node.id)) { if (badge) badge.remove(); continue; }
+			if (!badge) {
+				badge = node.nodeEl.createDiv({ cls: 'canvas-board-folded', attr: { 'data-tooltip-position': 'bottom' } });
+				for (const ev of ['pointerdown', 'mousedown', 'dblclick']) badge.addEventListener(ev, e => e.stopPropagation());
+				badge.addEventListener('click', e => { e.stopPropagation(); this.unfold(canvas, [node.id], 1); });
+			}
+			badge.setText(`· ${folded.get(node.id)} folded`);
+			badge.setAttr('aria-label', this.keyedLabel('Unfold one level', 'unfold'));
 		}
 		for (const e of canvas.edges.values()) {
 			const off = hidden.has(e.from.node.id) || hidden.has(e.to.node.id);
@@ -891,7 +1039,7 @@ class FilterPane {
 		// Clicks and scrolls stay in the pane (no canvas pan, no deselect).
 		for (const ev of ['pointerdown', 'mousedown', 'wheel', 'dblclick', 'contextmenu']) el.addEventListener(ev, e => e.stopPropagation());
 		const head = el.createDiv({ cls: 'canvas-board-pane-head' });
-		const btn = head.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': 'Filter cards', 'data-tooltip-position': 'right' } });
+		const btn = head.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': plugin.keyedLabel('Filter cards', 'filter'), 'data-tooltip-position': 'right' } });
 		setIcon(btn, 'filter');
 		btn.addEventListener('click', () => this.toggle());
 		this.badge = head.createSpan({ cls: 'canvas-board-pane-badge' });
