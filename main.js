@@ -180,7 +180,8 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		for (const [levels, id, name, menu] of [[1, 'unfold', 'Unfold one level of the selected cards', ['Unfold one level', 'chevron-down']],
 			[2, 'unfold-2', 'Unfold two levels of the selected cards', null], [3, 'unfold-3', 'Unfold three levels of the selected cards', null],
 			[Infinity, 'unfold-all', 'Unfold the whole branch of the selected cards', ['Unfold whole branch', 'chevrons-up-down']]])
-			canvasCommand(id, name, menu, (c, sel) => sel.some(n => this.foldOf(n)), (canvas, sel) => this.unfold(canvas, sel.filter(n => this.foldOf(n)).map(n => n.id), levels));
+			canvasCommand(id, name, menu, (c, sel) => sel.some(n => this.unfoldTargets(c, n.id).length), (canvas, sel) =>
+				this.unfold(canvas, [...new Set(sel.flatMap(n => this.unfoldTargets(canvas, n.id)))], levels));
 		for (const [dir, label] of [['out', 'outgoing (cards it points to)'], ['in', 'incoming (cards pointing to it)']])
 			this.addCommand({
 				id: `fold-direction-${dir}`,
@@ -431,6 +432,29 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			level = next;
 		}
 		return levels;
+	}
+
+	// The cards an unfold on `id` applies to: the card itself if folded, else the nearest folded cards of its open
+	// branch (in the fold direction, not past another fold), so pressing unfold again opens the next level.
+	unfoldTargets(canvas, id) {
+		const node = canvas.nodes.get(id);
+		if (!node) return [];
+		if (this.foldOf(node)) return [id];
+		const links = this.branchLinks(canvas, this.settings.foldDirection);
+		const seen = new Set([id]);
+		const found = [];
+		let level = [id];
+		while (level.length) {
+			const next = [];
+			for (const x of level) for (const y of links.get(x) || []) {
+				if (seen.has(y)) continue;
+				seen.add(y);
+				const n = canvas.nodes.get(y);
+				if (n && this.foldOf(n)) found.push(y); else next.push(y);
+			}
+			level = next;
+		}
+		return found;
 	}
 
 	// Shows `levels` levels of each folded branch; the cards at the last shown level that lead further get folded.
