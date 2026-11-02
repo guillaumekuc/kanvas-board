@@ -25,6 +25,7 @@ const DEFAULTS = {
 	claudePath: '',
 	layoutDirection: 'TB',
 	cardWarning: '60',
+	foldDirection: 'out', // fold hides the cards a card points to (out) or the cards pointing to it (in)
 	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
 };
 
@@ -168,18 +169,33 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			new Notice(`Canvas board: archived ${sel.length} card${sel.length > 1 ? 's' : ''}`);
 		}, [{ modifiers: ['Alt'], key: 'a' }]);
 
-		// Fold hides the cards a card leads to (edges from it, then on); view only, like the filter.
-		const children = (canvas, id) => [...canvas.edges.values()].some(e => e.from.node.id === id && e.to.node.id !== id);
+		// Fold hides the cards linked to a card, following edges in the "Fold direction" setting (out: the cards it
+		// points to, then on; in: the cards pointing to it, then on); view only, like the filter. Unfold shows N
+		// levels again and folds the cards at level N, so a branch opens in stages, like folders.
+		const folded = (c, n) => this.viewState(c, false).folded.has(n.id);
 		canvasCommand('fold', 'Fold branch of the selected card', ['Fold branch', 'chevrons-down-up'], (c, [n, ...rest]) =>
-			!!n && !rest.length && !this.viewState(c, false).folded.has(n.id) && children(c, n.id), (canvas, [node]) => {
-			this.viewState(canvas).folded.add(node.id);
+			!!n && !rest.length && !folded(c, n) && this.branchLinks(c, this.settings.foldDirection).has(n.id), (canvas, [node]) => {
+			this.viewState(canvas).folded.set(node.id, this.settings.foldDirection);
 			this.refreshView(canvas);
 		});
-		canvasCommand('unfold', 'Expand folded branch of the selected card', ['Expand branch', 'chevrons-up-down'], (c, [n, ...rest]) =>
-			!!n && !rest.length && this.viewState(c, false).folded.has(n.id), (canvas, [node]) => {
-			this.viewState(canvas).folded.delete(node.id);
-			this.refreshView(canvas);
-		});
+		for (const [levels, id, name, menu] of [[1, 'unfold', 'Unfold one level of the selected card', ['Unfold one level', 'chevron-down']],
+			[2, 'unfold-2', 'Unfold two levels of the selected card', null], [3, 'unfold-3', 'Unfold three levels of the selected card', null],
+			[Infinity, 'unfold-all', 'Unfold the whole branch of the selected card', ['Unfold whole branch', 'chevrons-up-down']]])
+			canvasCommand(id, name, menu, (c, [n, ...rest]) => !!n && !rest.length && folded(c, n), (canvas, [node]) => this.unfold(canvas, node.id, levels));
+		for (const [dir, label] of [['out', 'outgoing (cards it points to)'], ['in', 'incoming (cards pointing to it)']])
+			this.addCommand({
+				id: `fold-direction-${dir}`,
+				name: `Fold direction: ${label}`,
+				checkCallback: checking => {
+					if (this.settings.foldDirection === dir) return false;
+					if (!checking) {
+						this.settings.foldDirection = dir;
+						this.saveData(this.settings);
+						new Notice(`Canvas board: fold direction ${label}`);
+					}
+					return true;
+				},
+			});
 
 		// Templates: the selection (and edges between its cards) as Templates/Canvas/<name>.canvas.
 		canvasCommand('template-save', 'Save selected cards as a template', ['Save as template', 'layout-template'], (c, sel) => sel.length > 0, canvas =>
@@ -677,6 +693,10 @@ class CanvasBoardSettings extends PluginSettingTab {
 			.addOptions({ TB: 'Top to bottom', LR: 'Left to right' })
 			.setValue(this.plugin.settings.layoutDirection)
 			.onChange(async v => { this.plugin.settings.layoutDirection = v; await this.plugin.saveData(this.plugin.settings); }));
+		new Setting(containerEl).setName('Fold direction').setDesc('Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Commands "Fold direction: …" switch it on the fly.').addDropdown(dd => dd
+			.addOptions({ out: 'Outgoing', in: 'Incoming' })
+			.setValue(this.plugin.settings.foldDirection)
+			.onChange(async v => { this.plugin.settings.foldDirection = v; await this.plugin.saveData(this.plugin.settings); }));
 		text('Card count warning', 'The status bar card count turns to the warning color past this many cards (0: never).', 'cardWarning');
 		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
 	}
