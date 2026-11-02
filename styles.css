@@ -8,14 +8,33 @@
 	display: none !important;
 }
 
-/* Folded card: how many cards its branch hides. */
-.canvas-node[data-canvas-board-folded]::after {
-	content: attr(data-canvas-board-folded);
+/* Folded card: how many cards its branch hides; click to unfold one level. */
+.canvas-board-folded {
 	position: absolute;
 	right: 8px;
 	bottom: -22px;
+	padding: 0 var(--size-2-2);
+	border-radius: var(--radius-s);
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
+	cursor: pointer;
+	user-select: none;
+}
+.canvas-board-folded:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+/* Key after a menu item's title. */
+.canvas-board-key {
+	margin-left: var(--size-4-3);
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+/* Undo button in a notice. */
+.canvas-board-notice-undo {
+	margin-left: var(--size-4-2);
 }
 
 /* Filter pane, top-left of each canvas (like Graph view's filters). */
