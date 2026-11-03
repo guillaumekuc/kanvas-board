@@ -1,10 +1,10 @@
 // Canvas board: color hotkeys for selected canvas cards, a command that opens a terminal running the
 // canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
 // to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (collapse, expand, merge,
-// split, extract), archive/restore, view tools (search current canvas, filter pane, fold), card templates and a status bar card count. Copies skill/SKILL.md to
+// split, extract), archive/restore, view tools (search current canvas, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. Copies skill/SKILL.md to
 // .claude/skills/canvas-board/ on load.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
-const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, Scope, setIcon } = require('obsidian');
+const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, AbstractInputSuggest, Scope, setIcon } = require('obsidian');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -734,8 +734,9 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return String((d.type === 'text' ? d.text : d.type === 'file' ? d.file : d.type === 'link' ? d.url : d.label) || '');
 	}
 
-	cardLabel(node) {
-		return (this.cardText(node) || '(empty)').replace(/\s+/g, ' ').trim().slice(0, 200);
+	// Background of a color dot: a preset canvas color ('1'…'6'), a custom hex, or none.
+	dotStyle(color) {
+		return !color ? '' : `background: ${color.startsWith('#') ? color : `var(--canvas-color-${color})`}`;
 	}
 
 	// Template cards are centered on the visible canvas, whatever is selected; they end up selected.
@@ -1177,7 +1178,8 @@ class FilterPane {
 		if (!this.isOpen) return;
 		const state = plugin.viewState(canvas);
 		const tags = [...new Set([...this.tags(), ...state.xtags])].sort(); // a hidden tag stays listed, to show it again
-		const key = JSON.stringify([counts, [...state.xcolors], tags, [...state.xtags], [...folds], state.hidden.size]);
+		const foldedCards = [...folds.keys()].map(id => canvas.nodes.get(id)).filter(Boolean).map(n => [n.getData().color, plugin.cardText(n)]);
+		const key = JSON.stringify([counts, [...state.xcolors], tags, [...state.xtags], [...folds], foldedCards, state.hidden.size]);
 		if (key === this.key) return;
 		this.key = key;
 		const apply = () => plugin.refreshView(canvas);
@@ -1204,10 +1206,17 @@ class FilterPane {
 
 		this.foldedEl.empty();
 		this.foldedSection.toggle(folds.size > 0);
-		for (const id of folds.keys()) {
+		// Color dot, first line as title, the rest muted below, and how many cards the fold hides.
+		for (const [id, dir] of folds) {
 			const node = canvas.nodes.get(id);
 			if (!node) continue;
-			const row = this.foldedEl.createDiv({ cls: 'canvas-board-pane-row', text: plugin.cardLabel(node).slice(0, 60), attr: { 'aria-label': 'Click to unfold the whole branch' } });
+			const row = this.foldedEl.createDiv({ cls: 'canvas-board-pane-row canvas-board-pane-card', attr: { 'aria-label': 'Click to unfold the whole branch' } });
+			row.createSpan({ cls: 'canvas-board-dot', attr: { style: plugin.dotStyle(node.getData().color) } });
+			const text = row.createDiv({ cls: 'canvas-board-pane-card-text' });
+			const [title, ...rest] = plugin.cb.plainLines(plugin.cardText(node));
+			text.createDiv({ cls: 'canvas-board-pane-card-title', text: title || '(empty)' });
+			if (rest.length) text.createDiv({ cls: 'canvas-board-pane-card-rest', text: rest.join(' · ') });
+			row.createSpan({ cls: 'canvas-board-pane-card-count', text: `· ${plugin.branchLevels(canvas, id, dir).flat().length} folded` });
 			row.addEventListener('click', () => plugin.unfold(canvas, [id], Infinity));
 		}
 	}
