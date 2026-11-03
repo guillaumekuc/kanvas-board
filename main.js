@@ -527,15 +527,17 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		v = empty();
 		this.views.set(canvas, v);
 		// Hidden cards never stay selected (select all, drag to select), so Delete never hits a card you can't see.
+		const plugin = this;
 		const orig = canvas.updateSelection;
 		canvas.updateSelection = function (fn) {
-			return orig.call(this, () => {
+			const r = orig.call(this, () => {
 				fn();
 				for (const x of [...this.selection]) if (v.hidden.has(x.id) || (x.from && (v.hidden.has(x.from.node.id) || v.hidden.has(x.to.node.id)))) this.selection.delete(x);
 			});
+			plugin.updateCount(); // selected count in the status bar follows at once
+			return r;
 		};
 		// Undo / redo may bring folds back or take them away: redraw at once.
-		const plugin = this;
 		const history = canvas.applyHistory;
 		if (history) canvas.applyHistory = function (...a) {
 			const r = history.apply(this, a);
@@ -771,7 +773,8 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		for (const n of cards) { const c = names[n.color || ''] || 'custom'; byColor[c] = (byColor[c] || 0) + 1; }
 		const max = Number(this.settings.cardWarning) || 0;
 		const over = max > 0 && cards.length > max;
-		this.countEl.setText(`${cards.length} cards`);
+		const sel = [...canvas.selection].filter(x => !x.from).length; // cards and groups, not edges
+		this.countEl.setText(`${cards.length} cards` + (sel ? ` · ${sel} selected` : ''));
 		this.countEl.toggleClass('canvas-board-over', over); // warning color, see styles.css
 		this.countEl.setAttr('aria-label', (over ? `over ${max} · ` : '') + Object.entries(byColor).map(([c, k]) => `${c} ${k}`).join(' · '));
 		this.countEl.setAttr('data-tooltip-position', 'top');
