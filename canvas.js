@@ -6,7 +6,7 @@
 // Usage (paths relative to the vault root; CANVAS = node .obsidian/plugins/canvas-board/canvas.js):
 //   CANVAS read <board>                       nodes and edges as JSON
 //   CANVAS tree [<board>] [--active]          board + linked notes (level, parts) + nested canvases, as JSON
-//                                             --active: cyan/purple/orange cards, cards edged to them, yellow/red count
+//                                             --active: go (cyan/purple)/orange cards, cards edged to them, yellow/red count
 //   CANVAS set <board> <id> [--color c] [--text t] [--file path]
 //                                             c: red orange yellow green cyan purple none (or 1-6)
 //                                             --file turns the card into a file card, --text into a text card
@@ -18,9 +18,10 @@
 //                                             dagre layered layout of the given cards (default: all), the others
 //                                             stay put; --fit sizes text cards to their text. For canvases an agent
 //                                             made, or cards it just added
-//   CANVAS collapse <board> --ids a,b --name N  the cards (and cards inside selected groups) move to `N.canvas`
-//                                             next to the board; one card `[[N.canvas|N]]` takes their place
-//   CANVAS expand <board> <id>                the reverse; the subcanvas file goes to .trash
+//   CANVAS pack <board> --ids a,b --name N    the cards (and cards inside selected groups) move to `N.canvas`
+//                                             next to the board; one card `[[N.canvas|N]]` takes their place (alias: collapse)
+//   CANVAS unpack <board> <id> [--keep]       the reverse; the subcanvas file goes to .trash, unless --keep or other
+//                                             cards / notes still link it (then it stays, they are listed) (alias: expand)
 //   CANVAS merge <board> --ids a,b            text cards into the first in reading order (most urgent color)
 //   CANVAS split <board> <id> [--by b]        b: paragraph (default), bullet, h1..h6; pieces stack under it
 //   CANVAS extract <board> <id> --text t      the text t leaves the card for a new card right of it, overlaps allowed
@@ -28,6 +29,7 @@
 //   CANVAS restore <note>                     puts an archived card back on its board, note to .trash
 //   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
 //   CANVAS check [<board>]                    read-only: broken board invariants (links, card text, plan notes) as JSON
+// tree, rollup and check are the agent workflow: they live in workflow.js (go colors: plugin setting "Pass colors").
 // Default board: Plans.canvas. Default direction: the plugin setting "Layout direction" (data.json), else TB.
 const fs = require('fs');
 const path = require('path');
@@ -37,7 +39,6 @@ const ROOT = path.resolve(__dirname, '..', '..', '..'); // <vault>/.obsidian/plu
 const DEFAULT_BOARD = 'Plans.canvas';
 const SKIP_DIRS = new Set(['.git', '.obsidian', '.trash', '_secrets', 'node_modules']);
 const COLORS = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
-const STALE_DAYS = 7;
 
 const args = process.argv.slice(2);
 const opt = name => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
@@ -103,9 +104,10 @@ function collapseOps(d, ids, file, label) {
   return { ops, sub, id: card.id };
 }
 
-// The reverse: the subcanvas's cards come back at the card's place, shifted right until they overlap nothing;
-// edges on the card go to the first of them in reading order. The caller trashes the .canvas file.
-function expandOps(d, id, sub) {
+// The reverse (unpack): the subcanvas's cards come back at the card's place, shifted right until they overlap nothing;
+// edges on the card go to the first of them in reading order. The caller trashes the .canvas file (dissolve) or
+// keeps it (copy). With `group` (a label), a group is drawn around them and the edges on the card go to it.
+function expandOps(d, id, sub, { group } = {}) {
   const card = d.nodes.find(n => n.id === id);
   if (!card) throw new Error('no node ' + id);
   if (!sub.nodes.length) throw new Error('empty subcanvas');
@@ -118,13 +120,27 @@ function expandOps(d, id, sub) {
   const hits = () => sub.nodes.some(p => others.some(n => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
   for (let k = 0; k < 200 && hits(); k++) ox += 40;
   const nodes = sub.nodes.map(n => ({ ...n, id: ids.get(n.id), x: n.x + ox, y: n.y + oy }));
-  const first = nodes.filter(n => n.type !== 'group').sort(byReading)[0] || nodes[0];
-  const ops = nodes.map(node => ({ op: 'add', node }));
+  let first = nodes.filter(n => n.type !== 'group').sort(byReading)[0] || nodes[0];
+  const ops = [];
+  if (group) { // added first: drawn behind the cards
+    const P = 30;
+    const gx = Math.min(...nodes.map(n => n.x)) - P, gy = Math.min(...nodes.map(n => n.y)) - P;
+    first = { id: newId(), type: 'group', label: group, x: gx, y: gy,
+      width: Math.max(...nodes.map(n => n.x + n.width)) + P - gx, height: Math.max(...nodes.map(n => n.y + n.height)) + P - gy };
+    ops.push({ op: 'add', node: first });
+  }
+  ops.push(...nodes.map(node => ({ op: 'add', node })));
   for (const e of sub.edges) ops.push({ op: 'edge', edge: { ...e, id: taken.has(e.id) ? newId() : e.id, fromNode: ids.get(e.fromNode), toNode: ids.get(e.toNode) } });
   for (const e of d.edges) if (e.fromNode === id || e.toNode === id)
     ops.push({ op: 'retarget', id: e.id, fromNode: e.fromNode === id ? first.id : e.fromNode, toNode: e.toNode === id ? first.id : e.toNode });
   ops.push({ op: 'remove', id });
-  return ops;
+  return group ? Object.assign(ops, { group: first.id }) : ops;
+}
+
+// Wikilinks (and embeds) in `text` whose target `hits(linkpath)` become `to(label)`; label = alias, else file name.
+function relinkText(text, hits, to) {
+  return (text || '').replace(/!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g, (m, target, sub, alias) =>
+    hits(target.trim()) ? to(alias || path.posix.basename(target.trim()).replace(/\.canvas$/, '')) : m);
 }
 
 // Text cards become the first one (in reading order): texts joined by a blank line, the most urgent color,
@@ -310,7 +326,7 @@ const api = (fn, ...a) => obsidianEval(`(async()=>{const p=app.plugins.plugins['
 // --- Board I/O ----------------------------------------------------------------------------------------
 
 const abs = p => path.join(ROOT, p);
-const readFileBoard = board => JSON.parse(fs.readFileSync(abs(board), 'utf8'));
+const readFileBoard = board => { const d = JSON.parse(fs.readFileSync(abs(board), 'utf8') || '{}'); d.nodes ||= []; d.edges ||= []; return d; };
 
 function serialize(d) {
   const line = x => '\t\t' + JSON.stringify(x);
@@ -319,7 +335,7 @@ function serialize(d) {
 
 function readBoard(board) {
   const out = api('read', board);
-  if (out && out.startsWith('{')) { const d = JSON.parse(out); return { nodes: d.nodes, edges: d.edges }; }
+  if (out && out.startsWith('{')) { const d = JSON.parse(out); return { nodes: d.nodes || [], edges: d.edges || [] }; }
   return readFileBoard(board);
 }
 
@@ -354,23 +370,33 @@ function findFile(name) {
   return fileIndex.get(name) || null;
 }
 
+// Cards (any .canvas) and notes (.md) that link `rel`, except card `skipId` on `board`: ['path (card id)' | 'path'].
+function linksTo(rel, board, skipId) {
+  findFile('');
+  const out = [];
+  const hits = t => findFile(t) === rel;
+  for (const f of new Set(fileIndex.values())) {
+    if (f === rel || !/\.(md|canvas)$/.test(f)) continue;
+    let src;
+    try { src = fs.readFileSync(abs(f), 'utf8'); } catch (e) { continue; }
+    if (!src.includes(path.posix.basename(rel))) continue;
+    if (f.endsWith('.md')) { if (relinkText(src, hits, () => '\u0000') !== src) out.push(f); continue; }
+    let d;
+    try { d = JSON.parse(src || '{}'); } catch (e) { continue; }
+    for (const n of d.nodes || []) if (!(f === board && n.id === skipId) &&
+      (n.type === 'file' ? n.file === rel : relinkText(n.text, hits, () => '\u0000') !== (n.text || ''))) out.push(`${f} (${n.id})`);
+  }
+  return out;
+}
+
 function cardLinks(n) {
   const targets = n.type === 'file' ? [n.file] : [...(n.text || '').matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map(m => findFile(m[1].trim()));
   const found = targets.filter(Boolean);
   return { note: found.find(f => f.endsWith('.md')) || null, canvas: found.find(f => f.endsWith('.canvas')) || null };
 }
 
-// Level is derived from the note: `- [ ]` / `- [x]` parts make it a plan, otherwise it is a brief.
-// Questions: `- [?]` above `## Decisions Record` (past rounds).
-function noteState(rel) {
-  const text = fs.readFileSync(abs(rel), 'utf8');
-  const parts = [...text.matchAll(/^\s*- \[([ xX])\] /gm)];
-  const done = parts.filter(m => m[1] !== ' ').length;
-  const questions = [...text.split(/^## Decisions Record/m)[0].matchAll(/^\s*- \[\?\] /gm)].length; // answered rounds don't count
-  return { level: parts.length ? 'plan' : 'brief', parts: { done, total: parts.length }, questions };
-}
-
-function tree(board, depth = 0, seen = new Set()) {
+// Board + linked notes (path, age; `noteInfo(path)` adds more, workflow.js passes the level) + nested canvases.
+function tree(board, { noteInfo } = {}, depth = 0, seen = new Set()) {
   seen.add(board);
   const d = readBoard(board);
   return {
@@ -380,134 +406,13 @@ function tree(board, depth = 0, seen = new Set()) {
       const card = { id: n.id, color: n.color || null, text: n.type === 'text' ? n.text : undefined, file: n.file };
       if (note) {
         const ageDays = Math.floor((Date.now() - fs.statSync(abs(note)).mtimeMs) / 86400000);
-        card.note = { path: note, ageDays, ...noteState(note) };
+        card.note = { path: note, ageDays, ...(noteInfo ? noteInfo(note) : {}) };
       }
-      if (canvas && !seen.has(canvas) && depth < 2) card.inside = tree(canvas, depth + 1, seen);
+      if (canvas && !seen.has(canvas) && depth < 2) card.inside = tree(canvas, { noteInfo }, depth + 1, seen);
       return card;
     }),
     edges: d.edges.map(e => ({ from: e.fromNode, to: e.toNode, label: e.label })),
   };
-}
-
-// --active: only what a pass needs. Cyan/purple/orange cards with their notes, the cards edged to them (once
-// each, text only, as context), nested boards only when they hold active cards, and the yellow/red count.
-const ACTIVE = new Set(['2', '5', '6']);
-function activeTree(t) {
-  const total = { waiting: 0 };
-  const a = activeNode(t, total);
-  return { board: a.board, waiting: total.waiting, cards: a.cards, context: a.context, edges: a.edges };
-}
-
-function activeNode(t, total) {
-  const ids = new Set(t.cards.filter(c => ACTIVE.has(c.color)).map(c => c.id));
-  const near = new Set();
-  for (const e of t.edges) {
-    if (ids.has(e.from) && !ids.has(e.to)) near.add(e.to);
-    if (ids.has(e.to) && !ids.has(e.from)) near.add(e.from);
-  }
-  const cards = [], context = [];
-  for (const c of t.cards) {
-    if (c.color === '1' || c.color === '3') total.waiting++;
-    const inside = c.inside && activeNode(c.inside, total);
-    if (ids.has(c.id) || (inside && inside.cards.length)) cards.push({ ...c, inside: inside && inside.cards.length ? inside : undefined });
-    else if (near.has(c.id)) context.push({ id: c.id, color: c.color, text: c.text, file: c.file });
-  }
-  const kept = new Set(cards.map(c => c.id));
-  const edges = t.edges.filter(e => kept.has(e.from) || kept.has(e.to));
-  return { board: t.board, cards, context, edges };
-}
-
-// --- Roll-up ------------------------------------------------------------------------------------------
-
-// red > yellow are the "needs me" colors that climb to the parent card; cyan and purple (go) are human
-// choices and are never overwritten. The card color is the only state: a red/yellow card with a `· N inside`
-// suffix got its color from the roll-up, one without it was set by an agent or Guillaume and is kept.
-function rollup(board) {
-  const t = tree(board);
-  const changes = [];
-  const walk = node => {
-    const ops = [];
-    let red = 0, yellow = 0, cards = 0, green = 0;
-    for (const c of node.cards) {
-      let color = c.color;
-      if (c.inside) {
-        const inner = walk(c.inside);
-        const want = desiredColor(c, inner);
-        let text = c.text;
-        if (text !== undefined) {
-          text = text.replace(/ · \d+ inside| · \d+d$/g, '');
-          if (inner.red + inner.yellow) text += ` · ${inner.red + inner.yellow} inside`;
-        }
-        if (want !== color || (text !== undefined && text !== c.text)) {
-          ops.push({ op: 'set', id: c.id, color: want === null ? '' : want, ...(text !== c.text ? { text } : {}) });
-          color = want;
-        }
-      }
-      if (color === '1') red++;
-      if (color === '3') yellow++;
-      cards++;
-      if (color === '4') green++;
-    }
-    // Age suffix on yellow cards whose note has not changed for a week.
-    for (const c of node.cards) {
-      if (c.color !== '3' || !c.note || c.text === undefined || c.inside) continue;
-      const base = c.text.replace(/ · \d+d$/, '');
-      const text = c.note.ageDays >= STALE_DAYS ? `${base} · ${c.note.ageDays}d` : base;
-      if (text !== c.text) ops.push({ op: 'set', id: c.id, text });
-    }
-    if (ops.length) changes.push({ board: node.board, via: writeOps(node.board, ops), ops });
-    return { red, yellow, allGreen: cards > 0 && green === cards };
-  };
-  walk(t);
-  return changes;
-}
-
-function desiredColor(card, inner) {
-  if (card.color === '5' || card.color === '6') return card.color;
-  const rolled = card.text !== undefined && / · \d+ inside/.test(card.text);
-  const own = rolled ? null : card.color;
-  if (inner.red || own === '1') return '1';
-  if (inner.yellow || own === '3') return '3';
-  if (rolled && (card.color === '1' || card.color === '3')) return inner.allGreen ? '4' : null;
-  return card.color || null;
-}
-
-// --- Check --------------------------------------------------------------------------------------------
-
-// Structure only, never content: the invariants the skill and SOP state. A check that never fires in a month
-// gets deleted; a new one only after the same defect shows up twice.
-const ORANGE_STALE_MS = 3600000;
-function check(board) {
-  const issues = [];
-  const walk = (b, depth, seen) => {
-    seen.add(b);
-    const d = readBoard(b);
-    for (const n of d.nodes) {
-      if (n.type === 'group' || !n.color) continue;
-      const add = issue => issues.push({ board: b, id: n.id, text: (n.text || n.file || '').split('\n')[0], issue });
-      const links = n.type === 'file' ? [n.file] : [...(n.text || '').matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map(m => m[1].trim());
-      for (const l of links) if (!findFile(l)) add(`broken link [[${l}]]`);
-      if (n.type === 'text' && depth === 0) { // plan-canvas cards are parts, free text
-        const text = n.text || '';
-        if (text.includes('[[') ? !/^\[\[[^\]]+\]\]( · .+)?$/.test(text) : text.split('\n').length > 3) add('card text is neither a wish (≤ 3 lines) nor `[[Note]] · reason`');
-      }
-      const { note, canvas } = cardLinks(n);
-      if (note && note.startsWith('Projects/_assets/plans/')) {
-        const src = fs.readFileSync(abs(note), 'utf8');
-        const fm = (src.match(/^---\n([\s\S]*?)\n---/) || [])[1];
-        const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map(m => m[1]) : [];
-        if (keys.join() !== 'context') add(`note frontmatter is not \`context\` only (${keys.join(', ') || 'none'})`);
-        if (noteContexts(fm).length !== 1) add('note does not have exactly one context');
-        for (const s of ['Aim', 'Design']) if (!new RegExp(`^## ${s}\\s*$`, 'm').test(src)) add(`note has no ## ${s}`);
-        if (!/^### Done when\s*$/m.test(src)) add('note has no ### Done when (under Aim)');
-        if (n.color === '4' && !/^## Output\s*$/m.test(src)) add('green card, note has no ## Output');
-        if (n.color === '2' && Date.now() - fs.statSync(abs(note)).mtimeMs > ORANGE_STALE_MS) add('orange card, note untouched for 1h+ (interrupted pass?)');
-      }
-      if (canvas && !seen.has(canvas) && depth < 2) walk(canvas, depth + 1, seen);
-    }
-  };
-  walk(board, 0, new Set());
-  return { issues };
 }
 
 // --- Commands -----------------------------------------------------------------------------------------
@@ -542,8 +447,8 @@ function fitHeight(text, w) {
 }
 
 // Ops that lay out `ids` (all cards when empty) with dagre; the other cards never move. The laid-out block
-// goes next to the first fixed card it is edged to, else right of everything, then steps until it overlaps
-// nothing. Shared with the plugin, which passes its own dagre.
+// keeps the center of the cards it lays out, then steps until it overlaps nothing.
+// Shared with the plugin, which passes its own dagre.
 function layoutOps(d, { ids, dir = 'TB', fit = false, dagre }) {
   const cards = d.nodes.filter(n => n.type !== 'group');
   const pick = new Set(ids && ids.length ? ids : cards.map(n => n.id));
@@ -563,18 +468,16 @@ function layoutOps(d, { ids, dir = 'TB', fit = false, dagre }) {
 
   const box = ns => ns.reduce((b, n) => ({ x0: Math.min(b.x0, n.x), y0: Math.min(b.y0, n.y), x1: Math.max(b.x1, n.x + n.width), y1: Math.max(b.y1, n.y + n.height) }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
   const placed = moving.map(n => { const p = g.node(n.id); return { id: n.id, x: Math.round(p.x - p.width / 2), y: Math.round(p.y - p.height / 2), width: p.width, height: p.height }; });
-  const b = box(placed);
-  let ox = 0, oy = 0;
-  if (fixed.length) {
-    const link = d.edges.find(e => pick.has(e.fromNode) !== pick.has(e.toNode));
-    const anchor = link && fixed.find(n => n.id === (pick.has(link.fromNode) ? link.toNode : link.fromNode));
-    const all = box(fixed);
-    const ref = anchor || { x: all.x1, y: all.y0, width: 0, height: 0 };
-    ox = dir === 'LR' || !anchor ? ref.x + ref.width + 80 - b.x0 : ref.x - b.x0;
-    oy = dir === 'LR' || !anchor ? ref.y - b.y0 : ref.y + ref.height + 80 - b.y0;
-    const hits = () => placed.some(p => fixed.some(n => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
-    for (let k = 0; k < 200 && hits(); k++) { if (dir === 'LR') oy += 40; else ox += 40; }
-  } else { ox = -b.x0; oy = -b.y0; }
+  // The block keeps the center the moving cards had; if it then overlaps a fixed card, it steps across the
+  // flow (down for LR, right for TB), alternating sides, to the nearest free spot.
+  const b = box(placed), was = box(moving);
+  const cx = Math.round((was.x0 + was.x1 - b.x0 - b.x1) / 2), cy = Math.round((was.y0 + was.y1 - b.y0 - b.y1) / 2);
+  let ox = cx, oy = cy;
+  const hits = () => placed.some(p => fixed.some(n => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
+  for (let k = 1; k <= 400 && hits(); k++) {
+    const step = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 40;
+    if (dir === 'LR') oy = cy + step; else ox = cx + step;
+  }
 
   const ops = placed.map(p => ({ op: 'set', id: p.id, x: p.x + ox, y: p.y + oy, width: p.width, height: p.height }));
   const [fromSide, toSide] = SIDES[dir];
@@ -582,7 +485,24 @@ function layoutOps(d, { ids, dir = 'TB', fit = false, dagre }) {
   return ops;
 }
 
-module.exports = { applyOps, layoutOps, collapseOps, expandOps, mergeOps, splitOps, extractOps, archiveNote, restoreOps, noteName, ARCHIVE_DIR, templateOps, TEMPLATE_DIR };
+// Card text without Markdown syntax, one string per non-empty line, for lists (filter pane):
+// [[Note|alias]] → alias, [[Note#Heading]] → Note › Heading, [[Note]] → Note, [text](url) → text; marks
+// (** __ ~~ == ` * _), heading, quote, list and checkbox markers dropped; #tags kept.
+function plainLines(text) {
+  const name = n => n.replace(/\.(md|canvas)$/, '').split('/').pop();
+  return String(text || '').split('\n').map(l => l
+    .replace(/!?\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
+    .replace(/!?\[\[([^\]#]*)#\^?([^\]]+)\]\]/g, (_, n, h) => n ? `${name(n)} › ${h}` : h)
+    .replace(/!?\[\[([^\]]+)\]\]/g, (_, n) => name(n))
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/, '')
+    .replace(/\*\*|__|~~|==|`/g, '')
+    .replace(/(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g, '$1$2')
+    .replace(/\s+/g, ' ').trim()).filter(Boolean);
+}
+
+// readBoard … noteContexts are for workflow.js (tree --active, rollup, check).
+module.exports = { readBoard, writeOps, tree, findFile, cardLinks, abs, noteContexts, COLORS, plainLines, applyOps, layoutOps, collapseOps, expandOps, relinkText, mergeOps, splitOps, extractOps, archiveNote, restoreOps, noteName, ARCHIVE_DIR, templateOps, TEMPLATE_DIR };
 
 // Next free `<dir>/<name><ext>` (vault-relative), adding " 2", " 3"... when taken.
 function freePath(dir, name, ext) {
@@ -620,7 +540,7 @@ if (require.main === module) {
 
   switch (cmd) {
     case 'read': print(readBoard(board)); break;
-    case 'tree': print(args.includes('--active') ? activeTree(tree(board)) : tree(board)); break;
+    case 'tree': { const wf = require('./workflow.js'); print(args.includes('--active') ? wf.activeTree(wf.tree(board)) : wf.tree(board)); break; }
     case 'set': {
       const op = { op: 'set', id: rest[0], color: colorArg(opt('--color')) };
       if (opt('--text') !== undefined) op.text = opt('--text');
@@ -653,6 +573,7 @@ if (require.main === module) {
       console.log(writeOps(board, ops), ops.filter(o => o.op === 'set').length, 'cards');
       break;
     }
+    case 'pack':
     case 'collapse': {
       const name = opt('--name');
       if (!name) throw new Error('collapse needs --name');
@@ -663,13 +584,16 @@ if (require.main === module) {
       console.log(file, id);
       break;
     }
+    case 'unpack':
     case 'expand': {
       const card = readBoard(board).nodes.find(n => n.id === rest[0]);
       const sub = card && cardLinks(card).canvas;
       if (!sub) throw new Error('card links no canvas');
+      const others = args.includes('--keep') ? [] : linksTo(sub, board, rest[0]);
       writeOps(board, expandOps(readBoard(board), rest[0], readBoard(sub)));
-      toTrash(sub);
-      console.log('expanded', sub);
+      if (args.includes('--keep')) console.log('unpacked (copy), kept', sub);
+      else if (others.length) console.log('unpacked, kept', sub, '- still linked from:', others.join(', '));
+      else { toTrash(sub); console.log('unpacked (dissolve), trashed', sub); }
       break;
     }
     case 'merge': console.log(writeOps(board, mergeOps(readBoard(board), (opt('--ids') || '').split(',').filter(Boolean)))); break;
@@ -697,10 +621,10 @@ if (require.main === module) {
       toTrash(boardArg);
       break;
     }
-    case 'rollup': print(rollup(board)); break;
-    case 'check': print(check(board)); break;
+    case 'rollup': print(require('./workflow.js').rollup(board)); break;
+    case 'check': print(require('./workflow.js').check(board)); break;
     default:
-      console.error('Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|layout|collapse|expand|merge|split|extract|archive|restore|rollup|check <board> ... (see header)');
+      console.error('Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|layout|pack|unpack|merge|split|extract|archive|restore|rollup|check <board> ... (see header)');
       process.exit(1);
   }
 }

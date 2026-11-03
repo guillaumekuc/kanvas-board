@@ -1,5 +1,5 @@
 /* Status bar card count past the "Card count warning" setting. */
-.status-bar-item.canvas-board-over {
+.status-bar-item .canvas-board-over {
 	color: var(--text-warning);
 }
 
@@ -183,4 +183,33 @@
 }
 .canvas-node.canvas-board-find-match.is-current .canvas-node-container {
 	box-shadow: 0 0 0 3px var(--text-accent);
+}
+/* Folded list rows: color dot, title, muted rest of the card below, fold count. */
+.canvas-board-pane-row.canvas-board-pane-card {
+	display: flex;
+	align-items: baseline;
+	gap: var(--size-2-3);
+	white-space: normal;
+}
+.canvas-board-pane-card .canvas-board-dot {
+	flex: none;
+	align-self: center;
+}
+.canvas-board-pane-card-text {
+	flex: 1;
+	min-width: 0;
+}
+.canvas-board-pane-card-title,
+.canvas-board-pane-card-rest {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.canvas-board-pane-card-rest,
+.canvas-board-pane-card-count {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+.canvas-board-pane-card-count {
+	flex: none;
 }

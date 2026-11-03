@@ -1,10 +1,11 @@
 // Canvas board: color hotkeys for selected canvas cards, a command that opens a terminal running the
 // canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
-// to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (collapse, expand, merge,
-// split, extract), archive/restore, view tools (search current canvas, filter pane, fold), card templates and a status bar card count. Copies skill/SKILL.md to
-// .claude/skills/canvas-board/ on load.
+// to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (pack, unpack dissolve / copy, merge,
+// split, extract), archive/restore, view tools (search current canvas, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. Writes skill/SKILL.md to
+// .claude/skills/canvas-board/ on load when missing; after that the vault copy is the user's (command "Reset agent skill").
+// The agent workflow (what a pass takes, roll-up, check) is workflow.js; here only the "Pass colors" gate.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
-const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, Scope, setIcon } = require('obsidian');
+const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, AbstractInputSuggest, Scope, setIcon } = require('obsidian');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -28,7 +29,10 @@ const DEFAULTS = {
 	hideTagBranches: true, // a hidden tag also hides the cards below its cards (in the fold direction)
 	foldDirection: 'out', // fold hides the cards a card points to (out) or the cards pointing to it (in)
 	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
+	passColors: 'cyan purple', // cards that start a pass (and that tree --active takes, see workflow.js); empty = always run
 };
+const COLOR_NUM = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
+const parseColors = s => new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLOR_NUM[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
 
 module.exports = class CanvasBoardPlugin extends Plugin {
 	async onload() {
@@ -63,6 +67,11 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			},
 		};
 		this.syncSkill(dir);
+		this.addCommand({
+			id: 'reset-skill',
+			name: "Reset agent skill to the plugin's version (overwrites your edits)",
+			callback: () => this.syncSkill(dir, true),
+		});
 
 		for (const [label, color, key] of COLORS) {
 			this.addCommand({
@@ -90,10 +99,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				if (!checking) {
 					const ids = canvas.selection.size > 1 ? [...canvas.selection].map(n => n.id) : [];
 					const d = canvas.getData();
-					applyOps(d, layoutOps(d, { ids, dir: this.settings.layoutDirection, dagre }));
-					canvas.pushHistory && canvas.pushHistory(canvas.getData());
-					canvas.setData(d);
-					canvas.requestSave();
+					this.edit(canvas, layoutOps(d, { ids, dir: this.settings.layoutDirection, dagre }), d);
 				}
 				return true;
 			},
@@ -118,7 +124,8 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		};
 		const isText = n => n.getData().type === 'text';
 
-		canvasCommand('collapse', 'Collapse to subcanvas', ['Collapse to subcanvas', 'fold-vertical'], (c, sel) => sel.length > 0, (canvas, sel) =>
+		// Pack / unpack (ids stay collapse / expand so hotkeys keep working). Pack moves cards into a new subcanvas.
+		canvasCommand('collapse', 'Pack into subcanvas', ['Pack into subcanvas', 'package'], (c, sel) => sel.length > 0, (canvas, sel) =>
 			new NamePrompt(this.app, 'Subcanvas name', async name => {
 				const board = this.activeFile();
 				const dir = board.parent && board.parent.path !== '/' ? board.parent.path + '/' : '';
@@ -126,15 +133,20 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				const { ops, sub } = cb.collapseOps(canvas.getData(), sel.map(n => n.id), file, name);
 				await this.app.vault.create(file, JSON.stringify(sub, null, '\t'));
 				this.edit(canvas, ops);
-				this.undoNotice(canvas, `collapsed ${sel.length} card${sel.length > 1 ? 's' : ''} into ${file}`, [file]);
+				this.undoNotice(canvas, `packed ${sel.length} card${sel.length > 1 ? 's' : ''} into ${file}`, [file]);
 			}).open());
 
-		canvasCommand('expand', 'Expand subcanvas', ['Expand subcanvas', 'unfold-vertical'], (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]), async (canvas, [node]) => {
+		// Unpack (dissolve) = cut and paste: the cards come out, the file goes to the trash. Other links to the file
+		// (cards on any canvas, notes) would break: then a choice. Unpack (copy) = copy and paste: the file stays.
+		const linked = (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]);
+		canvasCommand('expand', 'Unpack subcanvas (dissolve)', ['Unpack subcanvas (dissolve)', 'package-open'], linked, async (canvas, [node]) => {
 			const file = this.linkedCanvas(node);
-			const sub = JSON.parse(await this.app.vault.read(file));
-			this.edit(canvas, cb.expandOps(canvas.getData(), node.id, { nodes: sub.nodes || [], edges: sub.edges || [] }));
-			await this.app.fileManager.trashFile(file);
+			const links = await this.subcanvasLinks(file, canvas, node.id);
+			if (!links.length) return this.unpack(canvas, node, file, 'dissolve');
+			new UnpackChoice(this.app, file, links, mode => this.unpack(canvas, node, file, mode, links).catch(e => new Notice(`Canvas board: ${e.message}`))).open();
 		});
+		canvasCommand('unpack-copy', 'Unpack subcanvas (copy)', ['Unpack subcanvas (copy)', 'copy'], linked, (canvas, [node]) =>
+			this.unpack(canvas, node, this.linkedCanvas(node), 'copy'));
 
 		canvasCommand('merge', 'Merge selected cards', ['Merge cards', 'merge'], (c, sel) => sel.length > 1 && sel.every(isText), (canvas, sel) =>
 			this.edit(canvas, cb.mergeOps(canvas.getData(), sel.map(n => n.id))));
@@ -200,15 +212,46 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				},
 			});
 
-		// Templates: the selection (and edges between its cards) as Templates/Canvas/<name>.canvas.
-		canvasCommand('template-save', 'Save selected cards as a template', ['Save as template', 'layout-template'], (c, sel) => sel.length > 0, canvas =>
+		// Templates: the selection (and edges between its cards) as Templates/Canvas/<name>.canvas. Typing the name
+		// suggests the existing templates: picking one (or typing its name) overwrites it, the button says so.
+		const templates = () => this.app.vault.getFiles().filter(f => f.extension === 'canvas' && f.path.startsWith(cb.TEMPLATE_DIR + '/'));
+		const templateName = f => f.path.slice(cb.TEMPLATE_DIR.length + 1, -'.canvas'.length); // subfolders kept
+		canvasCommand('template-save', 'Save selected cards as a template', ['Save as template', 'layout-template'], (c, sel) => sel.length > 0, canvas => {
+			const existing = new Map(templates().map(f => [templateName(f).toLowerCase(), f]));
 			new NamePrompt(this.app, 'Template name', async name => {
-				const { nodes, edges } = canvas.getSelectionData();
+				const content = JSON.stringify((({ nodes, edges }) => ({ nodes, edges }))(canvas.getSelectionData()), null, '\t');
+				const old = existing.get(name.toLowerCase());
+				if (old) { await this.app.vault.modify(old, content); new Notice(`Canvas board: template ${old.path} overwritten`); return; }
 				if (!this.app.vault.getAbstractFileByPath(cb.TEMPLATE_DIR)) await this.app.vault.createFolder(cb.TEMPLATE_DIR);
 				const file = this.freePath(cb.TEMPLATE_DIR + '/', name, '.canvas');
-				await this.app.vault.create(file, JSON.stringify({ nodes, edges }, null, '\t'));
+				await this.app.vault.create(file, content);
 				new Notice(`Canvas board: template saved to ${file}`);
-			}).open());
+			}, { suggestions: [...existing.values()].map(templateName), overwrite: v => existing.has(v.toLowerCase()) }).open();
+		});
+		// Selection tools: the selection grows to related cards (visible ones only: hidden cards never stay selected).
+		// Children follow the fold direction, one level per press, the selected cards stay selected.
+		const cards = sel => sel.filter(n => !n.from && n.getData().type !== 'group');
+		const selectMore = (canvas, sel, keep) => {
+			const add = [...canvas.nodes.values()].filter(n => n.getData().type !== 'group' && !this.isHidden(canvas, n) && keep(n));
+			canvas.updateSelection(() => { canvas.selection.clear(); for (const n of [...sel, ...add]) canvas.selection.add(n); });
+		};
+		const childIds = (c, sel) => {
+			const links = this.branchLinks(c, this.settings.foldDirection);
+			return new Set(cards(sel).flatMap(n => links.get(n.id) || []));
+		};
+		canvasCommand('select-children', 'Select children (cards one level down, in the fold direction)', ['Select children', 'list-tree'],
+			(c, sel) => [...childIds(c, sel)].some(id => c.nodes.get(id) && !this.isHidden(c, c.nodes.get(id)) && !c.selection.has(c.nodes.get(id))),
+			(canvas, sel) => { const ids = childIds(canvas, sel); selectMore(canvas, sel, n => ids.has(n.id)); });
+		const tagsOf = sel => new Set(cards(sel).flatMap(n => [...this.cardTagSet(n)]));
+		canvasCommand('select-same-tag', 'Select cards with the same tag', ['Select same tag', 'tag'], (c, sel) => tagsOf(sel).size > 0, (canvas, sel) => {
+			const tags = tagsOf(sel);
+			selectMore(canvas, sel, n => [...this.cardTagSet(n)].some(t => tags.has(t)));
+		});
+		canvasCommand('select-same-color', 'Select cards with the same color', ['Select same color', 'palette'], (c, sel) => cards(sel).length > 0, (canvas, sel) => {
+			const colors = new Set(cards(sel).map(n => n.getData().color || ''));
+			selectMore(canvas, sel, n => colors.has(n.getData().color || ''));
+		});
+
 		this.addCommand({
 			id: 'template-insert',
 			name: 'Insert cards from template',
@@ -377,7 +420,8 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 
 	// A notice with an Undo button: one canvas undo step and the files the action made go to the trash. Only while
 	// the board has not changed since (else the undo would take back something else).
-	undoNotice(canvas, msg, files = []) {
+	// `restore` ({ path, content }) brings a trashed file back on undo (unpack). Redirected links are not undone.
+	undoNotice(canvas, msg, files = [], restore = null) {
 		const h = canvas.history;
 		const at = h ? h.current : null;
 		const frag = createFragment(f => {
@@ -387,6 +431,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				if (!h || h.current !== at) { new Notice('Canvas board: the board changed since, use Ctrl+Z'); return; }
 				canvas.undo();
 				for (const p of files) { const file = this.app.vault.getAbstractFileByPath(p); if (file) await this.app.fileManager.trashFile(file); }
+				if (restore && !this.app.vault.getAbstractFileByPath(restore.path)) await this.app.vault.create(restore.path, restore.content);
 			});
 		});
 		new Notice(frag, 8000);
@@ -488,15 +533,17 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		v = empty();
 		this.views.set(canvas, v);
 		// Hidden cards never stay selected (select all, drag to select), so Delete never hits a card you can't see.
+		const plugin = this;
 		const orig = canvas.updateSelection;
 		canvas.updateSelection = function (fn) {
-			return orig.call(this, () => {
+			const r = orig.call(this, () => {
 				fn();
 				for (const x of [...this.selection]) if (v.hidden.has(x.id) || (x.from && (v.hidden.has(x.from.node.id) || v.hidden.has(x.to.node.id)))) this.selection.delete(x);
 			});
+			plugin.updateCount(); // selected count in the status bar follows at once
+			return r;
 		};
 		// Undo / redo may bring folds back or take them away: redraw at once.
-		const plugin = this;
 		const history = canvas.applyHistory;
 		if (history) canvas.applyHistory = function (...a) {
 			const r = history.apply(this, a);
@@ -703,8 +750,9 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return String((d.type === 'text' ? d.text : d.type === 'file' ? d.file : d.type === 'link' ? d.url : d.label) || '');
 	}
 
-	cardLabel(node) {
-		return (this.cardText(node) || '(empty)').replace(/\s+/g, ' ').trim().slice(0, 200);
+	// Background of a color dot: a preset canvas color ('1'…'6'), a custom hex, or none.
+	dotStyle(color) {
+		return !color ? '' : `background: ${color.startsWith('#') ? color : `var(--canvas-color-${color})`}`;
 	}
 
 	// Template cards are centered on the visible canvas, whatever is selected; they end up selected.
@@ -731,23 +779,29 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		for (const n of cards) { const c = names[n.color || ''] || 'custom'; byColor[c] = (byColor[c] || 0) + 1; }
 		const max = Number(this.settings.cardWarning) || 0;
 		const over = max > 0 && cards.length > max;
-		this.countEl.setText(`${cards.length} cards`);
-		this.countEl.toggleClass('canvas-board-over', over); // warning color, see styles.css
+		const sel = [...canvas.selection].filter(x => !x.from).length; // cards and groups, not edges
+		// Only the card count takes the warning color, not the selected count.
+		this.countEl.empty();
+		this.countEl.createSpan({ text: `${cards.length} cards`, cls: over ? 'canvas-board-over' : '' }); // warning color, see styles.css
+		if (sel) this.countEl.appendText(` · ${sel} selected`);
 		this.countEl.setAttr('aria-label', (over ? `over ${max} · ` : '') + Object.entries(byColor).map(([c, k]) => `${c} ${k}`).join(' · '));
 		this.countEl.setAttr('data-tooltip-position', 'top');
 		this.countEl.show();
 	}
 
-	// The plugin folder holds the skill's source; the vault copy is rewritten when missing or older.
-	syncSkill(dir) {
+	// The plugin folder holds the skill's default; the vault copy is written only when missing (then it is the
+	// user's, plugin updates never overwrite it) or on "Reset agent skill" (`force`).
+	syncSkill(dir, force = false) {
 		const src = path.join(dir, 'skill', 'SKILL.md');
 		const dest = path.join(this.app.vault.adapter.basePath, '.claude', 'skills', 'canvas-board', 'SKILL.md');
 		try {
-			if (fs.existsSync(dest) && fs.statSync(dest).mtimeMs >= fs.statSync(src).mtimeMs) return;
+			if (!force && fs.existsSync(dest)) return;
 			fs.mkdirSync(path.dirname(dest), { recursive: true });
 			fs.copyFileSync(src, dest);
+			if (force) new Notice('Canvas board: agent skill reset to the plugin\'s version');
 		} catch (e) {
 			console.error('canvas-board: skill sync failed', e);
+			if (force) new Notice(`Canvas board: skill reset failed (${e.message})`);
 		}
 	}
 
@@ -775,6 +829,76 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			const p = `${dir}${name}${k > 1 ? ' ' + k : ''}${ext}`;
 			if (!this.app.vault.getAbstractFileByPath(p)) return p;
 		}
+	}
+
+	// Cards (on any canvas) and notes that link `file`, except card `skipId` on `canvas`: [{ path, id?, label }].
+	async subcanvasLinks(file, canvas, skipId) {
+		const out = [];
+		const here = this.canvasFile(canvas);
+		const hits = from => target => { const f = this.app.metadataCache.getFirstLinkpathDest(target, from); return !!f && f.path === file.path; };
+		for (const f of this.app.vault.getFiles().filter(f => f.extension === 'canvas' && f.path !== file.path)) {
+			const open = f.path === here ? canvas : this.openCanvas(f.path);
+			let d;
+			try { d = open ? open.getData() : JSON.parse((await this.app.vault.cachedRead(f)) || '{}'); } catch (e) { continue; }
+			for (const n of d.nodes || []) {
+				if (f.path === here && n.id === skipId) continue;
+				const hit = n.type === 'file' ? n.file === file.path : n.type === 'text' && this.cb.relinkText(n.text, hits(f.path), () => '\u0000') !== n.text;
+				if (hit) out.push({ path: f.path, id: n.id, label: (n.text || n.file || '').split('\n')[0] });
+			}
+		}
+		const resolved = this.app.metadataCache.resolvedLinks;
+		for (const src in resolved) if (src !== file.path && !src.endsWith('.canvas') && resolved[src][file.path]) out.push({ path: src, label: src });
+		return out;
+	}
+
+	canvasFile(canvas) {
+		const leaf = this.app.workspace.getLeavesOfType('canvas').find(l => l.view.canvas === canvas);
+		return leaf && leaf.view.file ? leaf.view.file.path : null;
+	}
+
+	// mode: dissolve (file to trash, other links break), copy (file kept), group (cards in a group named after the
+	// file, other links redirected: cards on this board get an edge to the group, other cards and notes link this board).
+	async unpack(canvas, node, file, mode, links = []) {
+		const sub = JSON.parse((await this.app.vault.read(file)) || '{}');
+		const content = JSON.stringify({ nodes: sub.nodes || [], edges: sub.edges || [] }, null, '\t');
+		const label = (((node.getData().text || '').match(/\|([^\]]+)\]\]/) || [])[1] || file.basename).trim(); // the card's alias, else the file name
+		const ops = this.cb.expandOps(canvas.getData(), node.id, { nodes: sub.nodes || [], edges: sub.edges || [] }, mode === 'group' ? { group: label } : {});
+		const here = this.canvasFile(canvas);
+		const isSub = from => target => { const f = this.app.metadataCache.getFirstLinkpathDest(target, from); return !!f && f.path === file.path; };
+		if (mode === 'group') {
+			const [a, b] = this.settings.layoutDirection === 'LR' ? ['right', 'left'] : ['bottom', 'top'];
+			for (const l of links.filter(l => l.path === here)) {
+				const n = canvas.getData().nodes.find(x => x.id === l.id);
+				if (!n) continue;
+				ops.push({ op: 'set', id: n.id, text: n.type === 'text' ? this.cb.relinkText(n.text, isSub(here), t => t) : label });
+				ops.push({ op: 'edge', edge: { id: [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join(''), fromNode: n.id, fromSide: a, toNode: ops.group, toSide: b } });
+			}
+		}
+		this.edit(canvas, ops);
+		if (mode === 'group') {
+			const to = t => `[[${here}|${t}]]`;
+			for (const p of [...new Set(links.filter(l => l.path !== here).map(l => l.path))]) {
+				const f = this.app.vault.getAbstractFileByPath(p);
+				if (!f) continue;
+				if (p.endsWith('.canvas')) {
+					const relink = d => { for (const n of d.nodes || []) {
+						if (n.type === 'file' && n.file === file.path) n.file = here;
+						else if (n.type === 'text') n.text = this.cb.relinkText(n.text, isSub(p), to);
+					} };
+					const open = this.openCanvas(p);
+					if (open) { const d = open.getData(); relink(d); open.setData(d); open.requestSave(); }
+					else await this.app.vault.process(f, t => { const d = JSON.parse(t || '{}'); relink(d); return JSON.stringify(d, null, '\t'); });
+				} else await this.app.vault.process(f, t => this.cb.relinkText(t, isSub(p), to));
+			}
+		}
+		if (mode !== 'copy') await this.app.fileManager.trashFile(file);
+		const n = (sub.nodes || []).length, k = links.length, s = x => (x > 1 ? 's' : '');
+		const what = {
+			dissolve: `unpacked ${n} card${s(n)}, ${file.path} trashed` + (k ? ` (${k} link${s(k)} now broken)` : ''),
+			copy: `unpacked ${n} card${s(n)}, ${file.path} kept`,
+			group: `unpacked ${n} card${s(n)} into a group, ${k} link${s(k)} redirected`,
+		}[mode];
+		this.undoNotice(canvas, what, [], mode === 'copy' ? null : { path: file.path, content });
 	}
 
 	linkedCanvas(node) {
@@ -826,14 +950,14 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return view && view.getViewType() === 'canvas' ? view.canvas : null;
 	}
 
-	// True if the board, or a plan canvas linked from one of its cards, has a cyan or purple card.
-	async hasGoCards(board) {
+	// True if the board, or a plan canvas linked from one of its cards, has a card in `go` (setting "Pass colors").
+	async hasGoCards(board, go) {
 		const read = async p => {
 			const file = this.app.vault.getAbstractFileByPath(p);
 			if (!file) return [];
 			try { return JSON.parse(await this.app.vault.cachedRead(file)).nodes || []; } catch (e) { return []; }
 		};
-		const isGo = n => n.color === '5' || n.color === '6';
+		const isGo = n => go.has(n.color);
 		const open = this.openCanvas(board);
 		const nodes = open ? open.getData().nodes : await read(board);
 		if (nodes.some(isGo)) return true;
@@ -852,8 +976,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const claude = this.settings.claudePath || (fs.existsSync(local) ? local : 'claude');
 		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
 		const board = view && view.getViewType() === 'canvas' && view.file ? view.file.path : this.settings.defaultBoard;
-		if (!(await this.hasGoCards(board))) {
-			new Notice(`Canvas board: nothing to do on ${board} (no cyan or purple card)`);
+		const go = parseColors(this.settings.passColors);
+		if (go.size && !(await this.hasGoCards(board, go))) {
+			const names = Object.keys(COLOR_NUM).filter(k => go.has(COLOR_NUM[k]));
+			new Notice(`Canvas board: nothing to do on ${board} (no ${names.join(' or ')} card)`);
 			return;
 		}
 		const vars = { vault, board, claude };
@@ -870,32 +996,107 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 	}
 };
 
-// One-line name prompt; Enter confirms, Escape cancels.
+// One-line name prompt; Enter confirms, Escape cancels. Options: `suggestions` (names listed as you type, Enter
+// or click picks one into the field) and `overwrite` (name → true when it would replace a file: the button then
+// reads "Overwrite", in the warning color).
+// Unpack (dissolve) when other cards or notes link the subcanvas: group and redirect, keep the file, or break them.
+class UnpackChoice extends Modal {
+	constructor(app, file, links, onPick) {
+		super(app);
+		this.file = file;
+		this.links = links;
+		this.onPick = onPick;
+	}
+
+	onOpen() {
+		const k = this.links.length;
+		this.setTitle(`${this.file.basename} is linked from ${k} other place${k > 1 ? 's' : ''}`);
+		const ul = this.contentEl.createEl('ul');
+		for (const l of this.links.slice(0, 8)) ul.createEl('li', { text: l.id ? `${l.label} (${l.path})` : l.path });
+		if (k > 8) ul.createEl('li', { text: `and ${k - 8} more` });
+		const s = new Setting(this.contentEl);
+		const pick = mode => { this.close(); this.onPick(mode); };
+		s.addButton(b => b.setButtonText('Unpack into a group, redirect links').setCta().onClick(() => pick('group')));
+		s.addButton(b => b.setButtonText('Keep the file (copy)').onClick(() => pick('copy')));
+		s.addButton(b => b.setButtonText('Break links and trash').setWarning().onClick(() => pick('dissolve')));
+		s.addButton(b => b.setButtonText('Cancel').onClick(() => this.close()));
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
 class NamePrompt extends Modal {
-	constructor(app, title, onSubmit) {
+	constructor(app, title, onSubmit, opts = {}) {
 		super(app);
 		this.title = title;
 		this.onSubmit = onSubmit;
+		this.opts = opts;
 	}
 
 	onOpen() {
 		this.setTitle(this.title);
+		const { suggestions, overwrite } = this.opts;
 		let value = '';
+		let button, suggest, picked = false;
+		const clean = v => v.trim().replace(/[\\/:#^|[\]]/g, '');
+		// Subfolder names (a/b) are allowed for suggestions only: they name an existing file.
+		const nameOf = v => suggestions && suggestions.some(s => s.toLowerCase() === v.trim().toLowerCase()) ? v.trim() : clean(v);
+		const refresh = () => {
+			if (!button) return;
+			const over = !!(overwrite && value.trim() && overwrite(nameOf(value)));
+			button.setButtonText(over ? 'Overwrite' : 'Create');
+			button.buttonEl.toggleClass('mod-warning', over);
+			button.buttonEl.toggleClass('mod-cta', !over);
+		};
 		const submit = () => {
-			const name = value.trim().replace(/[\\/:#^|[\]]/g, '');
+			const name = nameOf(value);
 			if (!name) return;
 			this.close();
 			Promise.resolve(this.onSubmit(name)).catch(e => new Notice(`Canvas board: ${e.message}`));
 		};
 		new Setting(this.contentEl).addText(t => {
-			t.onChange(v => { value = v; });
-			t.inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+			t.onChange(v => { value = v; refresh(); });
+			if (suggestions && suggestions.length) suggest = new NameSuggest(this.app, t.inputEl, suggestions, v => {
+				t.setValue(v); value = v; refresh();
+				picked = true; setTimeout(() => { picked = false; }, 0); // the Enter that picked does not also submit
+			});
+			t.inputEl.addEventListener('keydown', e => {
+				if (e.key !== 'Enter' || picked || (suggest && suggest.suggestEl && suggest.suggestEl.isConnected)) return;
+				e.preventDefault();
+				submit();
+			});
 			setTimeout(() => t.inputEl.focus(), 0);
-		}).addButton(b => b.setButtonText('Create').setCta().onClick(submit));
+		}).addButton(b => { button = b; b.setButtonText('Create').setCta().onClick(submit); });
 	}
 
 	onClose() {
 		this.contentEl.empty();
+	}
+}
+
+// Names under a text field that contain what is typed (all of them when it is empty); picking one calls `onPick`.
+class NameSuggest extends AbstractInputSuggest {
+	constructor(app, inputEl, names, onPick) {
+		super(app, inputEl);
+		this.names = names;
+		this.onPick = onPick;
+	}
+
+	getSuggestions(q) {
+		q = q.trim().toLowerCase();
+		return this.names.filter(n => n.toLowerCase().includes(q)).sort((a, b) => a.localeCompare(b));
+	}
+
+	renderSuggestion(name, el) {
+		el.setText(name);
+		el.createSpan({ cls: 'canvas-board-key', text: 'overwrite' });
+	}
+
+	selectSuggestion(name) {
+		this.onPick(name);
+		this.close();
 	}
 }
 
@@ -1099,7 +1300,8 @@ class FilterPane {
 		if (!this.isOpen) return;
 		const state = plugin.viewState(canvas);
 		const tags = [...new Set([...this.tags(), ...state.xtags])].sort(); // a hidden tag stays listed, to show it again
-		const key = JSON.stringify([counts, [...state.xcolors], tags, [...state.xtags], [...folds], state.hidden.size]);
+		const foldedCards = [...folds.keys()].map(id => canvas.nodes.get(id)).filter(Boolean).map(n => [n.getData().color, plugin.cardText(n)]);
+		const key = JSON.stringify([counts, [...state.xcolors], tags, [...state.xtags], [...folds], foldedCards, state.hidden.size]);
 		if (key === this.key) return;
 		this.key = key;
 		const apply = () => plugin.refreshView(canvas);
@@ -1126,10 +1328,17 @@ class FilterPane {
 
 		this.foldedEl.empty();
 		this.foldedSection.toggle(folds.size > 0);
-		for (const id of folds.keys()) {
+		// Color dot, first line as title, the rest muted below, and how many cards the fold hides.
+		for (const [id, dir] of folds) {
 			const node = canvas.nodes.get(id);
 			if (!node) continue;
-			const row = this.foldedEl.createDiv({ cls: 'canvas-board-pane-row', text: plugin.cardLabel(node).slice(0, 60), attr: { 'aria-label': 'Click to unfold the whole branch' } });
+			const row = this.foldedEl.createDiv({ cls: 'canvas-board-pane-row canvas-board-pane-card', attr: { 'aria-label': 'Click to unfold the whole branch' } });
+			row.createSpan({ cls: 'canvas-board-dot', attr: { style: plugin.dotStyle(node.getData().color) } });
+			const text = row.createDiv({ cls: 'canvas-board-pane-card-text' });
+			const [title, ...rest] = plugin.cb.plainLines(plugin.cardText(node));
+			text.createDiv({ cls: 'canvas-board-pane-card-title', text: title || '(empty)' });
+			if (rest.length) text.createDiv({ cls: 'canvas-board-pane-card-rest', text: rest.join(' · ') });
+			row.createSpan({ cls: 'canvas-board-pane-card-count', text: `· ${plugin.branchLevels(canvas, id, dir).flat().length} folded` });
 			row.addEventListener('click', () => plugin.unfold(canvas, [id], Infinity));
 		}
 	}
@@ -1166,6 +1375,14 @@ class CanvasBoardSettings extends PluginSettingTab {
 		heading('Pass');
 		text('Claude path', 'Empty: ~/.local/bin/claude.exe if it exists, else claude on PATH.', 'claudePath');
 		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
+		new Setting(containerEl).setName('Pass colors').setDesc('"Run pass" starts only if the board has a card of one of these colors (names or 1-6, e.g. "cyan purple"); the agent takes the same cards (tree --active). Empty: the pass always starts.').addText(t => t
+			.setPlaceholder('empty: always run')
+			.setValue(this.plugin.settings.passColors)
+			.onChange(async v => { this.plugin.settings.passColors = v.trim(); await this.plugin.saveData(this.plugin.settings); }));
+		new Setting(containerEl).setName('Agent skill').setDesc('.claude/skills/canvas-board/SKILL.md is written once from the plugin, then it is yours: plugin updates never overwrite it. Reset brings back the plugin\'s version.').addButton(b => b
+			.setButtonText('Reset skill')
+			.setWarning()
+			.onClick(() => this.plugin.syncSkill(path.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir), true)));
 		heading('Layout');
 		new Setting(containerEl).setName('Layout direction').setDesc('Tidy layout and agent-made plan canvases: top to bottom or left to right ("depends on" prerequisites come first).').addDropdown(dd => dd
 			.addOptions({ TB: 'Top to bottom', LR: 'Left to right' })
