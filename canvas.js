@@ -577,8 +577,8 @@ function fitHeight(text, w) {
 }
 
 // Ops that lay out `ids` (all cards when empty) with dagre; the other cards never move. The laid-out block
-// goes next to the first fixed card it is edged to, else right of everything, then steps until it overlaps
-// nothing. Shared with the plugin, which passes its own dagre.
+// keeps the center of the cards it lays out, then steps until it overlaps nothing.
+// Shared with the plugin, which passes its own dagre.
 function layoutOps(d, { ids, dir = 'TB', fit = false, dagre }) {
   const cards = d.nodes.filter(n => n.type !== 'group');
   const pick = new Set(ids && ids.length ? ids : cards.map(n => n.id));
@@ -598,18 +598,16 @@ function layoutOps(d, { ids, dir = 'TB', fit = false, dagre }) {
 
   const box = ns => ns.reduce((b, n) => ({ x0: Math.min(b.x0, n.x), y0: Math.min(b.y0, n.y), x1: Math.max(b.x1, n.x + n.width), y1: Math.max(b.y1, n.y + n.height) }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
   const placed = moving.map(n => { const p = g.node(n.id); return { id: n.id, x: Math.round(p.x - p.width / 2), y: Math.round(p.y - p.height / 2), width: p.width, height: p.height }; });
-  const b = box(placed);
-  let ox = 0, oy = 0;
-  if (fixed.length) {
-    const link = d.edges.find(e => pick.has(e.fromNode) !== pick.has(e.toNode));
-    const anchor = link && fixed.find(n => n.id === (pick.has(link.fromNode) ? link.toNode : link.fromNode));
-    const all = box(fixed);
-    const ref = anchor || { x: all.x1, y: all.y0, width: 0, height: 0 };
-    ox = dir === 'LR' || !anchor ? ref.x + ref.width + 80 - b.x0 : ref.x - b.x0;
-    oy = dir === 'LR' || !anchor ? ref.y - b.y0 : ref.y + ref.height + 80 - b.y0;
-    const hits = () => placed.some(p => fixed.some(n => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
-    for (let k = 0; k < 200 && hits(); k++) { if (dir === 'LR') oy += 40; else ox += 40; }
-  } else { ox = -b.x0; oy = -b.y0; }
+  // The block keeps the center the moving cards had; if it then overlaps a fixed card, it steps across the
+  // flow (down for LR, right for TB), alternating sides, to the nearest free spot.
+  const b = box(placed), was = box(moving);
+  const cx = Math.round((was.x0 + was.x1 - b.x0 - b.x1) / 2), cy = Math.round((was.y0 + was.y1 - b.y0 - b.y1) / 2);
+  let ox = cx, oy = cy;
+  const hits = () => placed.some(p => fixed.some(n => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
+  for (let k = 1; k <= 400 && hits(); k++) {
+    const step = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 40;
+    if (dir === 'LR') oy = cy + step; else ox = cx + step;
+  }
 
   const ops = placed.map(p => ({ op: 'set', id: p.id, x: p.x + ox, y: p.y + oy, width: p.width, height: p.height }));
   const [fromSide, toSide] = SIDES[dir];

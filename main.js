@@ -90,10 +90,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				if (!checking) {
 					const ids = canvas.selection.size > 1 ? [...canvas.selection].map(n => n.id) : [];
 					const d = canvas.getData();
-					applyOps(d, layoutOps(d, { ids, dir: this.settings.layoutDirection, dagre }));
-					canvas.pushHistory && canvas.pushHistory(canvas.getData());
-					canvas.setData(d);
-					canvas.requestSave();
+					this.edit(canvas, layoutOps(d, { ids, dir: this.settings.layoutDirection, dagre }), d);
 				}
 				return true;
 			},
