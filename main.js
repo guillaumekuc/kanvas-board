@@ -1,8 +1,9 @@
 // Canvas board: color hotkeys for selected canvas cards, a command that opens a terminal running the
 // canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
 // to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (pack, unpack dissolve / copy, merge,
-// split, extract), archive/restore, view tools (search current canvas, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. Copies skill/SKILL.md to
-// .claude/skills/canvas-board/ on load.
+// split, extract), archive/restore, view tools (search current canvas, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. Writes skill/SKILL.md to
+// .claude/skills/canvas-board/ on load when missing; after that the vault copy is the user's (command "Reset agent skill").
+// The agent workflow (what a pass takes, roll-up, check) is workflow.js; here only the "Pass colors" gate.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
 const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, AbstractInputSuggest, Scope, setIcon } = require('obsidian');
 const { spawn } = require('child_process');
@@ -28,7 +29,10 @@ const DEFAULTS = {
 	hideTagBranches: true, // a hidden tag also hides the cards below its cards (in the fold direction)
 	foldDirection: 'out', // fold hides the cards a card points to (out) or the cards pointing to it (in)
 	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
+	passColors: 'cyan purple', // cards that start a pass (and that tree --active takes, see workflow.js); empty = always run
 };
+const COLOR_NUM = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
+const parseColors = s => new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLOR_NUM[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
 
 module.exports = class CanvasBoardPlugin extends Plugin {
 	async onload() {
@@ -63,6 +67,11 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			},
 		};
 		this.syncSkill(dir);
+		this.addCommand({
+			id: 'reset-skill',
+			name: "Reset agent skill to the plugin's version (overwrites your edits)",
+			callback: () => this.syncSkill(dir, true),
+		});
 
 		for (const [label, color, key] of COLORS) {
 			this.addCommand({
@@ -780,16 +789,19 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		this.countEl.show();
 	}
 
-	// The plugin folder holds the skill's source; the vault copy is rewritten when missing or older.
-	syncSkill(dir) {
+	// The plugin folder holds the skill's default; the vault copy is written only when missing (then it is the
+	// user's, plugin updates never overwrite it) or on "Reset agent skill" (`force`).
+	syncSkill(dir, force = false) {
 		const src = path.join(dir, 'skill', 'SKILL.md');
 		const dest = path.join(this.app.vault.adapter.basePath, '.claude', 'skills', 'canvas-board', 'SKILL.md');
 		try {
-			if (fs.existsSync(dest) && fs.statSync(dest).mtimeMs >= fs.statSync(src).mtimeMs) return;
+			if (!force && fs.existsSync(dest)) return;
 			fs.mkdirSync(path.dirname(dest), { recursive: true });
 			fs.copyFileSync(src, dest);
+			if (force) new Notice('Canvas board: agent skill reset to the plugin\'s version');
 		} catch (e) {
 			console.error('canvas-board: skill sync failed', e);
+			if (force) new Notice(`Canvas board: skill reset failed (${e.message})`);
 		}
 	}
 
@@ -938,14 +950,14 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return view && view.getViewType() === 'canvas' ? view.canvas : null;
 	}
 
-	// True if the board, or a plan canvas linked from one of its cards, has a cyan or purple card.
-	async hasGoCards(board) {
+	// True if the board, or a plan canvas linked from one of its cards, has a card in `go` (setting "Pass colors").
+	async hasGoCards(board, go) {
 		const read = async p => {
 			const file = this.app.vault.getAbstractFileByPath(p);
 			if (!file) return [];
 			try { return JSON.parse(await this.app.vault.cachedRead(file)).nodes || []; } catch (e) { return []; }
 		};
-		const isGo = n => n.color === '5' || n.color === '6';
+		const isGo = n => go.has(n.color);
 		const open = this.openCanvas(board);
 		const nodes = open ? open.getData().nodes : await read(board);
 		if (nodes.some(isGo)) return true;
@@ -964,8 +976,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const claude = this.settings.claudePath || (fs.existsSync(local) ? local : 'claude');
 		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
 		const board = view && view.getViewType() === 'canvas' && view.file ? view.file.path : this.settings.defaultBoard;
-		if (!(await this.hasGoCards(board))) {
-			new Notice(`Canvas board: nothing to do on ${board} (no cyan or purple card)`);
+		const go = parseColors(this.settings.passColors);
+		if (go.size && !(await this.hasGoCards(board, go))) {
+			const names = Object.keys(COLOR_NUM).filter(k => go.has(COLOR_NUM[k]));
+			new Notice(`Canvas board: nothing to do on ${board} (no ${names.join(' or ')} card)`);
 			return;
 		}
 		const vars = { vault, board, claude };
@@ -1361,6 +1375,14 @@ class CanvasBoardSettings extends PluginSettingTab {
 		heading('Pass');
 		text('Claude path', 'Empty: ~/.local/bin/claude.exe if it exists, else claude on PATH.', 'claudePath');
 		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
+		new Setting(containerEl).setName('Pass colors').setDesc('"Run pass" starts only if the board has a card of one of these colors (names or 1-6, e.g. "cyan purple"); the agent takes the same cards (tree --active). Empty: the pass always starts.').addText(t => t
+			.setPlaceholder('empty: always run')
+			.setValue(this.plugin.settings.passColors)
+			.onChange(async v => { this.plugin.settings.passColors = v.trim(); await this.plugin.saveData(this.plugin.settings); }));
+		new Setting(containerEl).setName('Agent skill').setDesc('.claude/skills/canvas-board/SKILL.md is written once from the plugin, then it is yours: plugin updates never overwrite it. Reset brings back the plugin\'s version.').addButton(b => b
+			.setButtonText('Reset skill')
+			.setWarning()
+			.onClick(() => this.plugin.syncSkill(path.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir), true)));
 		heading('Layout');
 		new Setting(containerEl).setName('Layout direction').setDesc('Tidy layout and agent-made plan canvases: top to bottom or left to right ("depends on" prerequisites come first).').addDropdown(dd => dd
 			.addOptions({ TB: 'Top to bottom', LR: 'Left to right' })
