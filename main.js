@@ -200,15 +200,46 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				},
 			});
 
-		// Templates: the selection (and edges between its cards) as Templates/Canvas/<name>.canvas.
-		canvasCommand('template-save', 'Save selected cards as a template', ['Save as template', 'layout-template'], (c, sel) => sel.length > 0, canvas =>
+		// Templates: the selection (and edges between its cards) as Templates/Canvas/<name>.canvas. Typing the name
+		// suggests the existing templates: picking one (or typing its name) overwrites it, the button says so.
+		const templates = () => this.app.vault.getFiles().filter(f => f.extension === 'canvas' && f.path.startsWith(cb.TEMPLATE_DIR + '/'));
+		const templateName = f => f.path.slice(cb.TEMPLATE_DIR.length + 1, -'.canvas'.length); // subfolders kept
+		canvasCommand('template-save', 'Save selected cards as a template', ['Save as template', 'layout-template'], (c, sel) => sel.length > 0, canvas => {
+			const existing = new Map(templates().map(f => [templateName(f).toLowerCase(), f]));
 			new NamePrompt(this.app, 'Template name', async name => {
-				const { nodes, edges } = canvas.getSelectionData();
+				const content = JSON.stringify((({ nodes, edges }) => ({ nodes, edges }))(canvas.getSelectionData()), null, '\t');
+				const old = existing.get(name.toLowerCase());
+				if (old) { await this.app.vault.modify(old, content); new Notice(`Canvas board: template ${old.path} overwritten`); return; }
 				if (!this.app.vault.getAbstractFileByPath(cb.TEMPLATE_DIR)) await this.app.vault.createFolder(cb.TEMPLATE_DIR);
 				const file = this.freePath(cb.TEMPLATE_DIR + '/', name, '.canvas');
-				await this.app.vault.create(file, JSON.stringify({ nodes, edges }, null, '\t'));
+				await this.app.vault.create(file, content);
 				new Notice(`Canvas board: template saved to ${file}`);
-			}).open());
+			}, { suggestions: [...existing.values()].map(templateName), overwrite: v => existing.has(v.toLowerCase()) }).open();
+		});
+		// Selection tools: the selection grows to related cards (visible ones only: hidden cards never stay selected).
+		// Children follow the fold direction, one level per press, the selected cards stay selected.
+		const cards = sel => sel.filter(n => !n.from && n.getData().type !== 'group');
+		const selectMore = (canvas, sel, keep) => {
+			const add = [...canvas.nodes.values()].filter(n => n.getData().type !== 'group' && !this.isHidden(canvas, n) && keep(n));
+			canvas.updateSelection(() => { canvas.selection.clear(); for (const n of [...sel, ...add]) canvas.selection.add(n); });
+		};
+		const childIds = (c, sel) => {
+			const links = this.branchLinks(c, this.settings.foldDirection);
+			return new Set(cards(sel).flatMap(n => links.get(n.id) || []));
+		};
+		canvasCommand('select-children', 'Select children (cards one level down, in the fold direction)', ['Select children', 'list-tree'],
+			(c, sel) => [...childIds(c, sel)].some(id => c.nodes.get(id) && !this.isHidden(c, c.nodes.get(id)) && !c.selection.has(c.nodes.get(id))),
+			(canvas, sel) => { const ids = childIds(canvas, sel); selectMore(canvas, sel, n => ids.has(n.id)); });
+		const tagsOf = sel => new Set(cards(sel).flatMap(n => [...this.cardTagSet(n)]));
+		canvasCommand('select-same-tag', 'Select cards with the same tag', ['Select same tag', 'tag'], (c, sel) => tagsOf(sel).size > 0, (canvas, sel) => {
+			const tags = tagsOf(sel);
+			selectMore(canvas, sel, n => [...this.cardTagSet(n)].some(t => tags.has(t)));
+		});
+		canvasCommand('select-same-color', 'Select cards with the same color', ['Select same color', 'palette'], (c, sel) => cards(sel).length > 0, (canvas, sel) => {
+			const colors = new Set(cards(sel).map(n => n.getData().color || ''));
+			selectMore(canvas, sel, n => colors.has(n.getData().color || ''));
+		});
+
 		this.addCommand({
 			id: 'template-insert',
 			name: 'Insert cards from template',
@@ -870,32 +901,79 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 	}
 };
 
-// One-line name prompt; Enter confirms, Escape cancels.
+// One-line name prompt; Enter confirms, Escape cancels. Options: `suggestions` (names listed as you type, Enter
+// or click picks one into the field) and `overwrite` (name → true when it would replace a file: the button then
+// reads "Overwrite", in the warning color).
 class NamePrompt extends Modal {
-	constructor(app, title, onSubmit) {
+	constructor(app, title, onSubmit, opts = {}) {
 		super(app);
 		this.title = title;
 		this.onSubmit = onSubmit;
+		this.opts = opts;
 	}
 
 	onOpen() {
 		this.setTitle(this.title);
+		const { suggestions, overwrite } = this.opts;
 		let value = '';
+		let button, suggest, picked = false;
+		const clean = v => v.trim().replace(/[\\/:#^|[\]]/g, '');
+		// Subfolder names (a/b) are allowed for suggestions only: they name an existing file.
+		const nameOf = v => suggestions && suggestions.some(s => s.toLowerCase() === v.trim().toLowerCase()) ? v.trim() : clean(v);
+		const refresh = () => {
+			if (!button) return;
+			const over = !!(overwrite && value.trim() && overwrite(nameOf(value)));
+			button.setButtonText(over ? 'Overwrite' : 'Create');
+			button.buttonEl.toggleClass('mod-warning', over);
+			button.buttonEl.toggleClass('mod-cta', !over);
+		};
 		const submit = () => {
-			const name = value.trim().replace(/[\\/:#^|[\]]/g, '');
+			const name = nameOf(value);
 			if (!name) return;
 			this.close();
 			Promise.resolve(this.onSubmit(name)).catch(e => new Notice(`Canvas board: ${e.message}`));
 		};
 		new Setting(this.contentEl).addText(t => {
-			t.onChange(v => { value = v; });
-			t.inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+			t.onChange(v => { value = v; refresh(); });
+			if (suggestions && suggestions.length) suggest = new NameSuggest(this.app, t.inputEl, suggestions, v => {
+				t.setValue(v); value = v; refresh();
+				picked = true; setTimeout(() => { picked = false; }, 0); // the Enter that picked does not also submit
+			});
+			t.inputEl.addEventListener('keydown', e => {
+				if (e.key !== 'Enter' || picked || (suggest && suggest.suggestEl && suggest.suggestEl.isConnected)) return;
+				e.preventDefault();
+				submit();
+			});
 			setTimeout(() => t.inputEl.focus(), 0);
-		}).addButton(b => b.setButtonText('Create').setCta().onClick(submit));
+		}).addButton(b => { button = b; b.setButtonText('Create').setCta().onClick(submit); });
 	}
 
 	onClose() {
 		this.contentEl.empty();
+	}
+}
+
+// Names under a text field that contain what is typed (all of them when it is empty); picking one calls `onPick`.
+class NameSuggest extends AbstractInputSuggest {
+	constructor(app, inputEl, names, onPick) {
+		super(app, inputEl);
+		this.names = names;
+		this.onPick = onPick;
+	}
+
+	getSuggestions(q) {
+		q = q.trim().toLowerCase();
+		return this.names.filter(n => n.toLowerCase().includes(q)).sort((a, b) => a.localeCompare(b));
+	}
+
+	renderSuggestion(name, el) {
+		el.setText(name);
+		el.createSpan({ cls: 'canvas-board-key', text: 'overwrite' });
+	}
+
+	selectSuggestion(name) {
+		this.onPick(name);
+		this.close();
 	}
 }
 
