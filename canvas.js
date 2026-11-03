@@ -18,9 +18,10 @@
 //                                             dagre layered layout of the given cards (default: all), the others
 //                                             stay put; --fit sizes text cards to their text. For canvases an agent
 //                                             made, or cards it just added
-//   CANVAS collapse <board> --ids a,b --name N  the cards (and cards inside selected groups) move to `N.canvas`
-//                                             next to the board; one card `[[N.canvas|N]]` takes their place
-//   CANVAS expand <board> <id>                the reverse; the subcanvas file goes to .trash
+//   CANVAS pack <board> --ids a,b --name N    the cards (and cards inside selected groups) move to `N.canvas`
+//                                             next to the board; one card `[[N.canvas|N]]` takes their place (alias: collapse)
+//   CANVAS unpack <board> <id> [--keep]       the reverse; the subcanvas file goes to .trash, unless --keep or other
+//                                             cards / notes still link it (then it stays, they are listed) (alias: expand)
 //   CANVAS merge <board> --ids a,b            text cards into the first in reading order (most urgent color)
 //   CANVAS split <board> <id> [--by b]        b: paragraph (default), bullet, h1..h6; pieces stack under it
 //   CANVAS extract <board> <id> --text t      the text t leaves the card for a new card right of it, overlaps allowed
@@ -103,9 +104,10 @@ function collapseOps(d, ids, file, label) {
   return { ops, sub, id: card.id };
 }
 
-// The reverse: the subcanvas's cards come back at the card's place, shifted right until they overlap nothing;
-// edges on the card go to the first of them in reading order. The caller trashes the .canvas file.
-function expandOps(d, id, sub) {
+// The reverse (unpack): the subcanvas's cards come back at the card's place, shifted right until they overlap nothing;
+// edges on the card go to the first of them in reading order. The caller trashes the .canvas file (dissolve) or
+// keeps it (copy). With `group` (a label), a group is drawn around them and the edges on the card go to it.
+function expandOps(d, id, sub, { group } = {}) {
   const card = d.nodes.find(n => n.id === id);
   if (!card) throw new Error('no node ' + id);
   if (!sub.nodes.length) throw new Error('empty subcanvas');
@@ -118,13 +120,27 @@ function expandOps(d, id, sub) {
   const hits = () => sub.nodes.some(p => others.some(n => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
   for (let k = 0; k < 200 && hits(); k++) ox += 40;
   const nodes = sub.nodes.map(n => ({ ...n, id: ids.get(n.id), x: n.x + ox, y: n.y + oy }));
-  const first = nodes.filter(n => n.type !== 'group').sort(byReading)[0] || nodes[0];
-  const ops = nodes.map(node => ({ op: 'add', node }));
+  let first = nodes.filter(n => n.type !== 'group').sort(byReading)[0] || nodes[0];
+  const ops = [];
+  if (group) { // added first: drawn behind the cards
+    const P = 30;
+    const gx = Math.min(...nodes.map(n => n.x)) - P, gy = Math.min(...nodes.map(n => n.y)) - P;
+    first = { id: newId(), type: 'group', label: group, x: gx, y: gy,
+      width: Math.max(...nodes.map(n => n.x + n.width)) + P - gx, height: Math.max(...nodes.map(n => n.y + n.height)) + P - gy };
+    ops.push({ op: 'add', node: first });
+  }
+  ops.push(...nodes.map(node => ({ op: 'add', node })));
   for (const e of sub.edges) ops.push({ op: 'edge', edge: { ...e, id: taken.has(e.id) ? newId() : e.id, fromNode: ids.get(e.fromNode), toNode: ids.get(e.toNode) } });
   for (const e of d.edges) if (e.fromNode === id || e.toNode === id)
     ops.push({ op: 'retarget', id: e.id, fromNode: e.fromNode === id ? first.id : e.fromNode, toNode: e.toNode === id ? first.id : e.toNode });
   ops.push({ op: 'remove', id });
-  return ops;
+  return group ? Object.assign(ops, { group: first.id }) : ops;
+}
+
+// Wikilinks (and embeds) in `text` whose target `hits(linkpath)` become `to(label)`; label = alias, else file name.
+function relinkText(text, hits, to) {
+  return (text || '').replace(/!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g, (m, target, sub, alias) =>
+    hits(target.trim()) ? to(alias || path.posix.basename(target.trim()).replace(/\.canvas$/, '')) : m);
 }
 
 // Text cards become the first one (in reading order): texts joined by a blank line, the most urgent color,
@@ -352,6 +368,25 @@ function findFile(name) {
     walk('');
   }
   return fileIndex.get(name) || null;
+}
+
+// Cards (any .canvas) and notes (.md) that link `rel`, except card `skipId` on `board`: ['path (card id)' | 'path'].
+function linksTo(rel, board, skipId) {
+  findFile('');
+  const out = [];
+  const hits = t => findFile(t) === rel;
+  for (const f of new Set(fileIndex.values())) {
+    if (f === rel || !/\.(md|canvas)$/.test(f)) continue;
+    let src;
+    try { src = fs.readFileSync(abs(f), 'utf8'); } catch (e) { continue; }
+    if (!src.includes(path.posix.basename(rel))) continue;
+    if (f.endsWith('.md')) { if (relinkText(src, hits, () => '\u0000') !== src) out.push(f); continue; }
+    let d;
+    try { d = JSON.parse(src || '{}'); } catch (e) { continue; }
+    for (const n of d.nodes || []) if (!(f === board && n.id === skipId) &&
+      (n.type === 'file' ? n.file === rel : relinkText(n.text, hits, () => '\u0000') !== (n.text || ''))) out.push(`${f} (${n.id})`);
+  }
+  return out;
 }
 
 function cardLinks(n) {
@@ -598,7 +633,7 @@ function plainLines(text) {
     .replace(/\s+/g, ' ').trim()).filter(Boolean);
 }
 
-module.exports = { plainLines, applyOps, layoutOps, collapseOps, expandOps, mergeOps, splitOps, extractOps, archiveNote, restoreOps, noteName, ARCHIVE_DIR, templateOps, TEMPLATE_DIR };
+module.exports = { plainLines, applyOps, layoutOps, collapseOps, expandOps, relinkText, mergeOps, splitOps, extractOps, archiveNote, restoreOps, noteName, ARCHIVE_DIR, templateOps, TEMPLATE_DIR };
 
 // Next free `<dir>/<name><ext>` (vault-relative), adding " 2", " 3"... when taken.
 function freePath(dir, name, ext) {
@@ -669,6 +704,7 @@ if (require.main === module) {
       console.log(writeOps(board, ops), ops.filter(o => o.op === 'set').length, 'cards');
       break;
     }
+    case 'pack':
     case 'collapse': {
       const name = opt('--name');
       if (!name) throw new Error('collapse needs --name');
@@ -679,13 +715,16 @@ if (require.main === module) {
       console.log(file, id);
       break;
     }
+    case 'unpack':
     case 'expand': {
       const card = readBoard(board).nodes.find(n => n.id === rest[0]);
       const sub = card && cardLinks(card).canvas;
       if (!sub) throw new Error('card links no canvas');
+      const others = args.includes('--keep') ? [] : linksTo(sub, board, rest[0]);
       writeOps(board, expandOps(readBoard(board), rest[0], readBoard(sub)));
-      toTrash(sub);
-      console.log('expanded', sub);
+      if (args.includes('--keep')) console.log('unpacked (copy), kept', sub);
+      else if (others.length) console.log('unpacked, kept', sub, '- still linked from:', others.join(', '));
+      else { toTrash(sub); console.log('unpacked (dissolve), trashed', sub); }
       break;
     }
     case 'merge': console.log(writeOps(board, mergeOps(readBoard(board), (opt('--ids') || '').split(',').filter(Boolean)))); break;
@@ -716,7 +755,7 @@ if (require.main === module) {
     case 'rollup': print(rollup(board)); break;
     case 'check': print(check(board)); break;
     default:
-      console.error('Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|layout|collapse|expand|merge|split|extract|archive|restore|rollup|check <board> ... (see header)');
+      console.error('Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|layout|pack|unpack|merge|split|extract|archive|restore|rollup|check <board> ... (see header)');
       process.exit(1);
   }
 }

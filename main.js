@@ -1,6 +1,6 @@
 // Canvas board: color hotkeys for selected canvas cards, a command that opens a terminal running the
 // canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
-// to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (collapse, expand, merge,
+// to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (pack, unpack dissolve / copy, merge,
 // split, extract), archive/restore, view tools (search current canvas, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. Copies skill/SKILL.md to
 // .claude/skills/canvas-board/ on load.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
@@ -118,7 +118,8 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		};
 		const isText = n => n.getData().type === 'text';
 
-		canvasCommand('collapse', 'Collapse to subcanvas', ['Collapse to subcanvas', 'fold-vertical'], (c, sel) => sel.length > 0, (canvas, sel) =>
+		// Pack / unpack (ids stay collapse / expand so hotkeys keep working). Pack moves cards into a new subcanvas.
+		canvasCommand('collapse', 'Pack into subcanvas', ['Pack into subcanvas', 'package'], (c, sel) => sel.length > 0, (canvas, sel) =>
 			new NamePrompt(this.app, 'Subcanvas name', async name => {
 				const board = this.activeFile();
 				const dir = board.parent && board.parent.path !== '/' ? board.parent.path + '/' : '';
@@ -126,15 +127,20 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				const { ops, sub } = cb.collapseOps(canvas.getData(), sel.map(n => n.id), file, name);
 				await this.app.vault.create(file, JSON.stringify(sub, null, '\t'));
 				this.edit(canvas, ops);
-				this.undoNotice(canvas, `collapsed ${sel.length} card${sel.length > 1 ? 's' : ''} into ${file}`, [file]);
+				this.undoNotice(canvas, `packed ${sel.length} card${sel.length > 1 ? 's' : ''} into ${file}`, [file]);
 			}).open());
 
-		canvasCommand('expand', 'Expand subcanvas', ['Expand subcanvas', 'unfold-vertical'], (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]), async (canvas, [node]) => {
+		// Unpack (dissolve) = cut and paste: the cards come out, the file goes to the trash. Other links to the file
+		// (cards on any canvas, notes) would break: then a choice. Unpack (copy) = copy and paste: the file stays.
+		const linked = (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]);
+		canvasCommand('expand', 'Unpack subcanvas (dissolve)', ['Unpack subcanvas (dissolve)', 'package-open'], linked, async (canvas, [node]) => {
 			const file = this.linkedCanvas(node);
-			const sub = JSON.parse(await this.app.vault.read(file));
-			this.edit(canvas, cb.expandOps(canvas.getData(), node.id, { nodes: sub.nodes || [], edges: sub.edges || [] }));
-			await this.app.fileManager.trashFile(file);
+			const links = await this.subcanvasLinks(file, canvas, node.id);
+			if (!links.length) return this.unpack(canvas, node, file, 'dissolve');
+			new UnpackChoice(this.app, file, links, mode => this.unpack(canvas, node, file, mode, links).catch(e => new Notice(`Canvas board: ${e.message}`))).open();
 		});
+		canvasCommand('unpack-copy', 'Unpack subcanvas (copy)', ['Unpack subcanvas (copy)', 'copy'], linked, (canvas, [node]) =>
+			this.unpack(canvas, node, this.linkedCanvas(node), 'copy'));
 
 		canvasCommand('merge', 'Merge selected cards', ['Merge cards', 'merge'], (c, sel) => sel.length > 1 && sel.every(isText), (canvas, sel) =>
 			this.edit(canvas, cb.mergeOps(canvas.getData(), sel.map(n => n.id))));
@@ -408,7 +414,8 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 
 	// A notice with an Undo button: one canvas undo step and the files the action made go to the trash. Only while
 	// the board has not changed since (else the undo would take back something else).
-	undoNotice(canvas, msg, files = []) {
+	// `restore` ({ path, content }) brings a trashed file back on undo (unpack). Redirected links are not undone.
+	undoNotice(canvas, msg, files = [], restore = null) {
 		const h = canvas.history;
 		const at = h ? h.current : null;
 		const frag = createFragment(f => {
@@ -418,6 +425,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				if (!h || h.current !== at) { new Notice('Canvas board: the board changed since, use Ctrl+Z'); return; }
 				canvas.undo();
 				for (const p of files) { const file = this.app.vault.getAbstractFileByPath(p); if (file) await this.app.fileManager.trashFile(file); }
+				if (restore && !this.app.vault.getAbstractFileByPath(restore.path)) await this.app.vault.create(restore.path, restore.content);
 			});
 		});
 		new Notice(frag, 8000);
@@ -519,15 +527,17 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		v = empty();
 		this.views.set(canvas, v);
 		// Hidden cards never stay selected (select all, drag to select), so Delete never hits a card you can't see.
+		const plugin = this;
 		const orig = canvas.updateSelection;
 		canvas.updateSelection = function (fn) {
-			return orig.call(this, () => {
+			const r = orig.call(this, () => {
 				fn();
 				for (const x of [...this.selection]) if (v.hidden.has(x.id) || (x.from && (v.hidden.has(x.from.node.id) || v.hidden.has(x.to.node.id)))) this.selection.delete(x);
 			});
+			plugin.updateCount(); // selected count in the status bar follows at once
+			return r;
 		};
 		// Undo / redo may bring folds back or take them away: redraw at once.
-		const plugin = this;
 		const history = canvas.applyHistory;
 		if (history) canvas.applyHistory = function (...a) {
 			const r = history.apply(this, a);
@@ -763,8 +773,11 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		for (const n of cards) { const c = names[n.color || ''] || 'custom'; byColor[c] = (byColor[c] || 0) + 1; }
 		const max = Number(this.settings.cardWarning) || 0;
 		const over = max > 0 && cards.length > max;
-		this.countEl.setText(`${cards.length} cards`);
-		this.countEl.toggleClass('canvas-board-over', over); // warning color, see styles.css
+		const sel = [...canvas.selection].filter(x => !x.from).length; // cards and groups, not edges
+		// Only the card count takes the warning color, not the selected count.
+		this.countEl.empty();
+		this.countEl.createSpan({ text: `${cards.length} cards`, cls: over ? 'canvas-board-over' : '' }); // warning color, see styles.css
+		if (sel) this.countEl.appendText(` · ${sel} selected`);
 		this.countEl.setAttr('aria-label', (over ? `over ${max} · ` : '') + Object.entries(byColor).map(([c, k]) => `${c} ${k}`).join(' · '));
 		this.countEl.setAttr('data-tooltip-position', 'top');
 		this.countEl.show();
@@ -807,6 +820,76 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			const p = `${dir}${name}${k > 1 ? ' ' + k : ''}${ext}`;
 			if (!this.app.vault.getAbstractFileByPath(p)) return p;
 		}
+	}
+
+	// Cards (on any canvas) and notes that link `file`, except card `skipId` on `canvas`: [{ path, id?, label }].
+	async subcanvasLinks(file, canvas, skipId) {
+		const out = [];
+		const here = this.canvasFile(canvas);
+		const hits = from => target => { const f = this.app.metadataCache.getFirstLinkpathDest(target, from); return !!f && f.path === file.path; };
+		for (const f of this.app.vault.getFiles().filter(f => f.extension === 'canvas' && f.path !== file.path)) {
+			const open = f.path === here ? canvas : this.openCanvas(f.path);
+			let d;
+			try { d = open ? open.getData() : JSON.parse((await this.app.vault.cachedRead(f)) || '{}'); } catch (e) { continue; }
+			for (const n of d.nodes || []) {
+				if (f.path === here && n.id === skipId) continue;
+				const hit = n.type === 'file' ? n.file === file.path : n.type === 'text' && this.cb.relinkText(n.text, hits(f.path), () => '\u0000') !== n.text;
+				if (hit) out.push({ path: f.path, id: n.id, label: (n.text || n.file || '').split('\n')[0] });
+			}
+		}
+		const resolved = this.app.metadataCache.resolvedLinks;
+		for (const src in resolved) if (src !== file.path && !src.endsWith('.canvas') && resolved[src][file.path]) out.push({ path: src, label: src });
+		return out;
+	}
+
+	canvasFile(canvas) {
+		const leaf = this.app.workspace.getLeavesOfType('canvas').find(l => l.view.canvas === canvas);
+		return leaf && leaf.view.file ? leaf.view.file.path : null;
+	}
+
+	// mode: dissolve (file to trash, other links break), copy (file kept), group (cards in a group named after the
+	// file, other links redirected: cards on this board get an edge to the group, other cards and notes link this board).
+	async unpack(canvas, node, file, mode, links = []) {
+		const sub = JSON.parse((await this.app.vault.read(file)) || '{}');
+		const content = JSON.stringify({ nodes: sub.nodes || [], edges: sub.edges || [] }, null, '\t');
+		const label = (((node.getData().text || '').match(/\|([^\]]+)\]\]/) || [])[1] || file.basename).trim(); // the card's alias, else the file name
+		const ops = this.cb.expandOps(canvas.getData(), node.id, { nodes: sub.nodes || [], edges: sub.edges || [] }, mode === 'group' ? { group: label } : {});
+		const here = this.canvasFile(canvas);
+		const isSub = from => target => { const f = this.app.metadataCache.getFirstLinkpathDest(target, from); return !!f && f.path === file.path; };
+		if (mode === 'group') {
+			const [a, b] = this.settings.layoutDirection === 'LR' ? ['right', 'left'] : ['bottom', 'top'];
+			for (const l of links.filter(l => l.path === here)) {
+				const n = canvas.getData().nodes.find(x => x.id === l.id);
+				if (!n) continue;
+				ops.push({ op: 'set', id: n.id, text: n.type === 'text' ? this.cb.relinkText(n.text, isSub(here), t => t) : label });
+				ops.push({ op: 'edge', edge: { id: [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join(''), fromNode: n.id, fromSide: a, toNode: ops.group, toSide: b } });
+			}
+		}
+		this.edit(canvas, ops);
+		if (mode === 'group') {
+			const to = t => `[[${here}|${t}]]`;
+			for (const p of [...new Set(links.filter(l => l.path !== here).map(l => l.path))]) {
+				const f = this.app.vault.getAbstractFileByPath(p);
+				if (!f) continue;
+				if (p.endsWith('.canvas')) {
+					const relink = d => { for (const n of d.nodes || []) {
+						if (n.type === 'file' && n.file === file.path) n.file = here;
+						else if (n.type === 'text') n.text = this.cb.relinkText(n.text, isSub(p), to);
+					} };
+					const open = this.openCanvas(p);
+					if (open) { const d = open.getData(); relink(d); open.setData(d); open.requestSave(); }
+					else await this.app.vault.process(f, t => { const d = JSON.parse(t || '{}'); relink(d); return JSON.stringify(d, null, '\t'); });
+				} else await this.app.vault.process(f, t => this.cb.relinkText(t, isSub(p), to));
+			}
+		}
+		if (mode !== 'copy') await this.app.fileManager.trashFile(file);
+		const n = (sub.nodes || []).length, k = links.length, s = x => (x > 1 ? 's' : '');
+		const what = {
+			dissolve: `unpacked ${n} card${s(n)}, ${file.path} trashed` + (k ? ` (${k} link${s(k)} now broken)` : ''),
+			copy: `unpacked ${n} card${s(n)}, ${file.path} kept`,
+			group: `unpacked ${n} card${s(n)} into a group, ${k} link${s(k)} redirected`,
+		}[mode];
+		this.undoNotice(canvas, what, [], mode === 'copy' ? null : { path: file.path, content });
 	}
 
 	linkedCanvas(node) {
@@ -905,6 +988,34 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 // One-line name prompt; Enter confirms, Escape cancels. Options: `suggestions` (names listed as you type, Enter
 // or click picks one into the field) and `overwrite` (name → true when it would replace a file: the button then
 // reads "Overwrite", in the warning color).
+// Unpack (dissolve) when other cards or notes link the subcanvas: group and redirect, keep the file, or break them.
+class UnpackChoice extends Modal {
+	constructor(app, file, links, onPick) {
+		super(app);
+		this.file = file;
+		this.links = links;
+		this.onPick = onPick;
+	}
+
+	onOpen() {
+		const k = this.links.length;
+		this.setTitle(`${this.file.basename} is linked from ${k} other place${k > 1 ? 's' : ''}`);
+		const ul = this.contentEl.createEl('ul');
+		for (const l of this.links.slice(0, 8)) ul.createEl('li', { text: l.id ? `${l.label} (${l.path})` : l.path });
+		if (k > 8) ul.createEl('li', { text: `and ${k - 8} more` });
+		const s = new Setting(this.contentEl);
+		const pick = mode => { this.close(); this.onPick(mode); };
+		s.addButton(b => b.setButtonText('Unpack into a group, redirect links').setCta().onClick(() => pick('group')));
+		s.addButton(b => b.setButtonText('Keep the file (copy)').onClick(() => pick('copy')));
+		s.addButton(b => b.setButtonText('Break links and trash').setWarning().onClick(() => pick('dissolve')));
+		s.addButton(b => b.setButtonText('Cancel').onClick(() => this.close()));
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
 class NamePrompt extends Modal {
 	constructor(app, title, onSubmit, opts = {}) {
 		super(app);
