@@ -1,8 +1,9 @@
 // Canvas board: color hotkeys for selected canvas cards, a command that opens a terminal running the
 // canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
 // to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (pack, unpack dissolve / copy, merge,
-// split, extract), archive/restore, view tools (search current canvas, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. Copies skill/SKILL.md to
-// .claude/skills/canvas-board/ on load.
+// split, extract), archive/restore, view tools (search current canvas, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. Writes skill/SKILL.md to
+// .claude/skills/canvas-board/ on load when missing; after that the vault copy is the user's (command "Reset agent skill").
+// The agent workflow (what a pass takes, roll-up, check) is workflow.js; here only the "Pass colors" gate.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
 const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, AbstractInputSuggest, Scope, setIcon } = require('obsidian');
 const { spawn } = require('child_process');
@@ -66,6 +67,11 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			},
 		};
 		this.syncSkill(dir);
+		this.addCommand({
+			id: 'reset-skill',
+			name: "Reset agent skill to the plugin's version (overwrites your edits)",
+			callback: () => this.syncSkill(dir, true),
+		});
 
 		for (const [label, color, key] of COLORS) {
 			this.addCommand({
@@ -783,16 +789,19 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		this.countEl.show();
 	}
 
-	// The plugin folder holds the skill's source; the vault copy is rewritten when missing or older.
-	syncSkill(dir) {
+	// The plugin folder holds the skill's default; the vault copy is written only when missing (then it is the
+	// user's, plugin updates never overwrite it) or on "Reset agent skill" (`force`).
+	syncSkill(dir, force = false) {
 		const src = path.join(dir, 'skill', 'SKILL.md');
 		const dest = path.join(this.app.vault.adapter.basePath, '.claude', 'skills', 'canvas-board', 'SKILL.md');
 		try {
-			if (fs.existsSync(dest) && fs.statSync(dest).mtimeMs >= fs.statSync(src).mtimeMs) return;
+			if (!force && fs.existsSync(dest)) return;
 			fs.mkdirSync(path.dirname(dest), { recursive: true });
 			fs.copyFileSync(src, dest);
+			if (force) new Notice('Canvas board: agent skill reset to the plugin\'s version');
 		} catch (e) {
 			console.error('canvas-board: skill sync failed', e);
+			if (force) new Notice(`Canvas board: skill reset failed (${e.message})`);
 		}
 	}
 
