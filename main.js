@@ -774,8 +774,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const max = Number(this.settings.cardWarning) || 0;
 		const over = max > 0 && cards.length > max;
 		const sel = [...canvas.selection].filter(x => !x.from).length; // cards and groups, not edges
-		this.countEl.setText(`${cards.length} cards` + (sel ? ` · ${sel} selected` : ''));
-		this.countEl.toggleClass('canvas-board-over', over); // warning color, see styles.css
+		// Only the card count takes the warning color, not the selected count.
+		this.countEl.empty();
+		this.countEl.createSpan({ text: `${cards.length} cards`, cls: over ? 'canvas-board-over' : '' }); // warning color, see styles.css
+		if (sel) this.countEl.appendText(` · ${sel} selected`);
 		this.countEl.setAttr('aria-label', (over ? `over ${max} · ` : '') + Object.entries(byColor).map(([c, k]) => `${c} ${k}`).join(' · '));
 		this.countEl.setAttr('data-tooltip-position', 'top');
 		this.countEl.show();
