@@ -6,7 +6,7 @@
 // Usage (paths relative to the vault root; CANVAS = node .obsidian/plugins/canvas-board/canvas.js):
 //   CANVAS read <board>                       nodes and edges as JSON
 //   CANVAS tree [<board>] [--active]          board + linked notes (level, parts) + nested canvases, as JSON
-//                                             --active: cyan/purple/orange cards, cards edged to them, yellow/red count
+//                                             --active: go (cyan/purple)/orange cards, cards edged to them, yellow/red count
 //   CANVAS set <board> <id> [--color c] [--text t] [--file path]
 //                                             c: red orange yellow green cyan purple none (or 1-6)
 //                                             --file turns the card into a file card, --text into a text card
@@ -29,6 +29,7 @@
 //   CANVAS restore <note>                     puts an archived card back on its board, note to .trash
 //   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
 //   CANVAS check [<board>]                    read-only: broken board invariants (links, card text, plan notes) as JSON
+// tree, rollup and check are the agent workflow: they live in workflow.js (go colors: plugin setting "Pass colors").
 // Default board: Plans.canvas. Default direction: the plugin setting "Layout direction" (data.json), else TB.
 const fs = require('fs');
 const path = require('path');
@@ -38,7 +39,6 @@ const ROOT = path.resolve(__dirname, '..', '..', '..'); // <vault>/.obsidian/plu
 const DEFAULT_BOARD = 'Plans.canvas';
 const SKIP_DIRS = new Set(['.git', '.obsidian', '.trash', '_secrets', 'node_modules']);
 const COLORS = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
-const STALE_DAYS = 7;
 
 const args = process.argv.slice(2);
 const opt = name => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
@@ -395,17 +395,8 @@ function cardLinks(n) {
   return { note: found.find(f => f.endsWith('.md')) || null, canvas: found.find(f => f.endsWith('.canvas')) || null };
 }
 
-// Level is derived from the note: `- [ ]` / `- [x]` parts make it a plan, otherwise it is a brief.
-// Questions: `- [?]` above `## Decisions Record` (past rounds).
-function noteState(rel) {
-  const text = fs.readFileSync(abs(rel), 'utf8');
-  const parts = [...text.matchAll(/^\s*- \[([ xX])\] /gm)];
-  const done = parts.filter(m => m[1] !== ' ').length;
-  const questions = [...text.split(/^## Decisions Record/m)[0].matchAll(/^\s*- \[\?\] /gm)].length; // answered rounds don't count
-  return { level: parts.length ? 'plan' : 'brief', parts: { done, total: parts.length }, questions };
-}
-
-function tree(board, depth = 0, seen = new Set()) {
+// Board + linked notes (path, age; `noteInfo(path)` adds more, workflow.js passes the level) + nested canvases.
+function tree(board, { noteInfo } = {}, depth = 0, seen = new Set()) {
   seen.add(board);
   const d = readBoard(board);
   return {
@@ -415,134 +406,13 @@ function tree(board, depth = 0, seen = new Set()) {
       const card = { id: n.id, color: n.color || null, text: n.type === 'text' ? n.text : undefined, file: n.file };
       if (note) {
         const ageDays = Math.floor((Date.now() - fs.statSync(abs(note)).mtimeMs) / 86400000);
-        card.note = { path: note, ageDays, ...noteState(note) };
+        card.note = { path: note, ageDays, ...(noteInfo ? noteInfo(note) : {}) };
       }
-      if (canvas && !seen.has(canvas) && depth < 2) card.inside = tree(canvas, depth + 1, seen);
+      if (canvas && !seen.has(canvas) && depth < 2) card.inside = tree(canvas, { noteInfo }, depth + 1, seen);
       return card;
     }),
     edges: d.edges.map(e => ({ from: e.fromNode, to: e.toNode, label: e.label })),
   };
-}
-
-// --active: only what a pass needs. Cyan/purple/orange cards with their notes, the cards edged to them (once
-// each, text only, as context), nested boards only when they hold active cards, and the yellow/red count.
-const ACTIVE = new Set(['2', '5', '6']);
-function activeTree(t) {
-  const total = { waiting: 0 };
-  const a = activeNode(t, total);
-  return { board: a.board, waiting: total.waiting, cards: a.cards, context: a.context, edges: a.edges };
-}
-
-function activeNode(t, total) {
-  const ids = new Set(t.cards.filter(c => ACTIVE.has(c.color)).map(c => c.id));
-  const near = new Set();
-  for (const e of t.edges) {
-    if (ids.has(e.from) && !ids.has(e.to)) near.add(e.to);
-    if (ids.has(e.to) && !ids.has(e.from)) near.add(e.from);
-  }
-  const cards = [], context = [];
-  for (const c of t.cards) {
-    if (c.color === '1' || c.color === '3') total.waiting++;
-    const inside = c.inside && activeNode(c.inside, total);
-    if (ids.has(c.id) || (inside && inside.cards.length)) cards.push({ ...c, inside: inside && inside.cards.length ? inside : undefined });
-    else if (near.has(c.id)) context.push({ id: c.id, color: c.color, text: c.text, file: c.file });
-  }
-  const kept = new Set(cards.map(c => c.id));
-  const edges = t.edges.filter(e => kept.has(e.from) || kept.has(e.to));
-  return { board: t.board, cards, context, edges };
-}
-
-// --- Roll-up ------------------------------------------------------------------------------------------
-
-// red > yellow are the "needs me" colors that climb to the parent card; cyan and purple (go) are human
-// choices and are never overwritten. The card color is the only state: a red/yellow card with a `· N inside`
-// suffix got its color from the roll-up, one without it was set by an agent or Guillaume and is kept.
-function rollup(board) {
-  const t = tree(board);
-  const changes = [];
-  const walk = node => {
-    const ops = [];
-    let red = 0, yellow = 0, cards = 0, green = 0;
-    for (const c of node.cards) {
-      let color = c.color;
-      if (c.inside) {
-        const inner = walk(c.inside);
-        const want = desiredColor(c, inner);
-        let text = c.text;
-        if (text !== undefined) {
-          text = text.replace(/ · \d+ inside| · \d+d$/g, '');
-          if (inner.red + inner.yellow) text += ` · ${inner.red + inner.yellow} inside`;
-        }
-        if (want !== color || (text !== undefined && text !== c.text)) {
-          ops.push({ op: 'set', id: c.id, color: want === null ? '' : want, ...(text !== c.text ? { text } : {}) });
-          color = want;
-        }
-      }
-      if (color === '1') red++;
-      if (color === '3') yellow++;
-      cards++;
-      if (color === '4') green++;
-    }
-    // Age suffix on yellow cards whose note has not changed for a week.
-    for (const c of node.cards) {
-      if (c.color !== '3' || !c.note || c.text === undefined || c.inside) continue;
-      const base = c.text.replace(/ · \d+d$/, '');
-      const text = c.note.ageDays >= STALE_DAYS ? `${base} · ${c.note.ageDays}d` : base;
-      if (text !== c.text) ops.push({ op: 'set', id: c.id, text });
-    }
-    if (ops.length) changes.push({ board: node.board, via: writeOps(node.board, ops), ops });
-    return { red, yellow, allGreen: cards > 0 && green === cards };
-  };
-  walk(t);
-  return changes;
-}
-
-function desiredColor(card, inner) {
-  if (card.color === '5' || card.color === '6') return card.color;
-  const rolled = card.text !== undefined && / · \d+ inside/.test(card.text);
-  const own = rolled ? null : card.color;
-  if (inner.red || own === '1') return '1';
-  if (inner.yellow || own === '3') return '3';
-  if (rolled && (card.color === '1' || card.color === '3')) return inner.allGreen ? '4' : null;
-  return card.color || null;
-}
-
-// --- Check --------------------------------------------------------------------------------------------
-
-// Structure only, never content: the invariants the skill and SOP state. A check that never fires in a month
-// gets deleted; a new one only after the same defect shows up twice.
-const ORANGE_STALE_MS = 3600000;
-function check(board) {
-  const issues = [];
-  const walk = (b, depth, seen) => {
-    seen.add(b);
-    const d = readBoard(b);
-    for (const n of d.nodes) {
-      if (n.type === 'group' || !n.color) continue;
-      const add = issue => issues.push({ board: b, id: n.id, text: (n.text || n.file || '').split('\n')[0], issue });
-      const links = n.type === 'file' ? [n.file] : [...(n.text || '').matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map(m => m[1].trim());
-      for (const l of links) if (!findFile(l)) add(`broken link [[${l}]]`);
-      if (n.type === 'text' && depth === 0) { // plan-canvas cards are parts, free text
-        const text = n.text || '';
-        if (text.includes('[[') ? !/^\[\[[^\]]+\]\]( · .+)?$/.test(text) : text.split('\n').length > 3) add('card text is neither a wish (≤ 3 lines) nor `[[Note]] · reason`');
-      }
-      const { note, canvas } = cardLinks(n);
-      if (note && note.startsWith('Projects/_assets/plans/')) {
-        const src = fs.readFileSync(abs(note), 'utf8');
-        const fm = (src.match(/^---\n([\s\S]*?)\n---/) || [])[1];
-        const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map(m => m[1]) : [];
-        if (keys.join() !== 'context') add(`note frontmatter is not \`context\` only (${keys.join(', ') || 'none'})`);
-        if (noteContexts(fm).length !== 1) add('note does not have exactly one context');
-        for (const s of ['Aim', 'Design']) if (!new RegExp(`^## ${s}\\s*$`, 'm').test(src)) add(`note has no ## ${s}`);
-        if (!/^### Done when\s*$/m.test(src)) add('note has no ### Done when (under Aim)');
-        if (n.color === '4' && !/^## Output\s*$/m.test(src)) add('green card, note has no ## Output');
-        if (n.color === '2' && Date.now() - fs.statSync(abs(note)).mtimeMs > ORANGE_STALE_MS) add('orange card, note untouched for 1h+ (interrupted pass?)');
-      }
-      if (canvas && !seen.has(canvas) && depth < 2) walk(canvas, depth + 1, seen);
-    }
-  };
-  walk(board, 0, new Set());
-  return { issues };
 }
 
 // --- Commands -----------------------------------------------------------------------------------------
@@ -631,7 +501,8 @@ function plainLines(text) {
     .replace(/\s+/g, ' ').trim()).filter(Boolean);
 }
 
-module.exports = { plainLines, applyOps, layoutOps, collapseOps, expandOps, relinkText, mergeOps, splitOps, extractOps, archiveNote, restoreOps, noteName, ARCHIVE_DIR, templateOps, TEMPLATE_DIR };
+// readBoard … noteContexts are for workflow.js (tree --active, rollup, check).
+module.exports = { readBoard, writeOps, tree, findFile, cardLinks, abs, noteContexts, COLORS, plainLines, applyOps, layoutOps, collapseOps, expandOps, relinkText, mergeOps, splitOps, extractOps, archiveNote, restoreOps, noteName, ARCHIVE_DIR, templateOps, TEMPLATE_DIR };
 
 // Next free `<dir>/<name><ext>` (vault-relative), adding " 2", " 3"... when taken.
 function freePath(dir, name, ext) {
@@ -669,7 +540,7 @@ if (require.main === module) {
 
   switch (cmd) {
     case 'read': print(readBoard(board)); break;
-    case 'tree': print(args.includes('--active') ? activeTree(tree(board)) : tree(board)); break;
+    case 'tree': { const wf = require('./workflow.js'); print(args.includes('--active') ? wf.activeTree(wf.tree(board)) : wf.tree(board)); break; }
     case 'set': {
       const op = { op: 'set', id: rest[0], color: colorArg(opt('--color')) };
       if (opt('--text') !== undefined) op.text = opt('--text');
@@ -750,8 +621,8 @@ if (require.main === module) {
       toTrash(boardArg);
       break;
     }
-    case 'rollup': print(rollup(board)); break;
-    case 'check': print(check(board)); break;
+    case 'rollup': print(require('./workflow.js').rollup(board)); break;
+    case 'check': print(require('./workflow.js').check(board)); break;
     default:
       console.error('Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|layout|pack|unpack|merge|split|extract|archive|restore|rollup|check <board> ... (see header)');
       process.exit(1);
