@@ -310,7 +310,7 @@ const api = (fn, ...a) => obsidianEval(`(async()=>{const p=app.plugins.plugins['
 // --- Board I/O ----------------------------------------------------------------------------------------
 
 const abs = p => path.join(ROOT, p);
-const readFileBoard = board => JSON.parse(fs.readFileSync(abs(board), 'utf8'));
+const readFileBoard = board => { const d = JSON.parse(fs.readFileSync(abs(board), 'utf8') || '{}'); d.nodes ||= []; d.edges ||= []; return d; };
 
 function serialize(d) {
   const line = x => '\t\t' + JSON.stringify(x);
@@ -319,7 +319,7 @@ function serialize(d) {
 
 function readBoard(board) {
   const out = api('read', board);
-  if (out && out.startsWith('{')) { const d = JSON.parse(out); return { nodes: d.nodes, edges: d.edges }; }
+  if (out && out.startsWith('{')) { const d = JSON.parse(out); return { nodes: d.nodes || [], edges: d.edges || [] }; }
   return readFileBoard(board);
 }
 
