@@ -67,7 +67,7 @@ function activeNode(t, total, active) {
 
 // red > yellow are the "needs me" colors that climb to the parent card; go colors are human choices and are
 // never overwritten. The card color is the only state: a red/yellow card with a `· N inside` suffix got its
-// color from the roll-up, one without it was set by an agent or Guillaume and is kept.
+// color from the roll-up, one without it was set by an agent or User and is kept.
 function rollup(board) {
   const go = goColors();
   const t = tree(board);
