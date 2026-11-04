@@ -25,6 +25,28 @@
 	background: var(--background-modifier-hover);
 }
 
+/* Stale yellow card: the `- [!]` warning icon (orange) and the time since its note changed. */
+.canvas-board-stale {
+	position: absolute;
+	right: 8px;
+	top: -22px;
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	padding: 0 var(--size-2-2);
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-smaller);
+	color: var(--color-orange);
+	user-select: none;
+}
+.canvas-board-stale-icon {
+	display: flex;
+}
+.canvas-board-stale-icon svg {
+	width: var(--icon-xs);
+	height: var(--icon-xs);
+}
+
 /* Key after a menu item's title. */
 .canvas-board-key {
 	margin-left: var(--size-4-3);

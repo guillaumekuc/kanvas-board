@@ -26,6 +26,7 @@ const DEFAULTS = {
 	claudePath: '',
 	layoutDirection: 'TB',
 	cardWarning: '60',
+	staleDays: '7', // yellow cards whose note is untouched this long get a warning badge (and the rollup's `· Nd`)
 	hideTagBranches: true, // a hidden tag also hides the cards below its cards (in the fold direction)
 	foldDirection: 'out', // fold hides the cards a card points to (out) or the cards pointing to it (in)
 	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
@@ -731,9 +732,43 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			badge.setText(`· ${folded.get(node.id)} folded`);
 			badge.setAttr('aria-label', this.keyedLabel('Unfold 1 level', 'unfold'));
 		}
+		this.paintStale(canvas);
 		for (const e of canvas.edges.values()) {
 			const off = hidden.has(e.from.node.id) || hidden.has(e.to.node.id);
 			for (const el of [e.lineGroupEl, e.lineEndGroupEl, e.labelElement && e.labelElement.wrapperEl]) if (el) el.classList.toggle('canvas-board-hidden', off);
+		}
+	}
+
+	// Yellow (needs me) cards whose note was not touched for "Stale after" days: a warning badge (the icon of
+	// `- [!]`) with the time since the note last changed. Cards without a note have no date: no badge.
+	paintStale(canvas) {
+		const days = Number(this.settings.staleDays) || 0;
+		const board = canvas.view && canvas.view.file ? canvas.view.file.path : '';
+		for (const node of canvas.nodes.values()) {
+			const d = node.getData();
+			let age = -1;
+			if (days > 0 && d.color === '3') {
+				let file = null;
+				if (d.type === 'file') file = this.app.vault.getAbstractFileByPath(d.file);
+				else if (d.type === 'text') {
+					const m = /\[\[([^\]|#]+)/.exec(d.text || '');
+					if (m) file = this.app.metadataCache.getFirstLinkpathDest(m[1].trim(), board);
+				}
+				if (file && file.stat) age = Math.floor((Date.now() - file.stat.mtime) / 86400000);
+			}
+			let badge = node.nodeEl.querySelector(':scope > .canvas-board-stale');
+			if (age < days || age < 0) { if (badge) badge.remove(); continue; }
+			if (!badge) {
+				badge = node.nodeEl.createDiv({ cls: 'canvas-board-stale', attr: { 'data-tooltip-position': 'top' } });
+				setIcon(badge.createSpan({ cls: 'canvas-board-stale-icon' }), 'triangle-alert');
+				badge.createSpan({ cls: 'canvas-board-stale-text' });
+			}
+			const label = age < 1 ? 'today' : `${age}d`;
+			if (badge.dataset.age !== label) {
+				badge.dataset.age = label;
+				badge.querySelector('.canvas-board-stale-text').setText(label);
+				badge.setAttr('aria-label', `Waiting on you · note untouched for ${age} day${age === 1 ? '' : 's'} (stale after ${days})`);
+			}
 		}
 	}
 
@@ -1376,6 +1411,7 @@ class CanvasBoardSettings extends PluginSettingTab {
 		heading('Board');
 		text('Default board', 'Board used by "Run pass" when the active tab is not a canvas, and by "Open the board" (ribbon).', 'defaultBoard');
 		text('Card count warning', 'The status bar card count turns to the warning color past this many cards (0: never).', 'cardWarning');
+		text('Stale after (days)', 'A yellow card whose note is untouched this many days gets a warning badge with its age; the roll-up adds "· Nd" from the same value (0: never).', 'staleDays');
 		heading('Pass');
 		text('Claude path', 'Empty: ~/.local/bin/claude.exe if it exists, else claude on PATH.', 'claudePath');
 		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
