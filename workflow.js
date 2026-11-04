@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { readBoard, writeOps, tree: baseTree, findFile, cardLinks, abs, noteContexts, COLORS } = require('./canvas.js');
 
-const STALE_DAYS = 7;
+const staleDays = () => { const n = Number(settings().staleDays); return Number.isFinite(n) && settings().staleDays !== undefined ? n : 7; }; // plugin setting "Stale after"
 const ORANGE_STALE_MS = 3600000;
 const DEFAULT_PASS_COLORS = 'cyan purple';
 const WORKING = '2'; // orange: a pass is on the card
@@ -99,7 +99,8 @@ function rollup(board) {
     for (const c of node.cards) {
       if (c.color !== '3' || !c.note || c.text === undefined || c.inside) continue;
       const base = c.text.replace(/ · \d+d$/, '');
-      const text = c.note.ageDays >= STALE_DAYS ? `${base} · ${c.note.ageDays}d` : base;
+      const days = staleDays();
+      const text = days > 0 && c.note.ageDays >= days ? `${base} · ${c.note.ageDays}d` : base;
       if (text !== c.text) ops.push({ op: 'set', id: c.id, text });
     }
     if (ops.length) changes.push({ board: node.board, via: writeOps(node.board, ops), ops });
