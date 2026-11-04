@@ -89,15 +89,19 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			});
 		}
 
-		// Selected cards only when 2+ are selected (the rest never moves), else the whole canvas. Ctrl+Z undoes it.
+		// Selected cards only (2+; the rest never moves): never the whole board unasked (Ctrl+A first). Ctrl+Z undoes it.
 		this.addCommand({
 			id: 'tidy-layout',
-			name: 'Tidy layout (selected cards, or the whole canvas)',
+			name: 'Tidy layout (selected cards)',
 			checkCallback: checking => {
 				const canvas = this.activeCanvas();
 				if (!canvas) return false;
 				if (!checking) {
-					const ids = canvas.selection.size > 1 ? [...canvas.selection].map(n => n.id) : [];
+					if (canvas.selection.size < 2) {
+						new Notice('Tidy layout: select the cards to tidy first (2 or more; Ctrl+A for the whole canvas).');
+						return true;
+					}
+					const ids = [...canvas.selection].map(n => n.id);
 					const d = canvas.getData();
 					this.edit(canvas, layoutOps(d, { ids, dir: this.settings.layoutDirection, dagre }), d);
 				}
