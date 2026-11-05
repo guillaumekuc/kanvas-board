@@ -240,3 +240,9 @@
 	display: inline-block;
 	margin-right: 8px;
 }
+
+/* Tidy layout button: the icon points the way the layout flows. */
+.canvas-board-controls [data-command="tidy-layout"] svg {
+	transform: rotate(var(--canvas-board-tidy-turn, 0deg));
+	transition: transform 120ms ease;
+}

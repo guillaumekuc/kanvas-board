@@ -127,6 +127,21 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				return true;
 			},
 		});
+		this.addCommand({
+			id: 'tidy-direction-next',
+			name: 'Tidy layout direction: next',
+			callback: () => this.cycleLayoutDirection(),
+		});
+		for (const [dir, { name }] of Object.entries(LAYOUT_DIRS))
+			this.addCommand({
+				id: `tidy-direction-${dir.toLowerCase()}`,
+				name: `Tidy layout direction: ${name}`,
+				checkCallback: checking => {
+					if (this.settings.layoutDirection === dir) return false;
+					if (!checking) this.setLayoutDirection(dir);
+					return true;
+				},
+			});
 
 		// Refactor and archive commands: one undo step each (Ctrl+Z), same code as canvas.js for agents.
 		// Each is also a right-click item (label `menu`) on the cards it applies to.
@@ -489,6 +504,18 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		await this.app.workspace.getLeaf(false).openFile(file);
 	}
 
+	async setLayoutDirection(dir) {
+		this.settings.layoutDirection = dir;
+		await this.saveData(this.settings);
+		for (const leaf of this.app.workspace.getLeavesOfType('canvas')) this.decorate(leaf.view);
+		new Notice(`Canvas board: tidy layout ${LAYOUT_DIRS[dir].name}`);
+	}
+
+	cycleLayoutDirection() {
+		const dirs = Object.keys(LAYOUT_DIRS);
+		return this.setLayoutDirection(dirs[(dirs.indexOf(this.settings.layoutDirection) + 1) % dirs.length]);
+	}
+
 	// Runs a plugin command on this canvas view (made active first: a click on its buttons may not focus it).
 	runOn(view, id) {
 		const leaf = this.app.workspace.getLeavesOfType('canvas').find(l => l.view === view);
@@ -511,13 +538,23 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				group = createDiv({ cls: 'canvas-control-group mod-raised canvas-board-controls' });
 				const help = controls.lastElementChild;
 				controls.insertBefore(group, help);
-				for (const [id, label, icon] of [['find', 'Search current canvas', 'search'], ['filter', 'Filter cards', 'filter'], ['tidy-layout', 'Tidy layout', 'layout-grid']]) {
+				for (const [id, label, icon] of [['find', 'Search current canvas', 'search'], ['filter', 'Filter cards', 'filter'], ['tidy-layout', 'Tidy layout', 'network']]) {
 					const b = group.createDiv({ cls: 'canvas-control-item', attr: { 'data-command': id, 'data-label': label, 'data-tooltip-position': 'left' } });
 					setIcon(b, icon);
-					b.addEventListener('click', () => this.runOn(view, id));
+					b.addEventListener('click', e => {
+						if (id === 'tidy-layout' && e.shiftKey) this.cycleLayoutDirection();
+						else this.runOn(view, id);
+					});
 				}
 			}
 			for (const b of group.children) b.setAttr('aria-label', this.keyedLabel(b.dataset.label, b.dataset.command));
+			// The tidy icon points the way the layout flows; its tooltip says so and how to change it.
+			const tidy = group.querySelector('[data-command="tidy-layout"]');
+			const dir = LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
+			if (tidy) {
+				tidy.style.setProperty('--canvas-board-tidy-turn', `${dir.turn}deg`);
+				tidy.setAttr('aria-label', this.keyedLabel(`Tidy layout: ${dir.name}\nShift-click: next direction`, 'tidy-layout'));
+			}
 		}
 		// Selection toolbar: Fold, Unfold, Archive after the canvas's own buttons, when they apply.
 		const menu = canvas.menu;
@@ -942,7 +979,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const here = this.canvasFile(canvas);
 		const isSub = from => target => { const f = this.app.metadataCache.getFirstLinkpathDest(target, from); return !!f && f.path === file.path; };
 		if (mode === 'group') {
-			const [a, b] = this.settings.layoutDirection === 'LR' ? ['right', 'left'] : ['bottom', 'top'];
+			const [a, b] = this.cb.SIDES[this.settings.layoutDirection] || this.cb.SIDES.TB;
 			for (const l of links.filter(l => l.path === here)) {
 				const n = canvas.getData().nodes.find(x => x.id === l.id);
 				if (!n) continue;
@@ -1484,10 +1521,10 @@ class CanvasBoardSettings extends PluginSettingTab {
 			.setWarning()
 			.onClick(() => this.plugin.syncSkill(path.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir), true)));
 		heading('Layout');
-		new Setting(containerEl).setName('Layout direction').setDesc('Tidy layout and agent-made plan canvases: top to bottom or left to right ("depends on" prerequisites come first).').addDropdown(dd => dd
-			.addOptions({ TB: 'Top to bottom', LR: 'Left to right' })
+		new Setting(containerEl).setName('Layout direction').setDesc('Tidy layout and agent-made plan canvases ("depends on" prerequisites come first). Shift-click the Tidy layout button, or commands "Tidy layout direction: …", switch it on the fly.').addDropdown(dd => dd
+			.addOptions({ TB: 'Top to bottom', LR: 'Left to right', BT: 'Bottom to top', RL: 'Right to left' })
 			.setValue(this.plugin.settings.layoutDirection)
-			.onChange(async v => { this.plugin.settings.layoutDirection = v; await this.plugin.saveData(this.plugin.settings); }));
+			.onChange(v => this.plugin.setLayoutDirection(v)));
 		heading('View');
 		new Setting(containerEl).setName('Fold direction').setDesc('Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Commands "Fold direction: …" switch it on the fly.').addDropdown(dd => dd
 			.addOptions({ out: 'Outgoing', in: 'Incoming' })
