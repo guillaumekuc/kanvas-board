@@ -33,6 +33,7 @@ const DEFAULTS = {
 	foldDirection: 'out', // fold hides the cards a card points to (out) or the cards pointing to it (in)
 	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
 	passColors: 'cyan purple', // cards that start a pass (and that tree --active takes, see workflow.js); empty = never
+	notesFolder: 'Projects/_assets/bot-tasks', // where the agent keeps the notes it makes for cards (read by workflow.js and the skill)
 };
 const COLOR_NUM = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
 const parseColors = s => new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLOR_NUM[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
@@ -1572,6 +1573,7 @@ class CanvasBoardSettings extends PluginSettingTab {
 		text('Default board', 'Board used by "Run pass" when the active tab is not a canvas, and by "Open the board" (ribbon).', 'defaultBoard');
 		text('Card count warning', 'The status bar card count turns to the warning color past this many cards (0: never).', 'cardWarning');
 		text('Stale after (days)', 'A yellow card whose note is untouched this many days gets a warning badge with its age; the roll-up adds "· Nd" from the same value (0: never).', 'staleDays');
+		text('Agent notes folder', 'Where the agent creates the notes and plan canvases for cards. Changing it does not move anything: rename the folder in Obsidian first, so links follow.', 'notesFolder');
 		heading('Workflow').setDesc('What each color does and its label, shown in tooltips, the filter pane and the color commands. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.');
 		const go = parseColors(this.plugin.settings.passColors);
 		for (const [name, meaning] of WORKFLOW) {
