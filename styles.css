@@ -171,6 +171,12 @@
 	margin-top: var(--size-4-3);
 }
 
+/* Image export: Obsidian sets this class while it takes its shots and hides its own controls with it. */
+.canvas-wrapper.is-screenshotting .canvas-board-pane,
+.canvas-wrapper.is-screenshotting .canvas-board-find {
+	display: none;
+}
+
 /* Find bar (prototype): the notes' find bar classes, floating at the top center of the canvas. */
 .canvas-board-find {
 	position: absolute;
