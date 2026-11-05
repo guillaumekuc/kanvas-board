@@ -206,6 +206,14 @@
 .canvas-node.canvas-board-find-match.is-current .canvas-node-container {
 	box-shadow: 0 0 0 3px var(--text-accent);
 }
+/* The text found inside a card, as search frames it in notes (.search-highlight). */
+.canvas-board-find-text {
+	border-radius: 2px;
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-normal) 30%, transparent);
+}
+.canvas-node.is-current .canvas-board-find-text {
+	box-shadow: 0 0 0 3px var(--text-accent);
+}
 /* Folded list rows: color dot, title, muted rest of the card below, fold count. */
 .canvas-board-pane-row.canvas-board-pane-card {
 	display: flex;
