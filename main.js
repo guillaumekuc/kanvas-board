@@ -10,21 +10,23 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+// [color name, canvas color, command key, default label]. Labels can be edited in Settings > Workflow (none cannot).
 const COLORS = [
-	['none (idea or parked)', '', '0'],
-	['red (blocked)', '1', '1'],
-	['orange (agent working)', '2', '2'],
-	['yellow (needs me)', '3', '3'],
-	['green (done)', '4', '4'],
-	['cyan (go, auto)', '5', '5'],
-	['purple (go, plan)', '6', '6'],
+	['none', '', '0', 'Idea or parked'],
+	['red', '1', '1', 'Blocked'],
+	['orange', '2', '2', 'Agent working'],
+	['yellow', '3', '3', 'Needs me'],
+	['green', '4', '4', 'Done'],
+	['cyan', '5', '5', 'Go, auto'],
+	['purple', '6', '6', 'Go, plan'],
 ];
 
 // {vault} {board} {claude} are replaced; quoted parts stay one argument.
 const DEFAULTS = {
 	defaultBoard: 'Plans.canvas',
 	claudePath: '',
-	layoutDirection: 'TB',
+	layoutDirection: 'TB', // TB, LR, BT or RL
+	colorLabels: {}, // color name → label, when edited (Settings > Workflow)
 	cardWarning: '60',
 	staleDays: '7', // yellow cards whose note is untouched this long get a warning badge (and the rollup's `· Nd`)
 	hideTagBranches: true, // a hidden tag also hides the cards below its cards (in the fold direction)
@@ -34,15 +36,22 @@ const DEFAULTS = {
 };
 const COLOR_NUM = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
 const parseColors = s => new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLOR_NUM[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
-// Settings > Workflow: what each color means (as in SOP - Canvas Board).
+// Settings > Workflow: what each color does (as in SOP - Canvas Board). Fixed: the label above is only how it reads.
 const WORKFLOW = [
-	['cyan', 'Go, auto: the agent carries the card to done.'],
-	['purple', 'Go, plan: the agent takes one step, then hands back.'],
-	['orange', 'Agent working.'],
-	['yellow', 'Needs you: a question or a review.'],
-	['red', 'Blocked.'],
-	['green', 'Done. Remove the card when it no longer helps.'],
+	['cyan', 'The agent carries the card to done.'],
+	['purple', 'The agent takes one step, then hands back.'],
+	['orange', 'A pass is on the card.'],
+	['yellow', 'A question or a review for you.'],
+	['red', 'Nothing moves until it is unblocked.'],
+	['green', 'Finished. Remove the card when it no longer helps.'],
 ];
+// Tidy layout directions, in the order shift-click cycles them. `turn`: how far the button's icon rotates.
+const LAYOUT_DIRS = {
+	TB: { name: 'top to bottom', turn: 0 },
+	LR: { name: 'left to right', turn: -90 },
+	BT: { name: 'bottom to top', turn: 180 },
+	RL: { name: 'right to left', turn: 90 },
+};
 
 module.exports = class CanvasBoardPlugin extends Plugin {
 	async onload() {
@@ -83,10 +92,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			callback: () => this.syncSkill(dir, true),
 		});
 
-		for (const [label, color, key] of COLORS) {
+		for (const [name, color, key] of COLORS) {
 			this.addCommand({
 				id: `color-${key}`,
-				name: `Color selected cards: ${label}`,
+				name: this.colorCommandName(name),
 				checkCallback: checking => {
 					const canvas = this.activeCanvas();
 					if (!canvas || canvas.selection.size === 0) return false;
@@ -413,6 +422,26 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 	// folds and the filter pane: an Obsidian update may drop those buttons, the commands stay. Header action and
 	// ribbon icon are documented API. See "Undocumented Obsidian internals" in the SOP.
 
+	// Label of a color: the one edited in Settings > Workflow, else the default.
+	colorLabel(name) {
+		return (this.settings.colorLabels || {})[name] || COLORS.find(c => c[0] === name)[3];
+	}
+
+	colorCommandName(name) {
+		return `Color selected cards: ${name} (${this.colorLabel(name)})`;
+	}
+
+	// An edited label also renames its command in the palette and the hotkey list. The id, and so the key, stays.
+	async setColorLabel(name, label) {
+		const labels = this.settings.colorLabels = { ...this.settings.colorLabels };
+		if (label) labels[name] = label; else delete labels[name];
+		await this.saveData(this.settings);
+		const row = COLORS.find(c => c[0] === name);
+		const cmd = this.app.commands && this.app.commands.commands[`${this.manifest.id}:color-${row[2]}`];
+		if (cmd) cmd.name = `${this.manifest.name}: ${this.colorCommandName(name)}`;
+		for (const canvas of this.panes.keys()) this.refreshView(canvas);
+	}
+
 	// Hotkey of a plugin command as Obsidian prints it ("Alt + ↑"), or ''.
 	hotkey(id) {
 		const hm = this.app.hotkeyManager;
@@ -503,10 +532,9 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			// The color picker opens on click: its swatches get the state as tooltip.
 			menu.canvasBoardObserver = new MutationObserver(() => {
 				for (const item of menu.menuEl.querySelectorAll('.canvas-color-picker-item:not(.canvas-color-picker-custom)')) {
-					if (item.hasAttribute('aria-label')) continue;
 					const c = (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || '';
 					const row = COLORS.find(x => x[1] === c);
-					if (row) item.setAttrs({ 'aria-label': this.keyedLabel(row[0], `color-${row[2]}`), 'data-tooltip-position': 'top' });
+					if (row) item.setAttrs({ 'aria-label': this.keyedLabel(this.colorLabel(row[0]), `color-${row[2]}`), 'data-tooltip-position': 'top' });
 				}
 			});
 			menu.canvasBoardObserver.observe(menu.menuEl, { childList: true, subtree: true });
@@ -1357,9 +1385,9 @@ class FilterPane {
 
 		// Dots only, on one line; the name and card count are in the tooltip.
 		this.colorsEl.empty();
-		for (const [label, color] of COLORS) {
+		for (const [name, color] of COLORS) {
 			const out = state.xcolors.has(color);
-			const chip = this.colorsEl.createDiv({ cls: 'canvas-board-swatch', attr: { 'aria-label': `${label.split(' ')[0]} · ${counts[color] || 0} cards · click to ${out ? 'show' : 'hide'}` } });
+			const chip = this.colorsEl.createDiv({ cls: 'canvas-board-swatch', attr: { 'aria-label': `${plugin.colorLabel(name)} · ${counts[color] || 0} cards · click to ${out ? 'show' : 'hide'}` } });
 			chip.toggleClass('is-out', out);
 			chip.createSpan({ cls: 'canvas-board-dot', attr: { style: color ? `background: var(--canvas-color-${color})` : '' } });
 			chip.addEventListener('click', () => toggle(state.xcolors, color));
@@ -1421,12 +1449,16 @@ class CanvasBoardSettings extends PluginSettingTab {
 		text('Default board', 'Board used by "Run pass" when the active tab is not a canvas, and by "Open the board" (ribbon).', 'defaultBoard');
 		text('Card count warning', 'The status bar card count turns to the warning color past this many cards (0: never).', 'cardWarning');
 		text('Stale after (days)', 'A yellow card whose note is untouched this many days gets a warning badge with its age; the roll-up adds "· Nd" from the same value (0: never).', 'staleDays');
-		heading('Workflow').setDesc('What each color means. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the pass always starts and takes cyan and purple.');
+		heading('Workflow').setDesc('What each color does and its label, shown in tooltips, the filter pane and the color commands. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.');
 		const go = parseColors(this.plugin.settings.passColors);
 		for (const [name, meaning] of WORKFLOW) {
 			const num = COLOR_NUM[name];
 			const row = new Setting(containerEl).setName(name).setDesc(meaning);
 			row.nameEl.prepend(createSpan({ cls: 'canvas-board-dot canvas-board-workflow-dot', attr: { style: `background: var(--canvas-color-${num})` } }));
+			row.addText(t => t
+				.setPlaceholder(COLORS.find(c => c[0] === name)[3])
+				.setValue((this.plugin.settings.colorLabels || {})[name] || '')
+				.onChange(v => this.plugin.setColorLabel(name, v.trim())));
 			row.addToggle(t => t
 				.setTooltip('Triggers the agent')
 				.setValue(go.has(num))
