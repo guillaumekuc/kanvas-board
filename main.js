@@ -1236,18 +1236,65 @@ class Picker extends FuzzySuggestModal {
 	onChooseItem(item) { Promise.resolve(this.onChoose(item)).catch(e => new Notice(`Canvas board: ${e.message}`)); }
 }
 
+// Offsets of `query` in `text`, ignoring case.
+function matchOffsets(text, query) {
+	const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+	return Array.from(text.matchAll(re), m => m.index);
+}
+
+// Frames every `query` in the text under `root`, as search does in notes. A card being edited is left alone:
+// CodeMirror owns its DOM. Returns the frames.
+function frameText(root, query) {
+	const doc = root.ownerDocument;
+	const walker = doc.createTreeWalker(root, 4); // text nodes
+	const texts = [];
+	while (walker.nextNode()) texts.push(walker.currentNode);
+	const frames = [];
+	for (const node of texts) {
+		if (node.parentElement.closest('.cm-editor, input, textarea')) continue;
+		const here = [];
+		// from the end, so the offsets before stay valid
+		for (const at of matchOffsets(node.data, query).reverse()) {
+			const hit = node.splitText(at);
+			hit.splitText(query.length);
+			const frame = doc.createElement('span');
+			frame.className = 'canvas-board-find-text';
+			hit.replaceWith(frame);
+			frame.append(hit);
+			here.unshift(frame);
+		}
+		frames.push(...here);
+	}
+	return frames;
+}
+
+function clearFrames(root) {
+	for (const frame of root.querySelectorAll('.canvas-board-find-text')) {
+		const parent = frame.parentNode;
+		frame.replaceWith(...frame.childNodes);
+		parent.normalize();
+	}
+}
+
 // Find bar at the top of a canvas, built with the classes of the notes' find bar (document-search-*) so it looks
 // the same: matches are the cards whose text (or file, link, group label) contains the query, ignoring case, in
 // reading order (top to bottom, then left to right). Typing jumps to the first one; Enter / Shift+Enter or the
 // arrows go to the next / previous (it wraps), Alt+Enter or the "all" button selects every match and zooms to them
 // all, Escape or the cross closes. Every match is outlined, the current one selected and zoomed to (a hidden one
-// clears filter and folds first). Keys typed in the field never reach the canvas.
+// clears filter and folds first). The text found is framed inside the cards, like search in notes; cards render when
+// they come into view, so an observer frames them again while there are matches. Keys typed in the field never reach
+// the canvas.
 class FindBar {
 	constructor(plugin, canvas) {
 		this.plugin = plugin;
 		this.canvas = canvas;
 		this.matches = [];
 		this.index = -1;
+		this.framed = [];
+		this.observer = new MutationObserver(() => {
+			window.clearTimeout(this.frameTimer);
+			this.frameTimer = window.setTimeout(() => this.frame(), 100);
+		});
 		const el = this.el = canvas.wrapperEl.createDiv({ cls: 'document-search-container canvas-board-find' });
 		for (const ev of ['pointerdown', 'mousedown', 'wheel', 'dblclick', 'contextmenu']) el.addEventListener(ev, e => e.stopPropagation());
 		const box = el.createDiv({ cls: 'document-search' });
@@ -1325,6 +1372,30 @@ class FindBar {
 	mark(nodes) {
 		for (const n of this.canvas.nodes.values()) n.nodeEl.removeClass('canvas-board-find-match', 'is-current');
 		for (const n of nodes) n.nodeEl.addClass('canvas-board-find-match');
+		this.frame(nodes);
+	}
+
+	// Frames the query in the given cards (default: the same ones again) and watches for cards rendering.
+	frame(nodes = this.framed) {
+		const root = n => n.contentEl || n.nodeEl; // not nodeEl when there is a choice: it also holds the fold badge
+		this.observer.disconnect();
+		for (const n of this.framed) clearFrames(root(n));
+		this.framed = nodes;
+		const q = this.input.value.trim();
+		for (const n of nodes) {
+			const frames = frameText(root(n), q);
+			if (n === this.revealing && frames[0]) { this.reveal(frames[0]); this.revealing = null; }
+		}
+		if (nodes.length) this.observer.observe(this.canvas.wrapperEl, { childList: true, subtree: true });
+	}
+
+	// Scrolls a long card to its first match. By hand: scrollIntoView would also scroll the canvas itself.
+	reveal(frame) {
+		const box = frame.closest('.markdown-preview-view');
+		if (!box) return;
+		const at = frame.getBoundingClientRect(), view = box.getBoundingClientRect();
+		const zoom = view.height / box.offsetHeight || 1; // on-screen sizes are scaled by the canvas zoom, scrollTop is not
+		box.scrollTop += (at.top - view.top) / zoom - box.clientHeight / 2;
 	}
 
 	show() {
@@ -1338,11 +1409,14 @@ class FindBar {
 		if (plugin.isHidden(canvas, node)) { plugin.showAll(canvas); new Notice('Canvas board: filter and folds cleared to show the card'); }
 		canvas.selectOnly(node);
 		canvas.zoomToSelection();
+		this.revealing = node;
+		this.frame();
 		this.input.focus();
 	}
 
 	destroy() {
 		this.mark([]);
+		window.clearTimeout(this.frameTimer);
 		this.plugin.app.keymap.popScope(this.scope);
 		this.el.remove();
 	}
