@@ -267,17 +267,14 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			}, { suggestions: [...existing.values()].map(templateName), overwrite: v => existing.has(v.toLowerCase()) }).open();
 		});
 		// Selection tools: the selection grows to related cards (visible ones only: hidden cards never stay selected).
-		// Children follow the fold direction, one level per press, the selected cards stay selected.
+		// Children: every level down, in the fold direction. The selected cards stay selected.
 		const cards = sel => sel.filter(n => !n.from && n.getData().type !== 'group');
 		const selectMore = (canvas, sel, keep) => {
 			const add = [...canvas.nodes.values()].filter(n => n.getData().type !== 'group' && !this.isHidden(canvas, n) && keep(n));
 			canvas.updateSelection(() => { canvas.selection.clear(); for (const n of [...sel, ...add]) canvas.selection.add(n); });
 		};
-		const childIds = (c, sel) => {
-			const links = this.branchLinks(c, this.settings.foldDirection);
-			return new Set(cards(sel).flatMap(n => links.get(n.id) || []));
-		};
-		canvasCommand('select-children', 'Select children (cards one level down, in the fold direction)', ['Select children', 'list-tree'],
+		const childIds = (c, sel) => new Set(cards(sel).flatMap(n => this.branchLevels(c, n.id, this.settings.foldDirection).flat()));
+		canvasCommand('select-children', 'Select children (all levels down, in the fold direction)', ['Select children', 'list-tree'],
 			(c, sel) => [...childIds(c, sel)].some(id => c.nodes.get(id) && !this.isHidden(c, c.nodes.get(id)) && !c.selection.has(c.nodes.get(id))),
 			(canvas, sel) => { const ids = childIds(canvas, sel); selectMore(canvas, sel, n => ids.has(n.id)); });
 		const tagsOf = sel => new Set(cards(sel).flatMap(n => [...this.cardTagSet(n)]));
