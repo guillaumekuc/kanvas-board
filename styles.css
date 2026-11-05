@@ -155,6 +155,7 @@
 }
 .canvas-board-pane-row {
 	padding: 2px var(--size-2-2);
+	user-select: none; /* shift-click selects the card, not the text */
 	border-radius: var(--radius-s);
 	cursor: pointer;
 	white-space: nowrap;

@@ -269,9 +269,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		// Selection tools: the selection grows to related cards (visible ones only: hidden cards never stay selected).
 		// Children follow the fold direction, one level per press, the selected cards stay selected.
 		const cards = sel => sel.filter(n => !n.from && n.getData().type !== 'group');
-		const selectMore = (canvas, sel, keep) => {
+		const selectMore = this.selectMore = (canvas, sel, keep) => {
 			const add = [...canvas.nodes.values()].filter(n => n.getData().type !== 'group' && !this.isHidden(canvas, n) && keep(n));
 			canvas.updateSelection(() => { canvas.selection.clear(); for (const n of [...sel, ...add]) canvas.selection.add(n); });
+			return add.length;
 		};
 		const childIds = (c, sel) => {
 			const links = this.branchLinks(c, this.settings.foldDirection);
@@ -1350,7 +1351,8 @@ class FindBar {
 
 // Filter pane in the top-left corner of a canvas, like Graph view's filters: closed, a filter button; open,
 // one dot per color and one chip per tag on the canvas, all shown at first (click: hide, again: show), the
-// folded cards, reset buttons and Show all. Every change applies at once.
+// folded cards, reset buttons and Show all. Every change applies at once. Shift-click on a color, tag or folded card
+// adds its visible cards to the selection instead.
 class FilterPane {
 	constructor(plugin, canvas) {
 		this.plugin = plugin;
@@ -1427,24 +1429,25 @@ class FilterPane {
 		this.key = key;
 		const apply = () => plugin.refreshView(canvas);
 		const toggle = (set, x) => { if (set.has(x)) set.delete(x); else set.add(x); apply(); };
+		const select = keep => { if (!plugin.selectMore(canvas, [...canvas.selection], keep)) new Notice('Canvas board: no visible card to select'); };
 
 		// Dots only, on one line; the name and card count are in the tooltip.
 		this.colorsEl.empty();
 		for (const [name, color] of COLORS) {
 			const out = state.xcolors.has(color);
-			const chip = this.colorsEl.createDiv({ cls: 'canvas-board-swatch', attr: { 'aria-label': `${plugin.colorLabel(name)} · ${counts[color] || 0} cards · click to ${out ? 'show' : 'hide'}` } });
+			const chip = this.colorsEl.createDiv({ cls: 'canvas-board-swatch', attr: { 'aria-label': `${plugin.colorLabel(name)} · ${counts[color] || 0} cards · click to ${out ? 'show' : 'hide'} · shift-click to select` } });
 			chip.toggleClass('is-out', out);
 			chip.createSpan({ cls: 'canvas-board-dot', attr: { style: color ? `background: var(--canvas-color-${color})` : '' } });
-			chip.addEventListener('click', () => toggle(state.xcolors, color));
+			chip.addEventListener('click', e => e.shiftKey ? select(n => (n.getData().color || '') === color) : toggle(state.xcolors, color));
 		}
 
 		this.tagsEl.empty();
 		this.tagsSection.toggle(tags.length > 0);
 		for (const t of tags) {
 			const out = state.xtags.has(t);
-			const chip = this.tagsEl.createDiv({ cls: 'canvas-board-chip', text: '#' + t, attr: { 'aria-label': `click to ${out ? 'show' : 'hide'}` } });
+			const chip = this.tagsEl.createDiv({ cls: 'canvas-board-chip', text: '#' + t, attr: { 'aria-label': `click to ${out ? 'show' : 'hide'} · shift-click to select` } });
 			chip.toggleClass('is-out', out);
-			chip.addEventListener('click', () => toggle(state.xtags, t));
+			chip.addEventListener('click', e => e.shiftKey ? select(n => plugin.cardTagSet(n).has(t)) : toggle(state.xtags, t));
 		}
 
 		this.foldedEl.empty();
@@ -1453,14 +1456,14 @@ class FilterPane {
 		for (const [id, dir] of folds) {
 			const node = canvas.nodes.get(id);
 			if (!node) continue;
-			const row = this.foldedEl.createDiv({ cls: 'canvas-board-pane-row canvas-board-pane-card', attr: { 'aria-label': 'Click to unfold the whole branch' } });
+			const row = this.foldedEl.createDiv({ cls: 'canvas-board-pane-row canvas-board-pane-card', attr: { 'aria-label': 'Click to unfold the whole branch · shift-click to select the card' } });
 			row.createSpan({ cls: 'canvas-board-dot', attr: { style: plugin.dotStyle(node.getData().color) } });
 			const text = row.createDiv({ cls: 'canvas-board-pane-card-text' });
 			const [title, ...rest] = plugin.cb.plainLines(plugin.cardText(node));
 			text.createDiv({ cls: 'canvas-board-pane-card-title', text: title || '(empty)' });
 			if (rest.length) text.createDiv({ cls: 'canvas-board-pane-card-rest', text: rest.join(' · ') });
 			row.createSpan({ cls: 'canvas-board-pane-card-count', text: `· ${plugin.branchLevels(canvas, id, dir).flat().length} folded` });
-			row.addEventListener('click', () => plugin.unfold(canvas, [id], Infinity));
+			row.addEventListener('click', e => e.shiftKey ? select(n => n.id === id) : plugin.unfold(canvas, [id], Infinity));
 		}
 	}
 
