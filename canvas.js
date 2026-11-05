@@ -449,7 +449,7 @@ function fitHeight(text, w) {
 // Ops that lay out `ids` (all cards when empty) with dagre; the other cards never move. The laid-out block
 // keeps the center of the cards it lays out, then steps until it overlaps nothing.
 // Shared with the plugin, which passes its own dagre.
-function layoutOps(d, { ids, dir = 'TB', fit = false, dagre }) {
+function layoutOps(d, { ids, dir = 'TB', fit = false, dagre, flow = 'out' }) {
   const cards = d.nodes.filter(n => n.type !== 'group');
   const pick = new Set(ids && ids.length ? ids : cards.map(n => n.id));
   const moving = cards.filter(n => pick.has(n.id));
@@ -461,8 +461,9 @@ function layoutOps(d, { ids, dir = 'TB', fit = false, dagre }) {
   const size = n => ({ width: n.width, height: fit && n.type === 'text' ? fitHeight(n.text, n.width) : n.height });
   for (const n of moving) g.setNode(n.id, size(n));
   const inner = d.edges.filter(e => pick.has(e.fromNode) && pick.has(e.toNode));
-  // "depends on" edges point at the prerequisite, which should come first: rank them reversed.
-  const back = e => /depends on/i.test(e.label || '');
+  // The direction names where a branch starts, whichever way its arrows point. With flow 'in' (the fold direction)
+  // arrows point at the card they hang from, and "depends on" edges point at the prerequisite: both come first, so they rank reversed.
+  const back = e => flow === 'in' || /depends on/i.test(e.label || '');
   for (const e of inner) back(e) ? g.setEdge(e.toNode, e.fromNode) : g.setEdge(e.fromNode, e.toNode);
   dagre.layout(g);
 
@@ -571,7 +572,7 @@ if (require.main === module) {
       const ids = (opt('--ids') || '').split(',').filter(Boolean);
       const dir = (opt('--dir') || defaultDir()).toUpperCase();
       if (!SIDES[dir]) { console.error(`layout: --dir must be TB, LR, BT or RL, not ${dir}`); process.exit(1); }
-      const ops = layoutOps(readBoard(board), { ids, dir, fit: args.includes('--fit'), dagre: require('./dagre.min.js') });
+      const ops = layoutOps(readBoard(board), { ids, dir, fit: args.includes('--fit'), dagre: require('./dagre.min.js'), flow: settings().foldDirection });
       console.log(writeOps(board, ops), ops.filter(o => o.op === 'set').length, 'cards');
       break;
     }
