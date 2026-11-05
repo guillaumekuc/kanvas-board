@@ -942,7 +942,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const here = this.canvasFile(canvas);
 		const isSub = from => target => { const f = this.app.metadataCache.getFirstLinkpathDest(target, from); return !!f && f.path === file.path; };
 		if (mode === 'group') {
-			const [a, b] = this.settings.layoutDirection === 'LR' ? ['right', 'left'] : ['bottom', 'top'];
+			const [a, b] = this.cb.SIDES[this.settings.layoutDirection] || this.cb.SIDES.TB;
 			for (const l of links.filter(l => l.path === here)) {
 				const n = canvas.getData().nodes.find(x => x.id === l.id);
 				if (!n) continue;
