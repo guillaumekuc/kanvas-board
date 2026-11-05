@@ -29,7 +29,7 @@
 //   CANVAS restore <note>                     puts an archived card back on its board, note to .trash
 //   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
 //   CANVAS check [<board>]                    read-only: broken board invariants (links, card text, plan notes) as JSON
-// tree, rollup and check are the agent workflow: they live in workflow.js (go colors: plugin setting "Pass colors").
+// tree, rollup and check are the agent workflow: they live in workflow.js (go colors: plugin setting "Workflow").
 // Default board: Plans.canvas. Default direction: the plugin setting "Layout direction" (data.json), else TB.
 const fs = require('fs');
 const path = require('path');

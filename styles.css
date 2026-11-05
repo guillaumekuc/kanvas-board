@@ -235,3 +235,8 @@
 .canvas-board-pane-card-count {
 	flex: none;
 }
+/* Settings > Workflow: the color next to its name. */
+.canvas-board-workflow-dot {
+	display: inline-block;
+	margin-right: 8px;
+}

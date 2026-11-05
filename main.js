@@ -3,7 +3,7 @@
 // to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (pack, unpack dissolve / copy, merge,
 // split, extract), archive/restore, view tools (search current canvas, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. Writes skill/SKILL.md to
 // .claude/skills/canvas-board/ on load when missing; after that the vault copy is the user's (command "Reset agent skill").
-// The agent workflow (what a pass takes, roll-up, check) is workflow.js; here only the "Pass colors" gate.
+// The agent workflow (what a pass takes, roll-up, check) is workflow.js; here only the "Workflow" toggles gate.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
 const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, AbstractInputSuggest, Scope, setIcon } = require('obsidian');
 const { spawn } = require('child_process');
@@ -34,6 +34,15 @@ const DEFAULTS = {
 };
 const COLOR_NUM = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
 const parseColors = s => new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLOR_NUM[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
+// Settings > Workflow: what each color means (as in SOP - Canvas Board).
+const WORKFLOW = [
+	['cyan', 'Go, auto: the agent carries the card to done.'],
+	['purple', 'Go, plan: the agent takes one step, then hands back.'],
+	['orange', 'Agent working.'],
+	['yellow', 'Needs you: a question or a review.'],
+	['red', 'Blocked.'],
+	['green', 'Done. Remove the card when it no longer helps.'],
+];
 
 module.exports = class CanvasBoardPlugin extends Plugin {
 	async onload() {
@@ -989,7 +998,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return view && view.getViewType() === 'canvas' ? view.canvas : null;
 	}
 
-	// True if the board, or a plan canvas linked from one of its cards, has a card in `go` (setting "Pass colors").
+	// True if the board, or a plan canvas linked from one of its cards, has a card in `go` (setting "Workflow").
 	async hasGoCards(board, go) {
 		const read = async p => {
 			const file = this.app.vault.getAbstractFileByPath(p);
@@ -1412,13 +1421,24 @@ class CanvasBoardSettings extends PluginSettingTab {
 		text('Default board', 'Board used by "Run pass" when the active tab is not a canvas, and by "Open the board" (ribbon).', 'defaultBoard');
 		text('Card count warning', 'The status bar card count turns to the warning color past this many cards (0: never).', 'cardWarning');
 		text('Stale after (days)', 'A yellow card whose note is untouched this many days gets a warning badge with its age; the roll-up adds "· Nd" from the same value (0: never).', 'staleDays');
+		heading('Workflow').setDesc('What each color means. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the pass always starts and takes cyan and purple.');
+		const go = parseColors(this.plugin.settings.passColors);
+		for (const [name, meaning] of WORKFLOW) {
+			const num = COLOR_NUM[name];
+			const row = new Setting(containerEl).setName(name).setDesc(meaning);
+			row.nameEl.prepend(createSpan({ cls: 'canvas-board-dot canvas-board-workflow-dot', attr: { style: `background: var(--canvas-color-${num})` } }));
+			row.addToggle(t => t
+				.setTooltip('Triggers the agent')
+				.setValue(go.has(num))
+				.onChange(async on => {
+					if (on) go.add(num); else go.delete(num);
+					this.plugin.settings.passColors = WORKFLOW.map(([n]) => n).filter(n => go.has(COLOR_NUM[n])).join(' ');
+					await this.plugin.saveData(this.plugin.settings);
+				}));
+		}
 		heading('Pass');
 		text('Claude path', 'Empty: ~/.local/bin/claude.exe if it exists, else claude on PATH.', 'claudePath');
 		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
-		new Setting(containerEl).setName('Pass colors').setDesc('"Run pass" starts only if the board has a card of one of these colors (names or 1-6, e.g. "cyan purple"); the agent takes the same cards (tree --active). Empty: the pass always starts.').addText(t => t
-			.setPlaceholder('empty: always run')
-			.setValue(this.plugin.settings.passColors)
-			.onChange(async v => { this.plugin.settings.passColors = v.trim(); await this.plugin.saveData(this.plugin.settings); }));
 		new Setting(containerEl).setName('Agent skill').setDesc('.claude/skills/canvas-board/SKILL.md is written once from the plugin, then it is yours: plugin updates never overwrite it. Reset brings back the plugin\'s version.').addButton(b => b
 			.setButtonText('Reset skill')
 			.setWarning()
