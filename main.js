@@ -3,37 +3,55 @@
 // to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (pack, unpack dissolve / copy, merge,
 // split, extract), archive/restore, view tools (search current canvas, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. Writes skill/SKILL.md to
 // .claude/skills/canvas-board/ on load when missing; after that the vault copy is the user's (command "Reset agent skill").
-// The agent workflow (what a pass takes, roll-up, check) is workflow.js; here only the "Pass colors" gate.
+// The agent workflow (what a pass takes, roll-up, check) is workflow.js; here only the "Workflow" toggles gate.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
 const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, AbstractInputSuggest, Scope, setIcon } = require('obsidian');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+// [color name, canvas color, command key, default label]. Labels can be edited in Settings > Workflow (none cannot).
 const COLORS = [
-	['none (idea or parked)', '', '0'],
-	['red (blocked)', '1', '1'],
-	['orange (agent working)', '2', '2'],
-	['yellow (needs me)', '3', '3'],
-	['green (done)', '4', '4'],
-	['cyan (go, auto)', '5', '5'],
-	['purple (go, plan)', '6', '6'],
+	['none', '', '0', 'Idea or parked'],
+	['red', '1', '1', 'Blocked'],
+	['orange', '2', '2', 'Agent working'],
+	['yellow', '3', '3', 'Needs me'],
+	['green', '4', '4', 'Done'],
+	['cyan', '5', '5', 'Go, auto'],
+	['purple', '6', '6', 'Go, plan'],
 ];
 
 // {vault} {board} {claude} are replaced; quoted parts stay one argument.
 const DEFAULTS = {
 	defaultBoard: 'Plans.canvas',
 	claudePath: '',
-	layoutDirection: 'TB',
+	layoutDirection: 'TB', // TB, LR, BT or RL
+	colorLabels: {}, // color name → label, when edited (Settings > Workflow)
 	cardWarning: '60',
 	staleDays: '7', // yellow cards whose note is untouched this long get a warning badge (and the rollup's `· Nd`)
 	hideTagBranches: true, // a hidden tag also hides the cards below its cards (in the fold direction)
 	foldDirection: 'out', // fold hides the cards a card points to (out) or the cards pointing to it (in)
 	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
-	passColors: 'cyan purple', // cards that start a pass (and that tree --active takes, see workflow.js); empty = always run
+	passColors: 'cyan purple', // cards that start a pass (and that tree --active takes, see workflow.js); empty = never
 };
 const COLOR_NUM = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
 const parseColors = s => new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLOR_NUM[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
+// Settings > Workflow: what each color does (as in SOP - Canvas Board). Fixed: the label above is only how it reads.
+const WORKFLOW = [
+	['cyan', 'The agent carries the card to done.'],
+	['purple', 'The agent takes one step, then hands back.'],
+	['orange', 'A pass is on the card.'],
+	['yellow', 'A question or a review for you.'],
+	['red', 'Nothing moves until it is unblocked.'],
+	['green', 'Finished. Remove the card when it no longer helps.'],
+];
+// Tidy layout directions, in the order shift-click cycles them. `turn`: how far the button's icon rotates.
+const LAYOUT_DIRS = {
+	TB: { name: 'top to bottom', turn: 0 },
+	LR: { name: 'left to right', turn: -90 },
+	BT: { name: 'bottom to top', turn: 180 },
+	RL: { name: 'right to left', turn: 90 },
+};
 
 module.exports = class CanvasBoardPlugin extends Plugin {
 	async onload() {
@@ -74,10 +92,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			callback: () => this.syncSkill(dir, true),
 		});
 
-		for (const [label, color, key] of COLORS) {
+		for (const [name, color, key] of COLORS) {
 			this.addCommand({
 				id: `color-${key}`,
-				name: `Color selected cards: ${label}`,
+				name: this.colorCommandName(name),
 				checkCallback: checking => {
 					const canvas = this.activeCanvas();
 					if (!canvas || canvas.selection.size === 0) return false;
@@ -109,6 +127,21 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				return true;
 			},
 		});
+		this.addCommand({
+			id: 'tidy-direction-next',
+			name: 'Tidy layout direction: next',
+			callback: () => this.cycleLayoutDirection(),
+		});
+		for (const [dir, { name }] of Object.entries(LAYOUT_DIRS))
+			this.addCommand({
+				id: `tidy-direction-${dir.toLowerCase()}`,
+				name: `Tidy layout direction: ${name}`,
+				checkCallback: checking => {
+					if (this.settings.layoutDirection === dir) return false;
+					if (!checking) this.setLayoutDirection(dir);
+					return true;
+				},
+			});
 
 		// Refactor and archive commands: one undo step each (Ctrl+Z), same code as canvas.js for agents.
 		// Each is also a right-click item (label `menu`) on the cards it applies to.
@@ -404,6 +437,26 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 	// folds and the filter pane: an Obsidian update may drop those buttons, the commands stay. Header action and
 	// ribbon icon are documented API. See "Undocumented Obsidian internals" in the SOP.
 
+	// Label of a color: the one edited in Settings > Workflow, else the default.
+	colorLabel(name) {
+		return (this.settings.colorLabels || {})[name] || COLORS.find(c => c[0] === name)[3];
+	}
+
+	colorCommandName(name) {
+		return `Color selected cards: ${name} (${this.colorLabel(name)})`;
+	}
+
+	// An edited label also renames its command in the palette and the hotkey list. The id, and so the key, stays.
+	async setColorLabel(name, label) {
+		const labels = this.settings.colorLabels = { ...this.settings.colorLabels };
+		if (label) labels[name] = label; else delete labels[name];
+		await this.saveData(this.settings);
+		const row = COLORS.find(c => c[0] === name);
+		const cmd = this.app.commands && this.app.commands.commands[`${this.manifest.id}:color-${row[2]}`];
+		if (cmd) cmd.name = `${this.manifest.name}: ${this.colorCommandName(name)}`;
+		for (const canvas of this.panes.keys()) this.refreshView(canvas);
+	}
+
 	// Hotkey of a plugin command as Obsidian prints it ("Alt + ↑"), or ''.
 	hotkey(id) {
 		const hm = this.app.hotkeyManager;
@@ -451,6 +504,18 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		await this.app.workspace.getLeaf(false).openFile(file);
 	}
 
+	async setLayoutDirection(dir) {
+		this.settings.layoutDirection = dir;
+		await this.saveData(this.settings);
+		for (const leaf of this.app.workspace.getLeavesOfType('canvas')) this.decorate(leaf.view);
+		new Notice(`Canvas board: tidy layout ${LAYOUT_DIRS[dir].name}`);
+	}
+
+	cycleLayoutDirection() {
+		const dirs = Object.keys(LAYOUT_DIRS);
+		return this.setLayoutDirection(dirs[(dirs.indexOf(this.settings.layoutDirection) + 1) % dirs.length]);
+	}
+
 	// Runs a plugin command on this canvas view (made active first: a click on its buttons may not focus it).
 	runOn(view, id) {
 		const leaf = this.app.workspace.getLeavesOfType('canvas').find(l => l.view === view);
@@ -473,13 +538,23 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				group = createDiv({ cls: 'canvas-control-group mod-raised canvas-board-controls' });
 				const help = controls.lastElementChild;
 				controls.insertBefore(group, help);
-				for (const [id, label, icon] of [['find', 'Search current canvas', 'search'], ['filter', 'Filter cards', 'filter'], ['tidy-layout', 'Tidy layout', 'layout-grid']]) {
+				for (const [id, label, icon] of [['find', 'Search current canvas', 'search'], ['filter', 'Filter cards', 'filter'], ['tidy-layout', 'Tidy layout', 'network']]) {
 					const b = group.createDiv({ cls: 'canvas-control-item', attr: { 'data-command': id, 'data-label': label, 'data-tooltip-position': 'left' } });
 					setIcon(b, icon);
-					b.addEventListener('click', () => this.runOn(view, id));
+					b.addEventListener('click', e => {
+						if (id === 'tidy-layout' && e.shiftKey) this.cycleLayoutDirection();
+						else this.runOn(view, id);
+					});
 				}
 			}
 			for (const b of group.children) b.setAttr('aria-label', this.keyedLabel(b.dataset.label, b.dataset.command));
+			// The tidy icon points the way the layout flows; its tooltip says so and how to change it.
+			const tidy = group.querySelector('[data-command="tidy-layout"]');
+			const dir = LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
+			if (tidy) {
+				tidy.style.setProperty('--canvas-board-tidy-turn', `${dir.turn}deg`);
+				tidy.setAttr('aria-label', this.keyedLabel(`Tidy layout: ${dir.name}\nShift-click: next direction`, 'tidy-layout'));
+			}
 		}
 		// Selection toolbar: Fold, Unfold, Archive after the canvas's own buttons, when they apply.
 		const menu = canvas.menu;
@@ -494,10 +569,9 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			// The color picker opens on click: its swatches get the state as tooltip.
 			menu.canvasBoardObserver = new MutationObserver(() => {
 				for (const item of menu.menuEl.querySelectorAll('.canvas-color-picker-item:not(.canvas-color-picker-custom)')) {
-					if (item.hasAttribute('aria-label')) continue;
 					const c = (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || '';
 					const row = COLORS.find(x => x[1] === c);
-					if (row) item.setAttrs({ 'aria-label': this.keyedLabel(row[0], `color-${row[2]}`), 'data-tooltip-position': 'top' });
+					if (row) item.setAttrs({ 'aria-label': this.keyedLabel(this.colorLabel(row[0]), `color-${row[2]}`), 'data-tooltip-position': 'top' });
 				}
 			});
 			menu.canvasBoardObserver.observe(menu.menuEl, { childList: true, subtree: true });
@@ -905,7 +979,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const here = this.canvasFile(canvas);
 		const isSub = from => target => { const f = this.app.metadataCache.getFirstLinkpathDest(target, from); return !!f && f.path === file.path; };
 		if (mode === 'group') {
-			const [a, b] = this.settings.layoutDirection === 'LR' ? ['right', 'left'] : ['bottom', 'top'];
+			const [a, b] = this.cb.SIDES[this.settings.layoutDirection] || this.cb.SIDES.TB;
 			for (const l of links.filter(l => l.path === here)) {
 				const n = canvas.getData().nodes.find(x => x.id === l.id);
 				if (!n) continue;
@@ -989,7 +1063,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		return view && view.getViewType() === 'canvas' ? view.canvas : null;
 	}
 
-	// True if the board, or a plan canvas linked from one of its cards, has a card in `go` (setting "Pass colors").
+	// True if the board, or a plan canvas linked from one of its cards, has a card in `go` (setting "Workflow").
 	async hasGoCards(board, go) {
 		const read = async p => {
 			const file = this.app.vault.getAbstractFileByPath(p);
@@ -1016,7 +1090,15 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
 		const board = view && view.getViewType() === 'canvas' && view.file ? view.file.path : this.settings.defaultBoard;
 		const go = parseColors(this.settings.passColors);
-		if (go.size && !(await this.hasGoCards(board, go))) {
+		if (!go.size) {
+			new Notice(createFragment(f => {
+				f.appendText('Canvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. ');
+				const b = f.createEl('button', { cls: 'canvas-board-notice-undo', text: 'Open settings' });
+				b.addEventListener('click', () => { this.app.setting.open(); this.app.setting.openTabById(this.manifest.id); });
+			}), 10000);
+			return;
+		}
+		if (!(await this.hasGoCards(board, go))) {
 			const names = Object.keys(COLOR_NUM).filter(k => go.has(COLOR_NUM[k]));
 			new Notice(`Canvas board: nothing to do on ${board} (no ${names.join(' or ')} card)`);
 			return;
@@ -1348,9 +1430,9 @@ class FilterPane {
 
 		// Dots only, on one line; the name and card count are in the tooltip.
 		this.colorsEl.empty();
-		for (const [label, color] of COLORS) {
+		for (const [name, color] of COLORS) {
 			const out = state.xcolors.has(color);
-			const chip = this.colorsEl.createDiv({ cls: 'canvas-board-swatch', attr: { 'aria-label': `${label.split(' ')[0]} · ${counts[color] || 0} cards · click to ${out ? 'show' : 'hide'}` } });
+			const chip = this.colorsEl.createDiv({ cls: 'canvas-board-swatch', attr: { 'aria-label': `${plugin.colorLabel(name)} · ${counts[color] || 0} cards · click to ${out ? 'show' : 'hide'}` } });
 			chip.toggleClass('is-out', out);
 			chip.createSpan({ cls: 'canvas-board-dot', attr: { style: color ? `background: var(--canvas-color-${color})` : '' } });
 			chip.addEventListener('click', () => toggle(state.xcolors, color));
@@ -1412,22 +1494,37 @@ class CanvasBoardSettings extends PluginSettingTab {
 		text('Default board', 'Board used by "Run pass" when the active tab is not a canvas, and by "Open the board" (ribbon).', 'defaultBoard');
 		text('Card count warning', 'The status bar card count turns to the warning color past this many cards (0: never).', 'cardWarning');
 		text('Stale after (days)', 'A yellow card whose note is untouched this many days gets a warning badge with its age; the roll-up adds "· Nd" from the same value (0: never).', 'staleDays');
+		heading('Workflow').setDesc('What each color does and its label, shown in tooltips, the filter pane and the color commands. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.');
+		const go = parseColors(this.plugin.settings.passColors);
+		for (const [name, meaning] of WORKFLOW) {
+			const num = COLOR_NUM[name];
+			const row = new Setting(containerEl).setName(name).setDesc(meaning);
+			row.nameEl.prepend(createSpan({ cls: 'canvas-board-dot canvas-board-workflow-dot', attr: { style: `background: var(--canvas-color-${num})` } }));
+			row.addText(t => t
+				.setPlaceholder(COLORS.find(c => c[0] === name)[3])
+				.setValue((this.plugin.settings.colorLabels || {})[name] || '')
+				.onChange(v => this.plugin.setColorLabel(name, v.trim())));
+			row.addToggle(t => t
+				.setTooltip('Triggers the agent')
+				.setValue(go.has(num))
+				.onChange(async on => {
+					if (on) go.add(num); else go.delete(num);
+					this.plugin.settings.passColors = WORKFLOW.map(([n]) => n).filter(n => go.has(COLOR_NUM[n])).join(' ');
+					await this.plugin.saveData(this.plugin.settings);
+				}));
+		}
 		heading('Pass');
 		text('Claude path', 'Empty: ~/.local/bin/claude.exe if it exists, else claude on PATH.', 'claudePath');
 		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
-		new Setting(containerEl).setName('Pass colors').setDesc('"Run pass" starts only if the board has a card of one of these colors (names or 1-6, e.g. "cyan purple"); the agent takes the same cards (tree --active). Empty: the pass always starts.').addText(t => t
-			.setPlaceholder('empty: always run')
-			.setValue(this.plugin.settings.passColors)
-			.onChange(async v => { this.plugin.settings.passColors = v.trim(); await this.plugin.saveData(this.plugin.settings); }));
 		new Setting(containerEl).setName('Agent skill').setDesc('.claude/skills/canvas-board/SKILL.md is written once from the plugin, then it is yours: plugin updates never overwrite it. Reset brings back the plugin\'s version.').addButton(b => b
 			.setButtonText('Reset skill')
 			.setWarning()
 			.onClick(() => this.plugin.syncSkill(path.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir), true)));
 		heading('Layout');
-		new Setting(containerEl).setName('Layout direction').setDesc('Tidy layout and agent-made plan canvases: top to bottom or left to right ("depends on" prerequisites come first).').addDropdown(dd => dd
-			.addOptions({ TB: 'Top to bottom', LR: 'Left to right' })
+		new Setting(containerEl).setName('Layout direction').setDesc('Tidy layout and agent-made plan canvases ("depends on" prerequisites come first). Shift-click the Tidy layout button, or commands "Tidy layout direction: …", switch it on the fly.').addDropdown(dd => dd
+			.addOptions({ TB: 'Top to bottom', LR: 'Left to right', BT: 'Bottom to top', RL: 'Right to left' })
 			.setValue(this.plugin.settings.layoutDirection)
-			.onChange(async v => { this.plugin.settings.layoutDirection = v; await this.plugin.saveData(this.plugin.settings); }));
+			.onChange(v => this.plugin.setLayoutDirection(v)));
 		heading('View');
 		new Setting(containerEl).setName('Fold direction').setDesc('Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Commands "Fold direction: …" switch it on the fly.').addDropdown(dd => dd
 			.addOptions({ out: 'Outgoing', in: 'Incoming' })

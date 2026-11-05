@@ -1,6 +1,6 @@
 // The agent workflow on top of canvas.js: what a pass reads (tree --active, note level), the roll-up and the
 // check. canvas.js keeps the generic board ops and calls this file for those three commands; the plugin does
-// not need it. Go colors (the cards a pass takes) come from the plugin setting "Pass colors" (data.json).
+// not need it. Go colors (the cards a pass takes) come from the plugin setting "Workflow" (data.json).
 const fs = require('fs');
 const path = require('path');
 const { readBoard, writeOps, tree: baseTree, findFile, cardLinks, abs, noteContexts, COLORS } = require('./canvas.js');
@@ -13,14 +13,13 @@ const WAITING = new Set(['1', '3']); // red, yellow: needs the human
 
 const settings = () => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8')); } catch (e) { return {}; } };
 
-// "cyan purple" / "5,6" → Set of color numbers. Empty setting (pass always runs) keeps the default go colors here.
+// "cyan purple" / "5,6" → Set of color numbers. Empty setting (all off): no go colors, the agent takes nothing.
 function parseColors(s) {
   return new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLORS[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
 }
 function goColors() {
   const s = settings().passColors;
-  const set = parseColors(s === undefined ? DEFAULT_PASS_COLORS : s);
-  return set.size ? set : parseColors(DEFAULT_PASS_COLORS);
+  return parseColors(s === undefined ? DEFAULT_PASS_COLORS : s);
 }
 
 // Level is derived from the note: `- [ ]` / `- [x]` parts make it a plan, otherwise it is a brief.

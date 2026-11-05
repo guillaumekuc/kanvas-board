@@ -14,7 +14,7 @@
 //                                             new text card next to <id> (right, else below); prints its id
 //   CANVAS remove <board> <id>
 //   CANVAS edge <board> <fromId> <toId> [--label l]
-//   CANVAS layout <board> [--ids a,b,c] [--dir LR|TB] [--fit]
+//   CANVAS layout <board> [--ids a,b,c] [--dir TB|LR|BT|RL] [--fit]
 //                                             dagre layered layout of the given cards (default: all), the others
 //                                             stay put; --fit sizes text cards to their text. For canvases an agent
 //                                             made, or cards it just added
@@ -29,7 +29,7 @@
 //   CANVAS restore <note>                     puts an archived card back on its board, note to .trash
 //   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
 //   CANVAS check [<board>]                    read-only: broken board invariants (links, card text, plan notes) as JSON
-// tree, rollup and check are the agent workflow: they live in workflow.js (go colors: plugin setting "Pass colors").
+// tree, rollup and check are the agent workflow: they live in workflow.js (go colors: plugin setting "Workflow").
 // Default board: Plans.canvas. Default direction: the plugin setting "Layout direction" (data.json), else TB.
 const fs = require('fs');
 const path = require('path');
@@ -435,9 +435,9 @@ function place(d, near, w, h) {
 
 // --- Layout -------------------------------------------------------------------------------------------
 
-const SIDES = { TB: ['bottom', 'top'], LR: ['right', 'left'] };
+const SIDES = { TB: ['bottom', 'top'], LR: ['right', 'left'], BT: ['top', 'bottom'], RL: ['left', 'right'] }; // edge [from, to] per direction
 const settings = () => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8')); } catch (e) { return {}; } };
-const defaultDir = () => (settings().layoutDirection === 'LR' ? 'LR' : 'TB');
+const defaultDir = () => (SIDES[settings().layoutDirection] ? settings().layoutDirection : 'TB');
 
 // Height that fits a text card's markdown at Obsidian's default canvas font (~8px a char, 26px a line).
 function fitHeight(text, w) {
@@ -469,14 +469,14 @@ function layoutOps(d, { ids, dir = 'TB', fit = false, dagre }) {
   const box = ns => ns.reduce((b, n) => ({ x0: Math.min(b.x0, n.x), y0: Math.min(b.y0, n.y), x1: Math.max(b.x1, n.x + n.width), y1: Math.max(b.y1, n.y + n.height) }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
   const placed = moving.map(n => { const p = g.node(n.id); return { id: n.id, x: Math.round(p.x - p.width / 2), y: Math.round(p.y - p.height / 2), width: p.width, height: p.height }; });
   // The block keeps the center the moving cards had; if it then overlaps a fixed card, it steps across the
-  // flow (down for LR, right for TB), alternating sides, to the nearest free spot.
+  // flow (down for LR and RL, right for TB and BT), alternating sides, to the nearest free spot.
   const b = box(placed), was = box(moving);
   const cx = Math.round((was.x0 + was.x1 - b.x0 - b.x1) / 2), cy = Math.round((was.y0 + was.y1 - b.y0 - b.y1) / 2);
   let ox = cx, oy = cy;
   const hits = () => placed.some(p => fixed.some(n => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
   for (let k = 1; k <= 400 && hits(); k++) {
     const step = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 40;
-    if (dir === 'LR') oy = cy + step; else ox = cx + step;
+    if (dir === 'LR' || dir === 'RL') oy = cy + step; else ox = cx + step;
   }
 
   const ops = placed.map(p => ({ op: 'set', id: p.id, x: p.x + ox, y: p.y + oy, width: p.width, height: p.height }));
@@ -502,7 +502,7 @@ function plainLines(text) {
 }
 
 // readBoard … noteContexts are for workflow.js (tree --active, rollup, check).
-module.exports = { readBoard, writeOps, tree, findFile, cardLinks, abs, noteContexts, COLORS, plainLines, applyOps, layoutOps, collapseOps, expandOps, relinkText, mergeOps, splitOps, extractOps, archiveNote, restoreOps, noteName, ARCHIVE_DIR, templateOps, TEMPLATE_DIR };
+module.exports = { readBoard, writeOps, tree, findFile, cardLinks, abs, noteContexts, COLORS, SIDES, plainLines, applyOps, layoutOps, collapseOps, expandOps, relinkText, mergeOps, splitOps, extractOps, archiveNote, restoreOps, noteName, ARCHIVE_DIR, templateOps, TEMPLATE_DIR };
 
 // Next free `<dir>/<name><ext>` (vault-relative), adding " 2", " 3"... when taken.
 function freePath(dir, name, ext) {
@@ -569,7 +569,9 @@ if (require.main === module) {
     }
     case 'layout': {
       const ids = (opt('--ids') || '').split(',').filter(Boolean);
-      const ops = layoutOps(readBoard(board), { ids, dir: (opt('--dir') || defaultDir()).toUpperCase(), fit: args.includes('--fit'), dagre: require('./dagre.min.js') });
+      const dir = (opt('--dir') || defaultDir()).toUpperCase();
+      if (!SIDES[dir]) { console.error(`layout: --dir must be TB, LR, BT or RL, not ${dir}`); process.exit(1); }
+      const ops = layoutOps(readBoard(board), { ids, dir, fit: args.includes('--fit'), dagre: require('./dagre.min.js') });
       console.log(writeOps(board, ops), ops.filter(o => o.op === 'set').length, 'cards');
       break;
     }
