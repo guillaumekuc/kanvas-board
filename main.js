@@ -125,7 +125,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 					}
 					const ids = [...canvas.selection].map(n => n.id);
 					const d = canvas.getData();
-					this.edit(canvas, layoutOps(d, { ids, dir: this.settings.layoutDirection, dagre }), d);
+					this.edit(canvas, layoutOps(d, { ids, dir: this.settings.layoutDirection, dagre, flow: this.settings.foldDirection }), d);
 				}
 				return true;
 			},
@@ -1599,12 +1599,12 @@ class CanvasBoardSettings extends PluginSettingTab {
 			.setWarning()
 			.onClick(() => this.plugin.syncSkill(path.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir), true)));
 		heading('Layout');
-		new Setting(containerEl).setName('Layout direction').setDesc('Tidy layout and agent-made plan canvases ("depends on" prerequisites come first). Shift-click the Tidy layout button, or commands "Tidy layout direction: …", switch it on the fly.').addDropdown(dd => dd
+		new Setting(containerEl).setName('Layout direction').setDesc('Tidy layout and agent-made plan canvases: the card a branch starts from comes first, following arrows in the fold direction ("depends on" prerequisites too). Shift-click the Tidy layout button, or commands "Tidy layout direction: …", switch it on the fly.').addDropdown(dd => dd
 			.addOptions({ TB: 'Top to bottom', LR: 'Left to right', BT: 'Bottom to top', RL: 'Right to left' })
 			.setValue(this.plugin.settings.layoutDirection)
 			.onChange(v => this.plugin.setLayoutDirection(v)));
 		heading('View');
-		new Setting(containerEl).setName('Fold direction').setDesc('Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Commands "Fold direction: …" switch it on the fly.').addDropdown(dd => dd
+		new Setting(containerEl).setName('Fold direction').setDesc('Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Tidy layout reads branches the same way. Commands "Fold direction: …" switch it on the fly.').addDropdown(dd => dd
 			.addOptions({ out: 'Outgoing', in: 'Incoming' })
 			.setValue(this.plugin.settings.foldDirection)
 			.onChange(async v => { this.plugin.settings.foldDirection = v; await this.plugin.saveData(this.plugin.settings); }));
