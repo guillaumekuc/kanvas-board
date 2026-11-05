@@ -1,6 +1,6 @@
 // The agent workflow on top of canvas.js: what a pass reads (tree --active, note level), the roll-up and the
 // check. canvas.js keeps the generic board ops and calls this file for those three commands; the plugin does
-// not need it. Go colors (the cards a pass takes) come from the plugin setting "Pass colors" (data.json).
+// not need it. Go colors (the cards a pass takes) come from the plugin setting "Workflow" (data.json).
 const fs = require('fs');
 const path = require('path');
 const { readBoard, writeOps, tree: baseTree, findFile, cardLinks, abs, noteContexts, COLORS } = require('./canvas.js');
