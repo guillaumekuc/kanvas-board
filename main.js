@@ -52,6 +52,8 @@ const LAYOUT_DIRS = {
 	BT: { name: 'bottom to top', turn: 180 },
 	RL: { name: 'right to left', turn: 90 },
 };
+// The icon's next rotation for a direction: the shortest way there, so cycling keeps turning the same way.
+const nextTurn = (current, target) => current + ((target - current) % 360 + 540) % 360 - 180;
 
 module.exports = class CanvasBoardPlugin extends Plugin {
 	async onload() {
@@ -552,7 +554,8 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			const tidy = group.querySelector('[data-command="tidy-layout"]');
 			const dir = LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
 			if (tidy) {
-				tidy.style.setProperty('--canvas-board-tidy-turn', `${dir.turn}deg`);
+				this.tidyTurn = nextTurn(this.tidyTurn ?? dir.turn, dir.turn);
+				tidy.style.setProperty('--canvas-board-tidy-turn', `${this.tidyTurn}deg`);
 				tidy.setAttr('aria-label', this.keyedLabel(`Tidy layout: ${dir.name}\nShift-click: next direction`, 'tidy-layout'));
 			}
 		}
