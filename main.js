@@ -12,13 +12,13 @@ const path = require('path');
 
 // [color name, canvas color, command key, default label]. Labels can be edited in Settings > Workflow (none cannot).
 const COLORS = [
-	['none', '', '0', 'Idea or parked'],
+	['none', '', '0', 'Inbox'],
 	['red', '1', '1', 'Blocked'],
-	['orange', '2', '2', 'Agent working'],
-	['yellow', '3', '3', 'Needs me'],
+	['orange', '2', '2', 'In Progress'],
+	['yellow', '3', '3', 'Review'],
 	['green', '4', '4', 'Done'],
-	['cyan', '5', '5', 'Go, auto'],
-	['purple', '6', '6', 'Go, plan'],
+	['cyan', '5', '5', 'Do'],
+	['purple', '6', '6', 'Clarify'],
 ];
 
 // {vault} {board} {claude} are replaced; quoted parts stay one argument.
