@@ -10,7 +10,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-// [color name, canvas color, command key, default label]. Labels can be edited in Settings > Workflow (none cannot).
+// [color name, canvas color, command key, default label]. Labels can be edited in Settings > Workflow.
 const COLORS = [
 	['none', '', '0', 'Idea or parked'],
 	['red', '1', '1', 'Blocked'],
@@ -44,6 +44,7 @@ const WORKFLOW = [
 	['yellow', 'A question or a review for you.'],
 	['red', 'Nothing moves until it is unblocked.'],
 	['green', 'Finished. Remove the card when it no longer helps.'],
+	['none', 'No state. The agent never touches it.'],
 ];
 // Tidy layout directions, in the order shift-click cycles them. `turn`: how far the button's icon rotates.
 const LAYOUT_DIRS = {
@@ -1575,13 +1576,13 @@ class CanvasBoardSettings extends PluginSettingTab {
 		const go = parseColors(this.plugin.settings.passColors);
 		for (const [name, meaning] of WORKFLOW) {
 			const num = COLOR_NUM[name];
-			const row = new Setting(containerEl).setName(name).setDesc(meaning);
-			row.nameEl.prepend(createSpan({ cls: 'canvas-board-dot canvas-board-workflow-dot', attr: { style: `background: var(--canvas-color-${num})` } }));
+			const row = new Setting(containerEl).setName(num ? name : 'uncolored').setDesc(meaning);
+			row.nameEl.prepend(createSpan({ cls: 'canvas-board-dot canvas-board-workflow-dot', attr: { style: this.plugin.dotStyle(num) } }));
 			row.addText(t => t
 				.setPlaceholder(COLORS.find(c => c[0] === name)[3])
 				.setValue((this.plugin.settings.colorLabels || {})[name] || '')
 				.onChange(v => this.plugin.setColorLabel(name, v.trim())));
-			row.addToggle(t => t
+			if (num) row.addToggle(t => t // uncolored never triggers the agent
 				.setTooltip('Triggers the agent')
 				.setValue(go.has(num))
 				.onChange(async on => {
