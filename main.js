@@ -32,7 +32,7 @@ const DEFAULTS = {
 	hideTagBranches: true, // a hidden tag also hides the cards below its cards (in the fold direction)
 	foldDirection: 'out', // fold hides the cards a card points to (out) or the cards pointing to it (in)
 	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
-	passColors: 'cyan purple', // cards that start a pass (and that tree --active takes, see workflow.js); empty = always run
+	passColors: 'cyan purple', // cards that start a pass (and that tree --active takes, see workflow.js); empty = never
 };
 const COLOR_NUM = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
 const parseColors = s => new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLOR_NUM[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
@@ -1053,7 +1053,15 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
 		const board = view && view.getViewType() === 'canvas' && view.file ? view.file.path : this.settings.defaultBoard;
 		const go = parseColors(this.settings.passColors);
-		if (go.size && !(await this.hasGoCards(board, go))) {
+		if (!go.size) {
+			new Notice(createFragment(f => {
+				f.appendText('Canvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. ');
+				const b = f.createEl('button', { cls: 'canvas-board-notice-undo', text: 'Open settings' });
+				b.addEventListener('click', () => { this.app.setting.open(); this.app.setting.openTabById(this.manifest.id); });
+			}), 10000);
+			return;
+		}
+		if (!(await this.hasGoCards(board, go))) {
 			const names = Object.keys(COLOR_NUM).filter(k => go.has(COLOR_NUM[k]));
 			new Notice(`Canvas board: nothing to do on ${board} (no ${names.join(' or ')} card)`);
 			return;

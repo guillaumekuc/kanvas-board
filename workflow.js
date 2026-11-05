@@ -13,14 +13,13 @@ const WAITING = new Set(['1', '3']); // red, yellow: needs the human
 
 const settings = () => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8')); } catch (e) { return {}; } };
 
-// "cyan purple" / "5,6" → Set of color numbers. Empty setting (pass always runs) keeps the default go colors here.
+// "cyan purple" / "5,6" → Set of color numbers. Empty setting (all off): no go colors, the agent takes nothing.
 function parseColors(s) {
   return new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLORS[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
 }
 function goColors() {
   const s = settings().passColors;
-  const set = parseColors(s === undefined ? DEFAULT_PASS_COLORS : s);
-  return set.size ? set : parseColors(DEFAULT_PASS_COLORS);
+  return parseColors(s === undefined ? DEFAULT_PASS_COLORS : s);
 }
 
 // Level is derived from the note: `- [ ]` / `- [x]` parts make it a plan, otherwise it is a brief.
