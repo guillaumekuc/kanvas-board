@@ -8,6 +8,7 @@ const { readBoard, writeOps, tree: baseTree, findFile, cardLinks, abs, noteConte
 const staleDays = () => { const n = Number(settings().staleDays); return Number.isFinite(n) && settings().staleDays !== undefined ? n : 7; }; // plugin setting "Stale after"
 const ORANGE_STALE_MS = 3600000;
 const DEFAULT_PASS_COLORS = 'cyan purple';
+const DEFAULT_NOTES_FOLDER = 'Projects/_assets/bot-tasks';
 const WORKING = '2'; // orange: a pass is on the card
 const WAITING = new Set(['1', '3']); // red, yellow: needs the human
 
@@ -17,6 +18,7 @@ const settings = () => { try { return JSON.parse(fs.readFileSync(path.join(__dir
 function parseColors(s) {
   return new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLORS[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
 }
+const notesFolder = () => String(settings().notesFolder || DEFAULT_NOTES_FOLDER).replace(/[/]+$/, '') + '/';
 function goColors() {
   const s = settings().passColors;
   return parseColors(s === undefined ? DEFAULT_PASS_COLORS : s);
@@ -138,7 +140,7 @@ function check(board) {
         if (text.includes('[[') ? !/^\[\[[^\]]+\]\]( · .+)?$/.test(text) : text.split('\n').length > 3) add('card text is neither a wish (≤ 3 lines) nor `[[Note]] · reason`');
       }
       const { note, canvas } = cardLinks(n);
-      if (note && note.startsWith('Projects/_assets/plans/')) {
+      if (note && note.startsWith(folder)) {
         const src = fs.readFileSync(abs(note), 'utf8');
         const fm = (src.match(/^---\n([\s\S]*?)\n---/) || [])[1];
         const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map(m => m[1]) : [];
@@ -152,6 +154,7 @@ function check(board) {
       if (canvas && !seen.has(canvas) && depth < 2) walk(canvas, depth + 1, seen);
     }
   };
+  const folder = notesFolder();
   walk(board, 0, new Set());
   return { issues };
 }
