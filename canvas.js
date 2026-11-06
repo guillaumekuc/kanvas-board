@@ -28,7 +28,8 @@
 //   CANVAS archive <board> <id>[,id]          cards become notes in Projects/_assets/canvas-board/archive/
 //   CANVAS restore <note>                     puts an archived card back on its board, note to .trash
 //   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
-//   CANVAS check [<board>]                    read-only: broken board invariants (links, card text, plan notes) as JSON
+//   CANVAS check [<board>] [--ids a,b]        read-only: broken invariants (links, card text, plan notes) as JSON. --ids: only
+//                                             the cards a pass wrote; without it, an audit of every colored card
 // tree, rollup and check are the agent workflow: they live in workflow.js (go colors: plugin setting "Workflow").
 // Default board: Plans.canvas. Default direction: the plugin setting "Layout direction" (data.json), else TB.
 const fs = require('fs');
@@ -625,7 +626,7 @@ if (require.main === module) {
       break;
     }
     case 'rollup': print(require('./workflow.js').rollup(board)); break;
-    case 'check': print(require('./workflow.js').check(board)); break;
+    case 'check': print(require('./workflow.js').check(board, opt('--ids') ? new Set(opt('--ids').split(',')) : undefined)); break;
     default:
       console.error('Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|layout|pack|unpack|merge|split|extract|archive|restore|rollup|check <board> ... (see header)');
       process.exit(1);
