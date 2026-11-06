@@ -261,3 +261,27 @@
 	transform: rotate(var(--canvas-board-tidy-turn, 0deg));
 	transition: transform 120ms ease;
 }
+
+/* Live pace against the personal best: best > green > yellow > orange > low (red, pulsing). */
+.status-bar-item.apm-counter {
+	font-variant-numeric: tabular-nums;
+	font-weight: var(--font-semibold);
+}
+.apm-counter.apm-calibrating { color: var(--text-muted); font-weight: var(--font-normal); }
+.apm-counter.apm-idle { color: var(--text-faint); font-weight: var(--font-normal); }
+.apm-counter.apm-best { color: var(--color-purple); }
+.apm-counter.apm-green { color: var(--color-green); }
+.apm-counter.apm-yellow { color: var(--color-yellow); }
+.apm-counter.apm-orange { color: var(--color-orange); }
+.status-bar-item.apm-counter.apm-low {
+	color: var(--text-on-accent);
+	background: var(--color-red);
+	border-radius: var(--radius-s);
+	animation: apm-pulse 1s ease-in-out infinite;
+}
+@keyframes apm-pulse {
+	50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.status-bar-item.apm-counter.apm-low { animation: none; }
+}
