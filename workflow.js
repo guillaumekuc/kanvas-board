@@ -125,7 +125,17 @@ function desiredColor(card, inner, go) {
 
 // Structure only, never content: the invariants the skill and SOP state. A check that never fires in a month
 // gets deleted; a new one only after the same defect shows up twice.
-function check(board) {
+// A card the agent wrote: a wish (≤ 3 lines), `[[Note]] · reason`, or a recap `<words> · done · [[Output]]`.
+const cardTextOk = raw => {
+  const text = raw.trim();
+  if (!text.includes('[[')) return text.split('\n').length <= 3;
+  return /^\[\[[^\]]+\]\]( · .+)?$/.test(text) || /^[^\n]+ · done · \[\[[^\]]+\]\]$/.test(text);
+};
+
+// ids: the cards a pass worked on. The check constrains what agents write, not what User does with the cards afterwards
+// (merged cards, headings), so a pass passes its inventory plus the cards it added. Interrupted passes (stale orange)
+// are always reported. Without ids: every colored card, as an audit.
+function check(board, ids) {
   const issues = [];
   const walk = (b, depth, seen) => {
     seen.add(b);
@@ -133,22 +143,22 @@ function check(board) {
     for (const n of d.nodes) {
       if (n.type === 'group' || !n.color) continue;
       const add = issue => issues.push({ board: b, id: n.id, text: (n.text || n.file || '').split('\n')[0], issue });
+      const scoped = !ids || ids.has(n.id);
       const links = n.type === 'file' ? [n.file] : [...(n.text || '').matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map(m => m[1].trim());
-      for (const l of links) if (!findFile(l)) add(`broken link [[${l}]]`);
-      if (n.type === 'text' && depth === 0) { // plan-canvas cards are parts, free text
-        const text = n.text || '';
-        if (text.includes('[[') ? !/^\[\[[^\]]+\]\]( · .+)?$/.test(text) : text.split('\n').length > 3) add('card text is neither a wish (≤ 3 lines) nor `[[Note]] · reason`');
-      }
+      if (scoped) for (const l of links) if (!findFile(l)) add(`broken link [[${l}]]`);
+      if (scoped && n.type === 'text' && depth === 0 && !cardTextOk(n.text || '')) add('card text is neither a wish (≤ 3 lines), `[[Note]] · reason` nor `<recap> · done · [[Output]]`'); // plan-canvas cards are parts, free text
       const { note, canvas } = cardLinks(n);
       if (note && note.startsWith(folder)) {
         const src = fs.readFileSync(abs(note), 'utf8');
-        const fm = (src.match(/^---\n([\s\S]*?)\n---/) || [])[1];
-        const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map(m => m[1]) : [];
-        if (keys.join() !== 'context') add(`note frontmatter is not \`context\` only (${keys.join(', ') || 'none'})`);
-        if (noteContexts(fm).length !== 1) add('note does not have exactly one context');
-        for (const s of ['Aim', 'Design']) if (!new RegExp(`^## ${s}\\s*$`, 'm').test(src)) add(`note has no ## ${s}`);
-        if (!/^### Done when\s*$/m.test(src)) add('note has no ### Done when (under Aim)');
-        if (n.color === '4' && !/^## Output\s*$/m.test(src)) add('green card, note has no ## Output');
+        if (scoped) {
+          const fm = (src.match(/^---\n([\s\S]*?)\n---/) || [])[1];
+          const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map(m => m[1]) : [];
+          if (keys.join() !== 'context') add(`note frontmatter is not \`context\` only (${keys.join(', ') || 'none'})`);
+          if (noteContexts(fm).length !== 1) add('note does not have exactly one context');
+          for (const s of ['Aim', 'Design']) if (!new RegExp(`^## ${s}\\s*$`, 'm').test(src)) add(`note has no ## ${s}`);
+          if (!/^### Done when\s*$/m.test(src)) add('note has no ### Done when (under Aim)');
+          if (n.color === '4' && !/^## Output\s*$/m.test(src)) add('green card, note has no ## Output');
+        }
         if (n.color === WORKING && Date.now() - fs.statSync(abs(note)).mtimeMs > ORANGE_STALE_MS) add('orange card, note untouched for 1h+ (interrupted pass?)');
       }
       if (canvas && !seen.has(canvas) && depth < 2) walk(canvas, depth + 1, seen);
