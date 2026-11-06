@@ -1594,7 +1594,11 @@ class CanvasBoardSettings extends PluginSettingTab {
 				.setPlaceholder(COLORS.find(c => c[0] === name)[3])
 				.setValue((this.plugin.settings.colorLabels || {})[name] || '')
 				.onChange(v => this.plugin.setColorLabel(name, v.trim())));
-			if (num) row.addToggle(t => t // uncolored never triggers the agent
+			if (!num) row.addToggle(t => t // uncolored never triggers the agent: same pill for the layout, locked
+				.setTooltip('Never triggers the agent')
+				.setValue(false)
+				.setDisabled(true));
+			else row.addToggle(t => t
 				.setTooltip('Triggers the agent')
 				.setValue(go.has(num))
 				.onChange(async on => {
