@@ -4,6 +4,7 @@
 // split, extract), archive/restore, view tools (search current canvas, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. Writes skill/SKILL.md to
 // .claude/skills/canvas-board/ on load when missing; after that the vault copy is the user's (command "Reset agent skill").
 // The agent workflow (what a pass takes, roll-up, check) is workflow.js; here only the "Workflow" toggles gate.
+// apm.js: the APM counter in the status bar, on canvases only.
 // See Wiki/G&A/PKM/SOP - Canvas Board.md.
 const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, AbstractInputSuggest, Scope, setIcon } = require('obsidian');
 const { spawn } = require('child_process');
@@ -68,6 +69,15 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const cb = req(script);
 		const { applyOps, layoutOps } = cb;
 		this.cb = cb;
+		const apmScript = path.join(dir, 'apm.js');
+		if (req.cache) delete req.cache[apmScript];
+		const apmLib = req(apmScript);
+		let legacyApm;
+		if (!this.settings.apm) { try { legacyApm = JSON.parse(fs.readFileSync(path.join(dir, '..', 'apm-counter', 'data.json'), 'utf8')); } catch (e) { /* never installed */ } }
+		this.settings.apm = apmLib.loadSettings(this.settings.apm, legacyApm);
+		this.apm = new apmLib.ApmCounter(this, this.settings.apm, () => this.saveData(this.settings));
+		this.apm.load();
+		this.register(() => this.apm.unload());
 		const dagrePath = path.join(dir, 'dagre.min.js');
 		if (req.cache) delete req.cache[dagrePath];
 		const dagre = req(dagrePath);
@@ -1600,6 +1610,43 @@ class CanvasBoardSettings extends PluginSettingTab {
 			.setButtonText('Reset skill')
 			.setWarning()
 			.onClick(() => this.plugin.syncSkill(path.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir), true)));
+		heading('APM counter').setDesc('Canvas cards touched in a rolling window, in the status bar while a canvas is the active tab.');
+		const apm = this.plugin.apm;
+		const a = apm.settings;
+		new Setting(containerEl)
+			.setName('Personal best')
+			.setDesc(a.pb ? `${a.pb} cards in ${a.windowMinutes} min${a.pbDate ? `, set ${a.pbDate}` : ''}.` : 'None yet.')
+			.addButton(b => b.setButtonText('Reset').setWarning().onClick(async () => { await apm.resetPb(); this.display(); }));
+		new Setting(containerEl)
+			.setName('Window (minutes)')
+			.setDesc('Cards are counted over this rolling window. Changing it resets the personal best: the numbers are not comparable.')
+			.addText(t => {
+				t.setValue(String(a.windowMinutes));
+				t.inputEl.addEventListener('change', async () => {
+					const n = Number(t.getValue());
+					if (!(n > 0) || n === a.windowMinutes) return;
+					await apm.setWindow(n);
+					this.display();
+				});
+			});
+		new Setting(containerEl)
+			.setName('Alert below')
+			.setDesc('Percent of the personal best under which the counter turns red and pulses. Not in the first window of a session.')
+			.addSlider(sl => sl.setLimits(5, 50, 5).setValue(a.lowPercent).setDynamicTooltip().onChange(async v => {
+				a.lowPercent = v;
+				await this.plugin.saveData(this.plugin.settings);
+				apm.refresh();
+			}));
+		new Setting(containerEl)
+			.setName('Idle after (minutes)')
+			.setDesc('Without an action for this long, the alert stops and the counter dims. It also dims while Obsidian is not focused.')
+			.addText(t => t.setValue(String(a.idleMinutes)).onChange(async v => {
+				const n = Number(v);
+				if (!(n > 0)) return;
+				a.idleMinutes = n;
+				await this.plugin.saveData(this.plugin.settings);
+				apm.refresh();
+			}));
 		heading('Layout');
 		new Setting(containerEl).setName('Layout direction').setDesc('Tidy layout and agent-made plan canvases: the card a branch starts from comes first, following arrows in the fold direction ("depends on" prerequisites too). Shift-click the Tidy layout button, or commands "Tidy layout direction: …", switch it on the fly.').addDropdown(dd => dd
 			.addOptions({ TB: 'Top to bottom', LR: 'Left to right', BT: 'Bottom to top', RL: 'Right to left' })
