@@ -25,7 +25,8 @@
 //   CANVAS merge <board> --ids a,b            text cards into the first in reading order (most urgent color)
 //   CANVAS split <board> <id> [--by b]        b: paragraph (default), bullet, h1..h6; pieces stack under it
 //   CANVAS extract <board> <id> --text t      the text t leaves the card for a new card right of it, overlaps allowed
-//   CANVAS archive <board> <id>[,id]          cards become notes in Projects/_assets/canvas-board/archive/
+//   CANVAS archive <board> <id>[,id]          cards become notes in "<board> archive/" next to the board (setting "Archive":
+//                                             or one folder for all boards, default Projects/_assets/canvas-board/archive/)
 //   CANVAS restore <note>                     puts an archived card back on its board, note to .trash
 //   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
 //   CANVAS check [<board>] [--ids a,b]        read-only: broken invariants (links, card text, plan notes) as JSON. --ids: only
@@ -253,7 +254,15 @@ function templateOps(tpl, at) {
 // An archived card becomes a note (body = its text, or a link to its file) whose frontmatter keeps what a
 // restore needs: board, id, place, size, color and its edges. Listed by Canvas archive.base.
 
-const ARCHIVE_DIR = 'Projects/_assets/canvas-board/archive';
+const ARCHIVE_DIR = 'Projects/_assets/canvas-board/archive'; // the folder for all boards (setting "Archive": global)
+
+// Where a board's archive notes go: "<board name> archive" next to the board, or with the setting "Archive" on
+// global, one folder for all boards (setting "Archive folder"). `s`: the plugin settings (data.json).
+function archiveDir(board, s = {}) {
+  if (s.archiveMode === 'global') return String(s.archiveFolder || ARCHIVE_DIR).trim().replace(/[/\\]+$/, '') || ARCHIVE_DIR;
+  const b = String(board).replace(/\\/g, '/'), dir = path.posix.dirname(b);
+  return (dir === '.' ? '' : dir + '/') + path.posix.basename(b, '.canvas') + ' archive';
+}
 const noteName = text => (String(text).split('\n').find(l => l.trim()) || 'Card')
   .replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, '').replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2').replace(/[#^|[\]*_`>:\\/"?<]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60).trim() || 'Card';
 const yamlStr = s => JSON.stringify(String(s));
@@ -510,7 +519,7 @@ function plainLines(text) {
 }
 
 // readBoard … noteContexts are for workflow.js (tree --active, rollup, check).
-module.exports = { readBoard, writeOps, tree, findFile, cardLinks, abs, noteContexts, COLORS, SIDES, plainLines, applyOps, layoutOps, collapseOps, expandOps, relinkText, mergeOps, splitOps, extractOps, archiveNote, restoreOps, noteName, ARCHIVE_DIR, templateOps, TEMPLATE_DIR };
+module.exports = { readBoard, writeOps, tree, findFile, cardLinks, abs, noteContexts, COLORS, SIDES, plainLines, applyOps, layoutOps, collapseOps, expandOps, relinkText, mergeOps, splitOps, extractOps, archiveNote, archiveDir, restoreOps, noteName, ARCHIVE_DIR, templateOps, TEMPLATE_DIR };
 
 // Next free `<dir>/<name><ext>` (vault-relative), adding " 2", " 3"... when taken.
 function freePath(dir, name, ext) {
@@ -615,8 +624,9 @@ if (require.main === module) {
       for (const id of ids) {
         const n = d.nodes.find(n => n.id === id);
         const a = archiveNote(d, id, board, today(), n && cardContexts(n));
-        const file = freePath(ARCHIVE_DIR, a.name, '.md');
-        fs.mkdirSync(abs(ARCHIVE_DIR), { recursive: true });
+        const dir = archiveDir(board, settings());
+        const file = freePath(dir, a.name, '.md');
+        fs.mkdirSync(abs(dir), { recursive: true });
         fs.writeFileSync(abs(file), a.content);
         console.log(file);
       }
