@@ -35,6 +35,8 @@ const DEFAULTS = {
 	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
 	passColors: 'cyan purple', // cards that start a pass (and that tree --active takes, see workflow.js); empty = never
 	notesFolder: 'Projects/_assets/bot-tasks', // where the agent keeps the notes it makes for cards (read by workflow.js and the skill)
+	archiveMode: 'board', // board: archive notes in "<board> archive/" next to each board; global: all in archiveFolder
+	archiveFolder: 'Projects/_assets/canvas-board/archive', // the one archive folder when archiveMode is global
 };
 const COLOR_NUM = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
 const parseColors = s => new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLOR_NUM[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
@@ -226,11 +228,12 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		canvasCommand('archive', 'Archive selected cards', ['Archive', 'archive'], (c, sel) => sel.length > 0, async (canvas, sel) => {
 			const board = this.activeFile().path;
 			const d = canvas.getData();
-			if (!this.app.vault.getAbstractFileByPath(cb.ARCHIVE_DIR)) await this.app.vault.createFolder(cb.ARCHIVE_DIR);
+			const dir = cb.archiveDir(board, this.settings);
+			if (!this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
 			const notes = [];
 			for (const node of sel) {
 				const a = cb.archiveNote(d, node.id, board, window.moment().format('YYYY-MM-DD'), this.cardContexts(node, board));
-				notes.push(this.freePath(cb.ARCHIVE_DIR + '/', a.name, '.md'));
+				notes.push(this.freePath(dir + '/', a.name, '.md'));
 				await this.app.vault.create(notes[notes.length - 1], a.content);
 			}
 			this.edit(canvas, sel.map(n => ({ op: 'remove', id: n.id })));
@@ -1584,6 +1587,12 @@ class CanvasBoardSettings extends PluginSettingTab {
 		text('Card count warning', 'The status bar card count turns to the warning color past this many cards (0: never).', 'cardWarning');
 		text('Stale after (days)', 'A yellow card whose note is untouched this many days gets a warning badge with its age; the roll-up adds "· Nd" from the same value (0: never).', 'staleDays');
 		text('Agent notes folder', 'Where the agent creates the notes and plan canvases for cards. Changing it does not move anything: rename the folder in Obsidian first, so links follow.', 'notesFolder');
+		new Setting(containerEl).setName('Archive').setDesc('Where "Archive selected cards" puts the notes: a "<board> archive" folder next to each board, or one folder for all boards. Changing it does not move notes already archived; restore works from any folder.').addDropdown(dd => dd
+			.addOption('board', 'Next to each board')
+			.addOption('global', 'One folder for all boards')
+			.setValue(this.plugin.settings.archiveMode)
+			.onChange(async v => { this.plugin.settings.archiveMode = v; await this.plugin.saveData(this.plugin.settings); this.display(); }));
+		if (this.plugin.settings.archiveMode === 'global') text('Archive folder', 'The folder for all boards\' archive notes.', 'archiveFolder');
 		heading('Workflow').setDesc('What each color does and its label, shown in tooltips, the filter pane and the color commands. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.');
 		const go = parseColors(this.plugin.settings.passColors);
 		for (const [name, meaning] of WORKFLOW) {
