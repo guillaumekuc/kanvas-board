@@ -85,17 +85,23 @@ function withGroupMembers(d, ids) {
 }
 
 // Selected cards move to `file` (a new .canvas) at their relative places, with the edges between them; one card
-// `[[file|label]]` takes their place and the edges that crossed the boundary now end on it.
+// `[[file|label]]` takes their place, centered on where they were, and the edges that crossed the boundary now end on it.
+const bounds = ns => {
+  const x = Math.min(...ns.map(n => n.x)), y = Math.min(...ns.map(n => n.y));
+  return { x, y, w: Math.max(...ns.map(n => n.x + n.width)) - x, h: Math.max(...ns.map(n => n.y + n.height)) - y };
+};
 function collapseOps(d, ids, file, label) {
   const pick = withGroupMembers(d, ids);
   const moving = d.nodes.filter(n => pick.has(n.id));
   if (!moving.length) throw new Error('nothing to collapse');
-  const x0 = Math.min(...moving.map(n => n.x)), y0 = Math.min(...moving.map(n => n.y));
+  const b = bounds(moving);
   const sub = {
-    nodes: moving.map(n => ({ ...n, x: n.x - x0, y: n.y - y0 })),
+    nodes: moving.map(n => ({ ...n, x: n.x - b.x, y: n.y - b.y })),
     edges: d.edges.filter(e => pick.has(e.fromNode) && pick.has(e.toNode)),
   };
-  const card = { id: newId(), type: 'text', text: `[[${file}|${label}]]`, x: x0, y: y0, width: 320, height: 60 };
+  const W = 320, H = 60;
+  const card = { id: newId(), type: 'text', text: `[[${file}|${label}]]`,
+    x: Math.round(b.x + (b.w - W) / 2), y: Math.round(b.y + (b.h - H) / 2), width: W, height: H };
   const ops = [{ op: 'add', node: card }];
   for (const e of d.edges) {
     const from = pick.has(e.fromNode), to = pick.has(e.toNode);
@@ -105,7 +111,7 @@ function collapseOps(d, ids, file, label) {
   return { ops, sub, id: card.id };
 }
 
-// The reverse (unpack): the subcanvas's cards come back at the card's place, shifted right until they overlap nothing;
+// The reverse (unpack): the subcanvas's cards come back centered on the card, shifted right until they overlap nothing;
 // edges on the card go to the first of them in reading order. The caller trashes the .canvas file (dissolve) or
 // keeps it (copy). With `group` (a label), a group is drawn around them and the edges on the card go to it.
 function expandOps(d, id, sub, { group } = {}) {
@@ -114,10 +120,10 @@ function expandOps(d, id, sub, { group } = {}) {
   if (!sub.nodes.length) throw new Error('empty subcanvas');
   const taken = new Set(d.nodes.map(n => n.id).concat(d.edges.map(e => e.id)));
   const ids = new Map(sub.nodes.map(n => [n.id, taken.has(n.id) ? newId() : n.id]));
-  const x0 = Math.min(...sub.nodes.map(n => n.x)), y0 = Math.min(...sub.nodes.map(n => n.y));
+  const b = bounds(sub.nodes);
   const others = d.nodes.filter(n => n.id !== id);
-  let ox = card.x - x0;
-  const oy = card.y - y0;
+  let ox = Math.round(card.x + (card.width - b.w) / 2) - b.x;
+  const oy = Math.round(card.y + (card.height - b.h) / 2) - b.y;
   const hits = () => sub.nodes.some(p => others.some(n => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
   for (let k = 0; k < 200 && hits(); k++) ox += 40;
   const nodes = sub.nodes.map(n => ({ ...n, id: ids.get(n.id), x: n.x + ox, y: n.y + oy }));
