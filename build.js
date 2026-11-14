@@ -25,7 +25,9 @@ const usage = fileSystem.readFileSync('src/cli/usage.txt', 'utf8').trimEnd();
 esbuild.buildSync({
   ...SHARED,
   entryPoints: ['src/cli/canvas.js'],
-  banner: { js: `${BANNER}
-${usage}` },
+  banner: {
+    js: `${BANNER}
+${usage}`,
+  },
   outfile: 'canvas.js',
 });
