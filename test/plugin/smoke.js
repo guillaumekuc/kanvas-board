@@ -1,8 +1,8 @@
 // node test/plugin/smoke.js [pluginDir]: copies the plugin into a temporary
 // vault, loads it with Obsidian stubbed, runs onload and the settings screen,
 // prints what it registered.
-const fs = require('fs');
-const os = require('os');
+const fileSystem = require('fs');
+const operatingSystem = require('os');
 const Module = require('module');
 const path = require('path');
 const stub = require('./obsidianStub.js');
@@ -18,12 +18,16 @@ const PLUGIN_FILES = [
 const sourceDir = path.resolve(
   process.argv[2] || path.join(__dirname, '..', '..'),
 );
-const vaultRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kanvas-smoke-'));
+const vaultRoot = fileSystem.mkdtempSync(
+  path.join(operatingSystem.tmpdir(), 'kanvas-smoke-'),
+);
 const pluginDir = path.join(vaultRoot, '.obsidian', 'plugins', 'canvas-board');
-fs.mkdirSync(pluginDir, { recursive: true });
+fileSystem.mkdirSync(pluginDir, { recursive: true });
 for (const name of PLUGIN_FILES) {
   const source = path.join(sourceDir, name);
-  if (fs.existsSync(source)) {fs.cpSync(source, path.join(pluginDir, name), { recursive: true });}
+  if (fileSystem.existsSync(source)) {
+    fileSystem.cpSync(source, path.join(pluginDir, name), { recursive: true });
+  }
 }
 const mainFile = path.join(pluginDir, 'main.js');
 const resolve = Module._resolveFilename;
@@ -52,6 +56,7 @@ async function main() {
   app.vault.adapter = { basePath: path.resolve(pluginDir, '..', '..', '..') };
   const manifest = {
     id: 'canvas-board',
+    // eslint-disable-next-line id-denylist -- Obsidian manifest field
     dir: path.relative(app.vault.adapter.basePath, pluginDir),
   };
   const plugin = new PluginClass(app, manifest);
@@ -64,7 +69,7 @@ async function main() {
     settings: Object.keys(plugin.settings).sort(),
   };
   console.log(JSON.stringify(report, null, 2));
-  fs.rmSync(vaultRoot, { recursive: true, force: true });
+  fileSystem.rmSync(vaultRoot, { recursive: true, force: true });
 }
 
 main().catch((error) => {

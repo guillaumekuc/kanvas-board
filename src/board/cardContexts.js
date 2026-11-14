@@ -1,17 +1,18 @@
 const abs = require('./abs.js');
 const cardLinks = require('./cardLinks.js');
-const fs = require('fs');
+const fileSystem = require('fs');
 const noteContexts = require('./noteContexts.js');
 
 // Context of the note a card links, to file its archive note under the same context.
-function cardContexts(n) {
-  const { note } = cardLinks(n);
-  const fm =
+function cardContexts(node) {
+  const { note } = cardLinks(node);
+  const frontmatter =
     note &&
-    (fs.readFileSync(abs(note), 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---/) ||
-      [])[1];
-  const c = noteContexts(fm);
-  return c.length ? c : undefined;
+    (fileSystem
+      .readFileSync(abs(note), 'utf8')
+      .match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1];
+  const contexts = noteContexts(frontmatter);
+  return contexts.length ? contexts : undefined;
 }
 
 module.exports = cardContexts;

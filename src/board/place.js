@@ -1,21 +1,27 @@
-function place(d, near, w, h) {
-  const p = d.nodes.find((n) => n.id === near);
-  if (!p) throw new Error('no node ' + near);
+function place(canvasData, near, width, height) {
+  const nearNode = canvasData.nodes.find((node) => node.id === near);
+  if (!nearNode) throw new Error('no node ' + near);
   const overlaps = (x, y) =>
-    d.nodes.some(
-      (n) =>
-        x < n.x + n.width + 20 &&
-        x + w + 20 > n.x &&
-        y < n.y + n.height + 20 &&
-        y + h + 20 > n.y,
+    canvasData.nodes.some(
+      (node) =>
+        x < node.x + node.width + 20 &&
+        x + width + 20 > node.x &&
+        y < node.y + node.height + 20 &&
+        y + height + 20 > node.y,
     );
-  for (let k = 0; k < 20; k++) {
-    const right = { x: p.x + p.width + 40, y: p.y + k * (h + 40) };
+  for (let step = 0; step < 20; step++) {
+    const right = {
+      x: nearNode.x + nearNode.width + 40,
+      y: nearNode.y + step * (height + 40),
+    };
     if (!overlaps(right.x, right.y)) return right;
-    const below = { x: p.x + k * (w + 40), y: p.y + p.height + 40 };
+    const below = {
+      x: nearNode.x + step * (width + 40),
+      y: nearNode.y + nearNode.height + 40,
+    };
     if (!overlaps(below.x, below.y)) return below;
   }
-  return { x: p.x + p.width + 40, y: p.y };
+  return { x: nearNode.x + nearNode.width + 40, y: nearNode.y };
 }
 
 module.exports = place;

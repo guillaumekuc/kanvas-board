@@ -1,12 +1,12 @@
-const fs = require('fs');
+const fileSystem = require('fs');
 const path = require('path');
 
 const settings = () => {
   try {
     return JSON.parse(
-      fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8'),
+      fileSystem.readFileSync(path.join(__dirname, 'data.json'), 'utf8'),
     );
-  } catch (e) {
+  } catch (error) {
     return {};
   }
 };

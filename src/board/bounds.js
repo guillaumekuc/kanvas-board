@@ -1,13 +1,13 @@
 // Selected cards move to `file` (a new .canvas) at their relative places, with the edges between them; one card
 // `[[file|label]]` takes their place, centered on where they were, and the edges that crossed the boundary now end on it.
-const bounds = (ns) => {
-  const x = Math.min(...ns.map((n) => n.x)),
-    y = Math.min(...ns.map((n) => n.y));
+const bounds = (nodes) => {
+  const x = Math.min(...nodes.map((node) => node.x)),
+    y = Math.min(...nodes.map((node) => node.y));
   return {
     x,
     y,
-    w: Math.max(...ns.map((n) => n.x + n.width)) - x,
-    h: Math.max(...ns.map((n) => n.y + n.height)) - y,
+    w: Math.max(...nodes.map((node) => node.x + node.width)) - x,
+    h: Math.max(...nodes.map((node) => node.y + node.height)) - y,
   };
 };
 

@@ -2,7 +2,7 @@ const noteName = (text) =>
   (
     String(text)
       .split('\n')
-      .find((l) => l.trim()) || 'Card'
+      .find((line) => line.trim()) || 'Card'
   )
     .replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, '')
     .replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2')

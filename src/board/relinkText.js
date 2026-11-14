@@ -1,16 +1,16 @@
 const path = require('path');
 
 // Wikilinks (and embeds) in `text` whose target `hits(linkpath)` become `to(label)`; label = alias, else file name.
-function relinkText(text, hits, to) {
+function relinkText(text, hits, replace) {
   return (text || '').replace(
     /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
-    (m, target, sub, alias) =>
+    (link, target, sub, alias) =>
       hits(target.trim())
-        ? to(
+        ? replace(
             alias ||
               path.posix.basename(target.trim()).replace(/\.canvas$/, ''),
           )
-        : m,
+        : link,
   );
 }
 

@@ -8,16 +8,16 @@ class NameSuggest extends AbstractInputSuggest {
     this.onPick = onPick;
   }
 
-  getSuggestions(q) {
-    q = q.trim().toLowerCase();
+  getSuggestions(query) {
+    query = query.trim().toLowerCase();
     return this.names
-      .filter((n) => n.toLowerCase().includes(q))
-      .sort((a, b) => a.localeCompare(b));
+      .filter((node) => node.toLowerCase().includes(query))
+      .sort((first, second) => first.localeCompare(second));
   }
 
-  renderSuggestion(name, el) {
-    el.setText(name);
-    el.createSpan({ cls: 'canvas-board-key', text: 'overwrite' });
+  renderSuggestion(name, element) {
+    element.setText(name);
+    element.createSpan({ cls: 'canvas-board-key', text: 'overwrite' });
   }
 
   selectSuggestion(name) {

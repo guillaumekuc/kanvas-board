@@ -13,34 +13,40 @@ class UnpackChoice extends Modal {
   }
 
   onOpen() {
-    const k = this.links.length;
+    const count = this.links.length;
     this.setTitle(
-      `${this.file.basename} is linked from ${k} other place${k > 1 ? 's' : ''}`,
+      `${this.file.basename} is linked from ${count} other place${count > 1 ? 's' : ''}`,
     );
-    const ul = this.contentEl.createEl('ul');
-    for (const l of this.links.slice(0, 8)) {ul.createEl('li', { text: l.id ? `${l.label} (${l.path})` : l.path });}
-    if (k > 8) ul.createEl('li', { text: `and ${k - 8} more` });
-    const s = new Setting(this.contentEl);
+    const list = this.contentEl.createEl('ul');
+    for (const link of this.links.slice(0, 8)) {
+      list.createEl('li', {
+        text: link.id ? `${link.label} (${link.path})` : link.path,
+      });
+    }
+    if (count > 8) list.createEl('li', { text: `and ${count - 8} more` });
+    const setting = new Setting(this.contentEl);
     const pick = (mode) => {
       this.close();
       this.onPick(mode);
     };
-    s.addButton((b) =>
-      b
+    setting.addButton((button) =>
+      button
         .setButtonText('Unpack into a group, redirect links')
         .setCta()
         .onClick(() => pick('group')),
     );
-    s.addButton((b) =>
-      b.setButtonText('Keep the file (copy)').onClick(() => pick('copy')),
+    setting.addButton((button) =>
+      button.setButtonText('Keep the file (copy)').onClick(() => pick('copy')),
     );
-    s.addButton((b) =>
-      b
+    setting.addButton((button) =>
+      button
         .setButtonText('Break links and trash')
         .setWarning()
         .onClick(() => pick('dissolve')),
     );
-    s.addButton((b) => b.setButtonText('Cancel').onClick(() => this.close()));
+    setting.addButton((button) =>
+      button.setButtonText('Cancel').onClick(() => this.close()),
+    );
   }
 
   onClose() {

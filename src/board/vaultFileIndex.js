@@ -1,6 +1,6 @@
 const { SKIP_DIRS } = require('./constants.js');
 const abs = require('./abs.js');
-const fs = require('fs');
+const fileSystem = require('fs');
 const path = require('path');
 const settings = require('./settings.js');
 
@@ -22,14 +22,20 @@ class VaultFileIndex {
     if (!this.files) {
       this.files = new Map();
       const skip = new Set([...SKIP_DIRS, ...(settings().skipFolders || [])]);
-      const walk = (dir) => {
-        for (const e of fs.readdirSync(abs(dir), { withFileTypes: true })) {
-          if (e.isDirectory()) {
-            if (!skip.has(e.name)) walk(path.posix.join(dir, e.name));
+      const walk = (folder) => {
+        for (const entry of fileSystem.readdirSync(abs(folder), {
+          withFileTypes: true,
+        })) {
+          if (entry.isDirectory()) {
+            if (!skip.has(entry.name)) {
+              walk(path.posix.join(folder, entry.name));
+            }
             continue;
           }
-          const rel = path.posix.join(dir, e.name);
-          const key = e.name.endsWith('.md') ? e.name.slice(0, -3) : e.name;
+          const rel = path.posix.join(folder, entry.name);
+          const key = entry.name.endsWith('.md')
+            ? entry.name.slice(0, -3)
+            : entry.name;
           if (!this.files.has(key)) this.files.set(key, rel);
           this.files.set(rel, rel);
           this.files.set(rel.replace(/\.md$/, ''), rel);

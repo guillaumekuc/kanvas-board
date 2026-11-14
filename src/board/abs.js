@@ -3,6 +3,6 @@ const path = require('path');
 
 // --- Board I/O ----------------------------------------------------------------------------------------
 
-const abs = (p) => path.join(ROOT, p);
+const abs = (relativePath) => path.join(ROOT, relativePath);
 
 module.exports = abs;

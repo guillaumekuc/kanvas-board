@@ -2,55 +2,57 @@ const noteName = require('./noteName.js');
 const yamlStr = require('./yamlStr.js');
 
 // Returns { name, content, ops }. `contexts`: the context of the note the archived card links, else G&A.
-function archiveNote(d, id, board, date, contexts = ['G&A']) {
-  const n = d.nodes.find((n) => n.id === id);
-  if (!n) throw new Error('no node ' + id);
-  const edges = d.edges
-    .filter((e) => e.fromNode === id || e.toNode === id)
-    .map((e) =>
+function archiveNote(canvasData, id, board, date, contexts = ['G&A']) {
+  const node = canvasData.nodes.find((node) => node.id === id);
+  if (!node) throw new Error('no node ' + id);
+  const edges = canvasData.edges
+    .filter((edge) => edge.fromNode === id || edge.toNode === id)
+    .map((edge) =>
       yamlStr(
         [
-          e.id,
-          e.fromNode,
-          e.fromSide || '',
-          e.toNode,
-          e.toSide || '',
-          e.label || '',
+          edge.id,
+          edge.fromNode,
+          edge.fromSide || '',
+          edge.toNode,
+          edge.toSide || '',
+          edge.label || '',
         ].join(' | '),
       ),
     );
-  const fm = [
+  const frontmatter = [
     '---',
     'context:',
-    ...contexts.map((c) => `  - ${c}`),
+    ...contexts.map((context) => `  - ${context}`),
     `archived-from: "[[${board}]]"`,
     `archived: ${date}`,
-    `card-id: ${yamlStr(n.id)}`,
-    `card-type: ${n.type}`,
-    ...(n.type === 'file' ? [`card-file: ${yamlStr(n.file)}`] : []),
-    ...(n.type === 'link' ? [`card-url: ${yamlStr(n.url)}`] : []),
-    `x: ${n.x}`,
-    `y: ${n.y}`,
-    `width: ${n.width}`,
-    `height: ${n.height}`,
-    `color: ${yamlStr(n.color || '')}`,
+    `card-id: ${yamlStr(node.id)}`,
+    `card-type: ${node.type}`,
+    ...(node.type === 'file' ? [`card-file: ${yamlStr(node.file)}`] : []),
+    ...(node.type === 'link' ? [`card-url: ${yamlStr(node.url)}`] : []),
+    `x: ${node.x}`,
+    `y: ${node.y}`,
+    `width: ${node.width}`,
+    `height: ${node.height}`,
+    `color: ${yamlStr(node.color || '')}`,
     edges.length ? 'edges:' : 'edges: []',
-    ...edges.map((e) => `  - ${e}`),
+    ...edges.map((edge) => `  - ${edge}`),
     '---',
     '',
   ].join('\n');
   const body =
-    n.type === 'text'
-      ? n.text
-      : n.type === 'file'
-        ? `[[${n.file}]]`
-        : n.type === 'link'
-          ? n.url
-          : n.label || '';
+    node.type === 'text'
+      ? node.text
+      : node.type === 'file'
+        ? `[[${node.file}]]`
+        : node.type === 'link'
+          ? node.url
+          : node.label || '';
   return {
-    name: noteName(n.type === 'text' ? n.text : n.file || n.url || n.label),
-    content: fm + body + '\n',
-    ops: [{ op: 'remove', id }],
+    name: noteName(
+      node.type === 'text' ? node.text : node.file || node.url || node.label,
+    ),
+    content: frontmatter + body + '\n',
+    operations: [{ op: 'remove', id }],
   };
 }
 

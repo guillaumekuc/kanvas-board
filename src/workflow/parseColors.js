@@ -1,13 +1,13 @@
 const { COLORS } = require('../board/constants.js');
 
 // "cyan purple" / "5,6" → Set of color numbers. Empty setting (all off): no go colors, the agent takes nothing.
-function parseColors(s) {
+function parseColors(value) {
   return new Set(
-    String(s || '')
+    String(value || '')
       .split(/[\s,]+/)
       .filter(Boolean)
-      .map((c) => COLORS[c.toLowerCase()] || c)
-      .filter((c) => /^[1-6]$/.test(c)),
+      .map((color) => COLORS[color.toLowerCase()] || color)
+      .filter((color) => /^[1-6]$/.test(color)),
   );
 }
 

@@ -1,4 +1,4 @@
-const fs = require('fs');
+const fileSystem = require('fs');
 const path = require('path');
 
 // The pass's terminal when the "Terminal command" setting is empty: [command, args], or null (no terminal found).
@@ -7,6 +7,6 @@ const path = require('path');
 const onPath = (bin) =>
   String(process.env.PATH || '')
     .split(path.delimiter)
-    .some((d) => d && fs.existsSync(path.join(d, bin)));
+    .some((folder) => folder && fileSystem.existsSync(path.join(folder, bin)));
 
 module.exports = onPath;

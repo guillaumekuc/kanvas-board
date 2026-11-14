@@ -1,11 +1,13 @@
 const abs = require('./abs.js');
-const fs = require('fs');
+const fileSystem = require('fs');
 
 const readFileBoard = (board) => {
-  const d = JSON.parse(fs.readFileSync(abs(board), 'utf8') || '{}');
-  d.nodes ||= [];
-  d.edges ||= [];
-  return d;
+  const canvasData = JSON.parse(
+    fileSystem.readFileSync(abs(board), 'utf8') || '{}',
+  );
+  canvasData.nodes ||= [];
+  canvasData.edges ||= [];
+  return canvasData;
 };
 
 module.exports = readFileBoard;
