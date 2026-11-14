@@ -4263,7 +4263,7 @@ var require_NameSuggest = __commonJS({
   "src/plugin/NameSuggest.js"(exports2, module2) {
     var { AbstractInputSuggest } = require("obsidian");
     var NameSuggest = class extends AbstractInputSuggest {
-      constructor(app, inputEl, names, onPick) {
+      constructor(app, inputEl, { names, onPick }) {
         super(app, inputEl);
         this.names = names;
         this.onPick = onPick;
@@ -4291,10 +4291,11 @@ var require_NamePrompt = __commonJS({
     var { Modal, Notice, Setting } = require("obsidian");
     var NameSuggest = require_NameSuggest();
     var NamePrompt = class extends Modal {
-      constructor(app, title, onSubmit, options = {}) {
+      // options: { title, onSubmit, suggestions, overwrite }
+      constructor(app, options) {
         super(app);
-        this.title = title;
-        this.onSubmit = onSubmit;
+        this.title = options.title;
+        this.onSubmit = options.onSubmit;
         this.options = options;
       }
       onOpen() {
@@ -4327,11 +4328,9 @@ var require_NamePrompt = __commonJS({
             refresh();
           });
           if (suggestions && suggestions.length) {
-            suggest = new NameSuggest(
-              this.app,
-              text.inputEl,
-              suggestions,
-              (suggestion) => {
+            suggest = new NameSuggest(this.app, text.inputEl, {
+              names: suggestions,
+              onPick: (suggestion) => {
                 text.setValue(suggestion);
                 value = suggestion;
                 refresh();
@@ -4340,7 +4339,7 @@ var require_NamePrompt = __commonJS({
                   isPicked = false;
                 }, 0);
               }
-            );
+            });
           }
           text.inputEl.addEventListener("keydown", (event) => {
             if (event.key !== "Enter" || isPicked || suggest && suggest.suggestEl && suggest.suggestEl.isConnected) {
@@ -4368,7 +4367,7 @@ var require_UnpackChoice = __commonJS({
   "src/plugin/UnpackChoice.js"(exports2, module2) {
     var { Modal, Setting } = require("obsidian");
     var UnpackChoice = class extends Modal {
-      constructor(app, file, links, onPick) {
+      constructor(app, file, { links, onPick }) {
         super(app);
         this.file = file;
         this.links = links;
@@ -4422,28 +4421,31 @@ var require_registerPackCommands = __commonJS({
       plugin.addCanvasCommand("collapse", "Pack into subcanvas", {
         menu: ["Pack into subcanvas", "package"],
         test: (canvas, selection) => selection.length > 0,
-        run: (canvas, selection) => new NamePrompt(plugin.app, "Subcanvas name", async (name) => {
-          const board = plugin.activeFile();
-          const folder = board.parent && board.parent.path !== "/" ? board.parent.path + "/" : "";
-          const file = plugin.freePath(folder, name, ".canvas");
-          const { operations, subcanvas } = plugin.boardLibrary.collapseOps(
-            canvas.getData(),
-            {
-              ids: selection.map((node) => node.id),
+        run: (canvas, selection) => new NamePrompt(plugin.app, {
+          title: "Subcanvas name",
+          onSubmit: async (name) => {
+            const board = plugin.activeFile();
+            const folder = board.parent && board.parent.path !== "/" ? board.parent.path + "/" : "";
+            const file = plugin.freePath(folder, name, ".canvas");
+            const { operations, subcanvas } = plugin.boardLibrary.collapseOps(
+              canvas.getData(),
+              {
+                ids: selection.map((node) => node.id),
+                file,
+                label: name
+              }
+            );
+            await plugin.app.vault.create(
               file,
-              label: name
-            }
-          );
-          await plugin.app.vault.create(
-            file,
-            JSON.stringify(subcanvas, null, "	")
-          );
-          plugin.edit(canvas, operations);
-          plugin.undoNotice(
-            canvas,
-            `packed ${selection.length} card${selection.length > 1 ? "s" : ""} into ${file}`,
-            [file]
-          );
+              JSON.stringify(subcanvas, null, "	")
+            );
+            plugin.edit(canvas, operations);
+            plugin.undoNotice(
+              canvas,
+              `packed ${selection.length} card${selection.length > 1 ? "s" : ""} into ${file}`,
+              { files: [file] }
+            );
+          }
         }).open()
       });
       const linked = (canvas, selection) => selection.length === 1 && !!plugin.linkedCanvas(selection[0]);
@@ -4453,19 +4455,21 @@ var require_registerPackCommands = __commonJS({
         run: async (canvas, [node]) => {
           const file = plugin.linkedCanvas(node);
           const links = await plugin.subcanvasLinks(file, canvas, node.id);
-          if (!links.length) return plugin.unpack(canvas, node, file, "dissolve");
-          new UnpackChoice(
-            plugin.app,
-            file,
+          if (!links.length)
+            return plugin.unpack(canvas, node, { file, mode: "dissolve" });
+          new UnpackChoice(plugin.app, file, {
             links,
-            (mode) => plugin.unpack(canvas, node, file, mode, links).catch((error) => new Notice(`Kanvas board: ${error.message}`))
-          ).open();
+            onPick: (mode) => plugin.unpack(canvas, node, { file, mode, links }).catch((error) => new Notice(`Kanvas board: ${error.message}`))
+          }).open();
         }
       });
       plugin.addCanvasCommand("unpack-copy", "Unpack subcanvas (copy)", {
         menu: ["Unpack subcanvas (copy)", "copy"],
         test: linked,
-        run: (canvas, [node]) => plugin.unpack(canvas, node, plugin.linkedCanvas(node), "copy")
+        run: (canvas, [node]) => plugin.unpack(canvas, node, {
+          file: plugin.linkedCanvas(node),
+          mode: "copy"
+        })
       });
     }
     module2.exports = registerPackCommands;
@@ -4592,7 +4596,7 @@ var require_registerArchiveCommand = __commonJS({
           plugin.undoNotice(
             canvas,
             `archived ${selection.length} card${selection.length > 1 ? "s" : ""}`,
-            notes
+            { files: notes }
           );
         }
       });
@@ -4731,10 +4735,9 @@ var require_registerTemplateSaveCommand = __commonJS({
                 file
               ])
             );
-            new NamePrompt(
-              plugin.app,
-              "Template name",
-              async (name) => {
+            new NamePrompt(plugin.app, {
+              title: "Template name",
+              onSubmit: async (name) => {
                 const content = JSON.stringify(
                   (({ nodes, edges }) => ({ nodes, edges }))(
                     canvas.getSelectionData()
@@ -4755,13 +4758,9 @@ var require_registerTemplateSaveCommand = __commonJS({
                 await plugin.app.vault.create(file, content);
                 new Notice(`Kanvas board: template saved to ${file}`);
               },
-              {
-                suggestions: [...existing.values()].map(
-                  (file) => templateName(file)
-                ),
-                overwrite: (name) => existing.has(name.toLowerCase())
-              }
-            ).open();
+              suggestions: [...existing.values()].map((file) => templateName(file)),
+              overwrite: (name) => existing.has(name.toLowerCase())
+            }).open();
           }
         }
       );
@@ -4869,7 +4868,7 @@ var require_Picker = __commonJS({
   "src/plugin/Picker.js"(exports2, module2) {
     var { FuzzySuggestModal, Notice } = require("obsidian");
     var Picker = class extends FuzzySuggestModal {
-      constructor(app, placeholder, items, label, onChoose) {
+      constructor(app, { placeholder, items, label, onChoose }) {
         super(app);
         this.setPlaceholder(placeholder);
         this.items = items;
@@ -4913,13 +4912,12 @@ var require_registerTemplateInsertCommand = __commonJS({
                 `Kanvas board: no template in ${TEMPLATE_DIR} (Save selected cards as a template)`
               );
             } else {
-              new Picker(
-                plugin.app,
-                "Template",
-                files,
-                (file) => file.basename,
-                (file) => plugin.insertTemplate(canvas, file)
-              ).open();
+              new Picker(plugin.app, {
+                placeholder: "Template",
+                items: files,
+                label: (file) => file.basename,
+                onChoose: (file) => plugin.insertTemplate(canvas, file)
+              }).open();
             }
           }
           return true;
@@ -6515,7 +6513,7 @@ var require_CanvasBoardPlugin = __commonJS({
       // A notice with an Undo button: one canvas undo step and the files the action made go to the trash. Only while
       // the board has not changed since (else the undo would take back something else).
       // `restore` ({ path, content }) brings a trashed file back on undo (unpack). Redirected links are not undone.
-      undoNotice(canvas, message, files = [], restore = null) {
+      undoNotice(canvas, message, { files = [], restore = null } = {}) {
         const history = canvas.history;
         const historyIndex = history ? history.current : null;
         const noticeContent = createFragment((fragment) => {
@@ -7370,7 +7368,7 @@ Shift-click: next direction`,
       }
       // mode: dissolve (file to trash, other links break), copy (file kept), group (cards in a group named after the
       // file, other links redirected: cards on this board get an edge to the group, other cards and notes link this board).
-      async unpack(canvas, node, file, mode, links = []) {
+      async unpack(canvas, node, { file, mode, links = [] }) {
         const subcanvas = JSON.parse(await this.app.vault.read(file) || "{}");
         const content = JSON.stringify(
           { nodes: subcanvas.nodes || [], edges: subcanvas.edges || [] },
@@ -7469,12 +7467,10 @@ Shift-click: next direction`,
           copy: `unpacked ${cardCount} card${plural(cardCount)}, ${file.path} kept`,
           group: `unpacked ${cardCount} card${plural(cardCount)} into a group, ${linkCount} link${plural(linkCount)} redirected`
         }[mode];
-        this.undoNotice(
-          canvas,
-          what,
-          [],
-          mode === "copy" ? null : { path: file.path, content }
-        );
+        this.undoNotice(canvas, what, {
+          files: [],
+          restore: mode === "copy" ? null : { path: file.path, content }
+        });
       }
       linkedCanvas(node) {
         const nodeData = node.getData();
