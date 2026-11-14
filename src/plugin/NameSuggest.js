@@ -18,7 +18,7 @@ class NameSuggest extends AbstractInputSuggest {
 
   renderSuggestion(name, element) {
     element.setText(name);
-    element.createSpan({ cls: 'canvas-board-key', text: 'overwrite' });
+    element.createSpan({ cls: 'kanvas-board-key', text: 'overwrite' });
   }
 
   selectSuggestion(name) {

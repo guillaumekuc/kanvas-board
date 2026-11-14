@@ -8,7 +8,7 @@ function runCommand(vaultRoot, commandArguments) {
     vaultRoot,
     '.obsidian',
     'plugins',
-    'canvas-board',
+    'kanvas-board',
     'canvas.js',
   );
   const preload = path.join(__dirname, 'preload.js');

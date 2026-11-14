@@ -10,10 +10,13 @@ const COLORS = [
   ['purple', '6', '6', 'Clarify'],
 ];
 // Terminal command: empty = the platform's terminal (defaultLaunch); else
-// {vault} {board} {claude} are replaced and quoted parts stay one argument.
+// {vault} {board} are replaced, a {agent} word becomes the agent command with
+// its prompt, and quoted parts stay one argument.
 const DEFAULTS = {
   defaultBoard: 'Board.canvas',
-  claudePath: '',
+  // empty: Claude Code; else the agent's command, {prompt} where the prompt
+  // goes (else last)
+  agentCommand: '',
   layoutDirection: 'TB', // TB, LR, BT or RL
   colorLabels: {}, // color name → label, when edited (Settings > Workflow)
   cardWarning: '60',

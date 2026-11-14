@@ -1,6 +1,6 @@
 const obsidianEval = require('./obsidianEval.js');
 
-const PLUGIN = "app.plugins.plugins['canvas-board']";
+const PLUGIN = "app.plugins.plugins['kanvas-board']";
 
 // Calls the plugin API inside Obsidian. 'closed' = board not open there;
 // null = Obsidian not reachable.

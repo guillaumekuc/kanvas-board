@@ -1,10 +1,10 @@
 // Built from src/ by `npm run build`; edit src/, not this file.
-// Read and edit Obsidian canvas boards safely, for the canvas-board skill. Ships with the canvas-board plugin.
-// If the board is open in Obsidian, edits go through the plugin's API (`app.plugins.plugins['canvas-board'].api`,
+// Read and edit Obsidian canvas boards safely, for the kanvas-board skill. Ships with the kanvas-board plugin.
+// If the board is open in Obsidian, edits go through the plugin's API (`app.plugins.plugins['kanvas-board'].api`,
 // called with the Obsidian CLI `obsidian eval`) so Obsidian does not save its in-memory copy over them;
 // otherwise the .canvas file is edited directly. Built from src/ (npm run build); the plugin bundles the same board code.
 //
-// Usage (paths relative to the vault root; CANVAS = node .obsidian/plugins/canvas-board/canvas.js):
+// Usage (paths relative to the vault root; CANVAS = node .obsidian/plugins/kanvas-board/canvas.js):
 //   CANVAS read <board>                       nodes and edges as JSON
 //   CANVAS tree [<board>] [--active]          board + linked notes (level, parts) + nested canvases, as JSON
 //                                             --active: go (cyan/purple)/orange cards, cards edged to them, yellow/red count
@@ -126,7 +126,7 @@ var require_obsidianEval = __commonJS({
 var require_api = __commonJS({
   "src/board/api.js"(exports2, module2) {
     var obsidianEval = require_obsidianEval();
-    var PLUGIN = "app.plugins.plugins['canvas-board']";
+    var PLUGIN = "app.plugins.plugins['kanvas-board']";
     function api(method, ...values) {
       const json = values.map((value) => JSON.stringify(value)).join(",");
       const call = `p.api.${method}(${json})`;
@@ -5341,7 +5341,7 @@ var require_parseArguments = __commonJS({
 // src/cli/canvas.js
 var COMMANDS = require_commands();
 var parseArguments = require_parseArguments();
-var USAGE = "Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|layout|pack|unpack|merge|split|extract|archive|restore|rollup|check <board> ... (see header)";
+var USAGE = "Usage: node .obsidian/plugins/kanvas-board/canvas.js read|tree|set|add|remove|edge|layout|pack|unpack|merge|split|extract|archive|restore|rollup|check <board> ... (see header)";
 var cli = parseArguments(process.argv.slice(2));
 var name = cli.commandName || "";
 var command = Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : null;

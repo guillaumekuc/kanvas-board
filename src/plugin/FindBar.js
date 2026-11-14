@@ -26,7 +26,7 @@ class FindBar {
       this.frameTimer = window.setTimeout(() => this.frame(), 100);
     });
     this.element = canvas.wrapperEl.createDiv({
-      cls: 'document-search-container canvas-board-find',
+      cls: 'document-search-container kanvas-board-find',
     });
     stopCanvasEvents(this.element);
     this.buildBox();
@@ -149,9 +149,9 @@ class FindBar {
 
   mark(nodes) {
     for (const node of this.canvas.nodes.values()) {
-      node.nodeEl.removeClass('canvas-board-find-match', 'is-current');
+      node.nodeEl.removeClass('kanvas-board-find-match', 'is-current');
     }
-    for (const node of nodes) node.nodeEl.addClass('canvas-board-find-match');
+    for (const node of nodes) node.nodeEl.addClass('kanvas-board-find-match');
     this.frame(nodes);
   }
 

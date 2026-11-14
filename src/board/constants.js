@@ -1,6 +1,6 @@
 const path = require('path');
 
-// <vault>/.obsidian/plugins/canvas-board
+// <vault>/.obsidian/plugins/kanvas-board
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const DEFAULT_BOARD = 'Board.canvas';
 // plus data.json `skipFolders` (folder names), see findFile
