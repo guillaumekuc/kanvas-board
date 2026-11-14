@@ -5,7 +5,6 @@
 // .claude/skills/canvas-board/ on load when missing; after that the vault copy is the user's (command "Reset agent skill").
 // The agent workflow (what a pass takes, roll-up, check) is workflow.js; here only the "Workflow" toggles gate.
 // apm.js: the APM counter in the status bar, on canvases only.
-// See Wiki/G&A/PKM/SOP - Canvas Board.md.
 const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, AbstractInputSuggest, Scope, setIcon } = require('obsidian');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -40,7 +39,7 @@ const DEFAULTS = {
 };
 const COLOR_NUM = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
 const parseColors = s => new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLOR_NUM[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
-// Settings > Workflow: what each color does (as in SOP - Canvas Board). Fixed: the label above is only how it reads.
+// Settings > Workflow: what each color does (as in the skill). Fixed: the label above is only how it reads.
 const WORKFLOW = [
 	['cyan', 'The agent carries the card to done.'],
 	['purple', 'The agent takes one step, then hands back.'],
@@ -450,7 +449,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 	// --- Presentation: where the commands show on screen ---------------------------------------------------------
 	// Control bar and selection toolbar are undocumented canvas DOM (.canvas-controls, canvas.menu.render), like
 	// folds and the filter pane: an Obsidian update may drop those buttons, the commands stay. Header action and
-	// ribbon icon are documented API. See "Undocumented Obsidian internals" in the SOP.
+	// ribbon icon are documented API. See "Obsidian internals" in README.md.
 
 	// Label of a color: the one edited in Settings > Workflow, else the default.
 	colorLabel(name) {

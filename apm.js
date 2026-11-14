@@ -2,7 +2,7 @@
 // best; shown only while a canvas is the active tab. An action = a card whose content or color changed on the open canvas.
 // Moving or resizing is not one. Pace = distinct cards touched in the window, so typing a sentence in one card counts once.
 // No `obsidian` import: main.js loads this file by path, as canvas.js, and owns the settings UI.
-// See Wiki/G&A/PKM/APM Counter.md. Tests: node test-apm.js
+// Tests: node test-apm.js
 const MINUTE_MS = 60000;
 const INPUT_MS = 10000; // a saved change only counts this soon after a key or mouse press (agents and sync write files too)
 const MIN_PB = 5; // under this the ratio to PB means nothing (just after a reset): no color, no alert
