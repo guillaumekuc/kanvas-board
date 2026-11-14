@@ -16,7 +16,8 @@ class UnpackChoice extends Modal {
   onOpen() {
     const count = this.links.length;
     this.setTitle(
-      `${this.file.basename} is linked from ${count} other place${count > 1 ? 's' : ''}`,
+      `${this.file.basename} is linked from ${count} other ` +
+        `place${count > 1 ? 's' : ''}`,
     );
     const list = this.contentEl.createEl('ul');
     for (const link of this.links.slice(0, 8)) {

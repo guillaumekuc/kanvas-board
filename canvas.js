@@ -44,7 +44,7 @@ var require_constants = __commonJS({
   "src/board/constants.js"(exports2, module2) {
     var path = require("path");
     var ROOT = path.resolve(__dirname, "..", "..", "..");
-    var DEFAULT_BOARD2 = "Board.canvas";
+    var DEFAULT_BOARD = "Board.canvas";
     var SKIP_DIRS = /* @__PURE__ */ new Set([".git", ".obsidian", ".trash", "node_modules"]);
     var COLORS = {
       red: "1",
@@ -70,7 +70,7 @@ var require_constants = __commonJS({
     };
     module2.exports = {
       ROOT,
-      DEFAULT_BOARD: DEFAULT_BOARD2,
+      DEFAULT_BOARD,
       SKIP_DIRS,
       COLORS,
       URGENCY,
@@ -126,9 +126,14 @@ var require_obsidianEval = __commonJS({
 var require_api = __commonJS({
   "src/board/api.js"(exports2, module2) {
     var obsidianEval = require_obsidianEval();
-    var api = (method, ...values) => obsidianEval(
-      `(async()=>{const p=app.plugins.plugins['canvas-board'];if(!p||!p.api)return 'no plugin';const r=await p.api.${method}(${values.map((x) => JSON.stringify(x)).join(",")});return r===null?'closed':r})()`
-    );
+    var PLUGIN = "app.plugins.plugins['canvas-board']";
+    function api(method, ...values) {
+      const json = values.map((value) => JSON.stringify(value)).join(",");
+      const call = `p.api.${method}(${json})`;
+      return obsidianEval(
+        `(async()=>{const p=${PLUGIN};if(!p||!p.api)return 'no plugin';const r=await ${call};return r===null?'closed':r})()`
+      );
+    }
     module2.exports = api;
   }
 });
@@ -265,7 +270,7 @@ var require_settings = __commonJS({
   "src/workflow/settings.js"(exports2, module2) {
     var fileSystem = require("fs");
     var path = require("path");
-    var settings2 = () => {
+    var settings = () => {
       try {
         return JSON.parse(
           fileSystem.readFileSync(path.join(__dirname, "data.json"), "utf8")
@@ -274,7 +279,7 @@ var require_settings = __commonJS({
         return {};
       }
     };
-    module2.exports = settings2;
+    module2.exports = settings;
   }
 });
 
@@ -283,9 +288,9 @@ var require_goColors = __commonJS({
   "src/workflow/goColors.js"(exports2, module2) {
     var { DEFAULT_PASS_COLORS } = require_constants2();
     var parseColors = require_parseColors();
-    var settings2 = require_settings();
+    var settings = require_settings();
     function goColors() {
-      const value = settings2().passColors;
+      const value = settings().passColors;
       return parseColors(value === void 0 ? DEFAULT_PASS_COLORS : value);
     }
     module2.exports = goColors;
@@ -319,7 +324,7 @@ var require_settings2 = __commonJS({
   "src/board/settings.js"(exports2, module2) {
     var fileSystem = require("fs");
     var path = require("path");
-    var settings2 = () => {
+    var settings = () => {
       try {
         return JSON.parse(
           fileSystem.readFileSync(path.join(__dirname, "data.json"), "utf8")
@@ -328,7 +333,7 @@ var require_settings2 = __commonJS({
         return {};
       }
     };
-    module2.exports = settings2;
+    module2.exports = settings;
   }
 });
 
@@ -339,13 +344,13 @@ var require_vaultFileIndex = __commonJS({
     var vaultPath = require_vaultPath();
     var fileSystem = require("fs");
     var path = require("path");
-    var settings2 = require_settings2();
+    var settings = require_settings2();
     var VaultFileIndex = class {
       constructor() {
         this.files = null;
       }
-      get(name) {
-        return this.load().get(name) || null;
+      get(name2) {
+        return this.load().get(name2) || null;
       }
       paths() {
         return new Set(this.load().values());
@@ -353,7 +358,7 @@ var require_vaultFileIndex = __commonJS({
       load() {
         if (!this.files) {
           this.files = /* @__PURE__ */ new Map();
-          this.skipped = /* @__PURE__ */ new Set([...SKIP_DIRS, ...settings2().skipFolders || []]);
+          this.skipped = /* @__PURE__ */ new Set([...SKIP_DIRS, ...settings().skipFolders || []]);
           this.walk("");
         }
         return this.files;
@@ -369,8 +374,8 @@ var require_vaultFileIndex = __commonJS({
         }
       }
       // The first file found keeps a name shared by several.
-      add(relativePath, name) {
-        const key = name.endsWith(".md") ? name.slice(0, -3) : name;
+      add(relativePath, name2) {
+        const key = name2.endsWith(".md") ? name2.slice(0, -3) : name2;
         if (!this.files.has(key)) this.files.set(key, relativePath);
         this.files.set(relativePath, relativePath);
         this.files.set(relativePath.replace(/\.md$/, ""), relativePath);
@@ -384,8 +389,8 @@ var require_vaultFileIndex = __commonJS({
 var require_findFile = __commonJS({
   "src/board/findFile.js"(exports2, module2) {
     var vaultFileIndex = require_vaultFileIndex();
-    function findFile(name) {
-      return vaultFileIndex.get(name);
+    function findFile(name2) {
+      return vaultFileIndex.get(name2);
     }
     module2.exports = findFile;
   }
@@ -636,13 +641,13 @@ var require_applyOps = __commonJS({
 var require_serialize = __commonJS({
   "src/board/serialize.js"(exports2, module2) {
     function serialize(canvasData) {
-      const line = (x) => "		" + JSON.stringify(x);
+      const lines = (items) => items.map((item) => "		" + JSON.stringify(item)).join(",\n");
       return `{
 	"nodes":[
-${canvasData.nodes.map(line).join(",\n")}
+${lines(canvasData.nodes)}
 	],
 	"edges":[
-${canvasData.edges.map(line).join(",\n")}
+${lines(canvasData.edges)}
 	]
 }
 `;
@@ -792,8 +797,8 @@ var require_removeCommand = __commonJS({
 var require_defaultDir = __commonJS({
   "src/board/defaultDir.js"(exports2, module2) {
     var { SIDES } = require_constants();
-    var settings2 = require_settings2();
-    var defaultDir = () => SIDES[settings2().layoutDirection] ? settings2().layoutDirection : "TB";
+    var settings = require_settings2();
+    var defaultDir = () => SIDES[settings().layoutDirection] ? settings().layoutDirection : "TB";
     module2.exports = defaultDir;
   }
 });
@@ -1582,7 +1587,7 @@ var require_dagre_min = __commonJS({
           let vRank = g.node(v).rank;
           let w = e.w;
           let wRank = g.node(w).rank;
-          let name = e.name;
+          let name2 = e.name;
           let edgeLabel = g.edge(e);
           let labelRank = edgeLabel.labelRank;
           if (wRank === vRank + 1) return;
@@ -1598,13 +1603,13 @@ var require_dagre_min = __commonJS({
               attrs.dummy = "edge-label";
               attrs.labelpos = edgeLabel.labelpos;
             }
-            g.setEdge(v, dummy, { weight: edgeLabel.weight }, name);
+            g.setEdge(v, dummy, { weight: edgeLabel.weight }, name2);
             if (i === 0) {
               g.graph().dummyChains.push(dummy);
             }
             v = dummy;
           }
-          g.setEdge(v, w, { weight: edgeLabel.weight }, name);
+          g.setEdge(v, w, { weight: edgeLabel.weight }, name2);
         }
         function undo(g) {
           g.graph().dummyChains.forEach((v) => {
@@ -2604,10 +2609,10 @@ var require_dagre_min = __commonJS({
         "use strict";
         let Graph = require2("@dagrejs/graphlib").Graph;
         module4.exports = { addBorderNode, addDummyNode, applyWithChunking, asNonCompoundGraph, buildLayerMatrix, intersectRect, mapValues, maxRank, normalizeRanks, notime, partition, pick, predecessorWeights, range, removeEmptyRanks, simplify, successorWeights, time, uniqueId, zipObject };
-        function addDummyNode(g, type, attrs, name) {
+        function addDummyNode(g, type, attrs, name2) {
           let v;
           do {
-            v = uniqueId(name);
+            v = uniqueId(name2);
           } while (g.hasNode(v));
           attrs.dummy = type;
           g.setNode(v, attrs);
@@ -2776,15 +2781,15 @@ var require_dagre_min = __commonJS({
           });
           return result;
         }
-        function time(name, fn) {
+        function time(name2, fn) {
           let start = Date.now();
           try {
             return fn();
           } finally {
-            console.log(name + " time: " + (Date.now() - start) + "ms");
+            console.log(name2 + " time: " + (Date.now() - start) + "ms");
           }
         }
-        function notime(name, fn) {
+        function notime(name2, fn) {
           return fn();
         }
         let idCounter = 0;
@@ -3411,10 +3416,10 @@ var require_dagre_min = __commonJS({
              * Complexity: O(|names|).
              */
           setNodes(vs, value) {
-            var args2 = arguments;
+            var args = arguments;
             var self2 = this;
             vs.forEach(function(v) {
-              if (args2.length > 1) {
+              if (args.length > 1) {
                 self2.setNode(v, value);
               } else {
                 self2.setNode(v);
@@ -3668,9 +3673,9 @@ var require_dagre_min = __commonJS({
              */
           setPath(vs, value) {
             var self2 = this;
-            var args2 = arguments;
+            var args = arguments;
             vs.reduce(function(v, w) {
-              if (args2.length > 1) {
+              if (args.length > 1) {
                 self2.setEdge(v, w, value);
               } else {
                 self2.setEdge(v, w);
@@ -3686,13 +3691,13 @@ var require_dagre_min = __commonJS({
              * be assigned. The name parameter is only useful with multigraphs.
              */
           setEdge() {
-            var v, w, name, value;
+            var v, w, name2, value;
             var valueSpecified = false;
             var arg0 = arguments[0];
             if (typeof arg0 === "object" && arg0 !== null && "v" in arg0) {
               v = arg0.v;
               w = arg0.w;
-              name = arg0.name;
+              name2 = arg0.name;
               if (arguments.length === 2) {
                 value = arguments[1];
                 valueSpecified = true;
@@ -3700,7 +3705,7 @@ var require_dagre_min = __commonJS({
             } else {
               v = arg0;
               w = arguments[1];
-              name = arguments[3];
+              name2 = arguments[3];
               if (arguments.length > 2) {
                 value = arguments[2];
                 valueSpecified = true;
@@ -3708,23 +3713,23 @@ var require_dagre_min = __commonJS({
             }
             v = "" + v;
             w = "" + w;
-            if (name !== void 0) {
-              name = "" + name;
+            if (name2 !== void 0) {
+              name2 = "" + name2;
             }
-            var e = edgeArgsToId(this._isDirected, v, w, name);
+            var e = edgeArgsToId(this._isDirected, v, w, name2);
             if (Object.hasOwn(this._edgeLabels, e)) {
               if (valueSpecified) {
                 this._edgeLabels[e] = value;
               }
               return this;
             }
-            if (name !== void 0 && !this._isMultigraph) {
+            if (name2 !== void 0 && !this._isMultigraph) {
               throw new Error("Cannot set a named edge when isMultigraph = false");
             }
             this.setNode(v);
             this.setNode(w);
-            this._edgeLabels[e] = valueSpecified ? value : this._defaultEdgeLabelFn(v, w, name);
-            var edgeObj = edgeArgsToObj(this._isDirected, v, w, name);
+            this._edgeLabels[e] = valueSpecified ? value : this._defaultEdgeLabelFn(v, w, name2);
+            var edgeObj = edgeArgsToObj(this._isDirected, v, w, name2);
             v = edgeObj.v;
             w = edgeObj.w;
             Object.freeze(edgeObj);
@@ -3740,8 +3745,8 @@ var require_dagre_min = __commonJS({
              * Gets the label for the specified edge.
              * Complexity: O(1).
              */
-          edge(v, w, name) {
-            var e = arguments.length === 1 ? edgeObjToId(this._isDirected, arguments[0]) : edgeArgsToId(this._isDirected, v, w, name);
+          edge(v, w, name2) {
+            var e = arguments.length === 1 ? edgeObjToId(this._isDirected, arguments[0]) : edgeArgsToId(this._isDirected, v, w, name2);
             return this._edgeLabels[e];
           }
           /**
@@ -3759,16 +3764,16 @@ var require_dagre_min = __commonJS({
              * Detects whether the graph contains specified edge or not. No subgraphs are considered.
              * Complexity: O(1).
              */
-          hasEdge(v, w, name) {
-            var e = arguments.length === 1 ? edgeObjToId(this._isDirected, arguments[0]) : edgeArgsToId(this._isDirected, v, w, name);
+          hasEdge(v, w, name2) {
+            var e = arguments.length === 1 ? edgeObjToId(this._isDirected, arguments[0]) : edgeArgsToId(this._isDirected, v, w, name2);
             return Object.hasOwn(this._edgeLabels, e);
           }
           /**
              * Removes the specified edge from the graph. No subgraphs are considered.
              * Complexity: O(1).
              */
-          removeEdge(v, w, name) {
-            var e = arguments.length === 1 ? edgeObjToId(this._isDirected, arguments[0]) : edgeArgsToId(this._isDirected, v, w, name);
+          removeEdge(v, w, name2) {
+            var e = arguments.length === 1 ? edgeObjToId(this._isDirected, arguments[0]) : edgeArgsToId(this._isDirected, v, w, name2);
             var edge = this._edgeObjs[e];
             if (edge) {
               v = edge.v;
@@ -3837,7 +3842,7 @@ var require_dagre_min = __commonJS({
             delete map[k];
           }
         }
-        function edgeArgsToId(isDirected, v_, w_, name) {
+        function edgeArgsToId(isDirected, v_, w_, name2) {
           var v = "" + v_;
           var w = "" + w_;
           if (!isDirected && v > w) {
@@ -3845,9 +3850,9 @@ var require_dagre_min = __commonJS({
             v = w;
             w = tmp;
           }
-          return v + EDGE_KEY_DELIM + w + EDGE_KEY_DELIM + (name === void 0 ? DEFAULT_EDGE_NAME : name);
+          return v + EDGE_KEY_DELIM + w + EDGE_KEY_DELIM + (name2 === void 0 ? DEFAULT_EDGE_NAME : name2);
         }
-        function edgeArgsToObj(isDirected, v_, w_, name) {
+        function edgeArgsToObj(isDirected, v_, w_, name2) {
           var v = "" + v_;
           var w = "" + w_;
           if (!isDirected && v > w) {
@@ -3856,8 +3861,8 @@ var require_dagre_min = __commonJS({
             w = tmp;
           }
           var edgeObj = { v, w };
-          if (name) {
-            edgeObj.name = name;
+          if (name2) {
+            edgeObj.name = name2;
           }
           return edgeObj;
         }
@@ -4072,7 +4077,7 @@ var require_layoutCommand = __commonJS({
     var defaultDir = require_defaultDir();
     var layoutOps = require_layoutOps();
     var readBoard = require_readBoard();
-    var settings2 = require_settings2();
+    var settings = require_settings2();
     var writeOps = require_writeOps();
     function layoutCommand(cli2) {
       const direction = (cli2.option("--dir") || defaultDir()).toUpperCase();
@@ -4085,7 +4090,7 @@ var require_layoutCommand = __commonJS({
         direction,
         isFitToText: cli2.hasFlag("--fit"),
         dagre,
-        flow: settings2().foldDirection
+        flow: settings().foldDirection
       });
       const moved = operations.filter((operation) => operation.op === "set");
       console.log(writeOps(cli2.board, operations), moved.length, "cards");
@@ -4168,11 +4173,11 @@ var require_freePath = __commonJS({
     var vaultPath = require_vaultPath();
     var fileSystem = require("fs");
     var path = require("path");
-    function freePath(folder, name, extension) {
+    function freePath(folder, name2, extension) {
       for (let attempt = 1; ; attempt++) {
         const candidate = path.posix.join(
           folder,
-          `${name}${attempt > 1 ? " " + attempt : ""}${extension}`
+          `${name2}${attempt > 1 ? " " + attempt : ""}${extension}`
         );
         if (!fileSystem.existsSync(vaultPath(candidate))) return candidate;
       }
@@ -4193,13 +4198,13 @@ var require_packCommand = __commonJS({
     var vaultPath = require_vaultPath();
     var writeOps = require_writeOps();
     function packCommand(cli2) {
-      const name = cli2.option("--name");
-      if (!name) throw new Error("collapse needs --name");
-      const file = freePath(path.posix.dirname(cli2.board), name, ".canvas");
+      const name2 = cli2.option("--name");
+      if (!name2) throw new Error("collapse needs --name");
+      const file = freePath(path.posix.dirname(cli2.board), name2, ".canvas");
       const { operations, subcanvas, id } = collapseOps(readBoard(cli2.board), {
         ids: cli2.list("--ids"),
         file,
-        label: name
+        label: name2
       });
       fileSystem.writeFileSync(vaultPath(file), serialize(subcanvas));
       writeOps(cli2.board, operations);
@@ -4378,8 +4383,8 @@ var require_relinkText = __commonJS({
         (link, ...groups) => {
           const [target, , alias] = groups;
           if (!hits(target.trim())) return link;
-          const name = path.posix.basename(target.trim()).replace(/\.canvas$/, "");
-          return replace(alias || name);
+          const name2 = path.posix.basename(target.trim()).replace(/\.canvas$/, "");
+          return replace(alias || name2);
         }
       );
     }
@@ -4406,12 +4411,12 @@ var require_linksTo = __commonJS({
         const nodes = (parseOrNull(source) || {}).nodes || [];
         return nodes.filter((node) => !(file === board && node.id === skipId)).filter(isLinkingCard).map((node) => `${file} (${node.id})`);
       };
-      const name = path.posix.basename(relativePath);
+      const name2 = path.posix.basename(relativePath);
       const found = [];
       for (const file of vaultFileIndex.paths()) {
         if (file === relativePath || !LINKABLE.test(file)) continue;
         const source = readOrNull(file);
-        if (source && source.includes(name)) found.push(...linksIn(file, source));
+        if (source && source.includes(name2)) found.push(...linksIn(file, source));
       }
       return found;
     }
@@ -4580,8 +4585,8 @@ var require_mergeOps = __commonJS({
       if (cards.some((node) => node.type !== "text")) {
         throw new Error("merge takes text cards only");
       }
-      const [keep, ...rest2] = cards;
-      const gone = new Set(rest2.map((node) => node.id));
+      const [keep, ...rest] = cards;
+      const gone = new Set(rest.map((node) => node.id));
       const text = cards.map((node) => node.text.trim()).join("\n\n");
       const width = Math.max(...cards.map((node) => node.width));
       const color = mostUrgent(cards.map((node) => node.color || ""));
@@ -4589,7 +4594,7 @@ var require_mergeOps = __commonJS({
       return [
         { op: "set", id: keep.id, text, color, width, height },
         ...mergeEdgeOps(canvasData, { keep, gone }),
-        ...rest2.map((node) => ({ op: "remove", id: node.id }))
+        ...rest.map((node) => ({ op: "remove", id: node.id }))
       ];
     }
     module2.exports = mergeOps;
@@ -4857,7 +4862,7 @@ var require_archiveCommand = __commonJS({
     var fileSystem = require("fs");
     var freePath = require_freePath();
     var readBoard = require_readBoard();
-    var settings2 = require_settings2();
+    var settings = require_settings2();
     var today = require_today();
     var vaultPath = require_vaultPath();
     var writeOps = require_writeOps();
@@ -4870,7 +4875,7 @@ var require_archiveCommand = __commonJS({
         const contexts = node && cardContexts(node);
         const date = today();
         const archived = archiveNote(canvasData, { id, board, date, contexts });
-        const folder = archiveDir(board, settings2());
+        const folder = archiveDir(board, settings());
         const file = freePath(folder, archived.name, ".md");
         fileSystem.mkdirSync(vaultPath(folder), { recursive: true });
         fileSystem.writeFileSync(vaultPath(file), archived.content);
@@ -5039,10 +5044,10 @@ var require_nestedCardUpdate = __commonJS({
 // src/workflow/staleDays.js
 var require_staleDays = __commonJS({
   "src/workflow/staleDays.js"(exports2, module2) {
-    var settings2 = require_settings();
+    var settings = require_settings();
     var staleDays = () => {
-      const days = Number(settings2().staleDays);
-      return Number.isFinite(days) && settings2().staleDays !== void 0 ? days : 7;
+      const days = Number(settings().staleDays);
+      return Number.isFinite(days) && settings().staleDays !== void 0 ? days : 7;
     };
     module2.exports = staleDays;
   }
@@ -5190,8 +5195,8 @@ var require_noteIssues = __commonJS({
 var require_notesFolder = __commonJS({
   "src/workflow/notesFolder.js"(exports2, module2) {
     var { DEFAULT_NOTES_FOLDER } = require_constants2();
-    var settings2 = require_settings();
-    var notesFolder = () => String(settings2().notesFolder || DEFAULT_NOTES_FOLDER).replace(/[/]+$/, "") + "/";
+    var settings = require_settings();
+    var notesFolder = () => String(settings().notesFolder || DEFAULT_NOTES_FOLDER).replace(/[/]+$/, "") + "/";
     module2.exports = notesFolder;
   }
 });
@@ -5280,31 +5285,44 @@ var require_commands = __commonJS({
   }
 });
 
+// src/cli/parseArguments.js
+var require_parseArguments = __commonJS({
+  "src/cli/parseArguments.js"(exports2, module2) {
+    var { DEFAULT_BOARD } = require_constants();
+    var settings = require_settings2();
+    function parseArguments2(args) {
+      const isValue = (index) => index > 0 && args[index - 1].startsWith("--");
+      const positional = args.filter(
+        (argument, index) => !argument.startsWith("--") && !isValue(index)
+      );
+      const [commandName, boardArg, ...rest] = positional;
+      const option = (name2) => {
+        const index = args.indexOf(name2);
+        return index >= 0 ? args[index + 1] : void 0;
+      };
+      const defaultBoard = String(settings().defaultBoard || "").trim();
+      return {
+        commandName,
+        board: boardArg || defaultBoard || DEFAULT_BOARD,
+        boardArg,
+        rest,
+        option,
+        list: (name2) => (option(name2) || "").split(",").filter(Boolean),
+        hasFlag: (name2) => args.includes(name2),
+        print: (value) => console.log(JSON.stringify(value, null, 2))
+      };
+    }
+    module2.exports = parseArguments2;
+  }
+});
+
 // src/cli/canvas.js
-var { DEFAULT_BOARD } = require_constants();
 var COMMANDS = require_commands();
-var settings = require_settings2();
+var parseArguments = require_parseArguments();
 var USAGE = "Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|layout|pack|unpack|merge|split|extract|archive|restore|rollup|check <board> ... (see header)";
-var args = process.argv.slice(2);
-var isValue = (index) => index > 0 && args[index - 1].startsWith("--");
-var positional = args.filter(
-  (argument, index) => !argument.startsWith("--") && !isValue(index)
-);
-var [commandName, boardArg, ...rest] = positional;
-var option = (name) => {
-  const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : void 0;
-};
-var cli = {
-  board: boardArg || String(settings().defaultBoard || "").trim() || DEFAULT_BOARD,
-  boardArg,
-  rest,
-  option,
-  list: (name) => (option(name) || "").split(",").filter(Boolean),
-  hasFlag: (name) => args.includes(name),
-  print: (value) => console.log(JSON.stringify(value, null, 2))
-};
-var command = Object.hasOwn(COMMANDS, commandName || "") ? COMMANDS[commandName] : null;
+var cli = parseArguments(process.argv.slice(2));
+var name = cli.commandName || "";
+var command = Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : null;
 if (!command) {
   console.error(USAGE);
   process.exit(1);

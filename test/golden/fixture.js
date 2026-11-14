@@ -93,11 +93,15 @@ const SUB = {
 
 const NOTES = {
   'Projects/_assets/plans/Brief note.md':
-    '---\ncontext:\n  - PD\n---\n## Aim\nA brief.\n### Done when\n- it works\n\n## Design\nx\n\n## Open questions\n- [?] Which way?\n',
+    '---\ncontext:\n  - PD\n---\n## Aim\nA brief.\n### Done ' +
+    'when\n- it works\n\n## Design\nx\n\n## Open questions\n- [?] ' +
+    'Which way?\n',
   'Projects/_assets/plans/Bad note.md':
     '---\ncontext:\n  - PD\n  - G&A\nstatus: open\n---\n## Design\nNo aim.\n',
   'Projects/_assets/plans/Plan note.md':
-    '---\ncontext:\n  - PD\n---\n## Aim\nA plan.\n### Done when\n- done\n\n## Design\ny\n\n## Parts\n- [x] first\n- [ ] second\n',
+    '---\ncontext:\n  - PD\n---\n## Aim\nA plan.\n### Done ' +
+    'when\n- done\n\n## Design\ny\n\n## Parts\n- [x] first\n- [ ] ' +
+    'second\n',
 };
 
 module.exports = function writeFixture(vaultRoot, pluginSources) {

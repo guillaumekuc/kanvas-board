@@ -6375,6 +6375,10 @@ var require_CanvasBoardSettings = __commonJS({
           "Where the agent creates the notes and plan canvases for cards. Changing it does not move anything: rename the folder in Obsidian first, so links follow.",
           "notesFolder"
         );
+        this.displayArchive();
+      }
+      displayArchive() {
+        const { containerEl } = this;
         new Setting(containerEl).setName("Archive").setDesc(
           'Where "Archive selected cards" puts the notes: a "<board> archive" folder next to each board, or one folder for all boards. Changing it does not move notes already archived; restore works from any folder.'
         ).addDropdown(
@@ -6459,7 +6463,10 @@ var require_CanvasBoardSettings = __commonJS({
             this.display();
           })
         );
-        const editor = containerEl.createEl("textarea", {
+        this.addSkillEditor(skillFile);
+      }
+      addSkillEditor(skillFile) {
+        const editor = this.containerEl.createEl("textarea", {
           cls: "canvas-board-skill-editor",
           attr: { spellcheck: "false", rows: "24" }
         });
@@ -7018,8 +7025,9 @@ var require_CanvasBoardPlugin = __commonJS({
         await this.saveData(this.settings);
         const row = COLORS.find((colorRow) => colorRow[0] === name);
         const colorCommand = this.app.commands && this.app.commands.commands[`${this.manifest.id}:color-${row[2]}`];
+        const commandName = this.colorCommandName(name);
         if (colorCommand) {
-          colorCommand.name = `${this.manifest.name}: ${this.colorCommandName(name)}`;
+          colorCommand.name = `${this.manifest.name}: ${commandName}`;
         }
         for (const canvas of this.panes.keys()) this.refreshView(canvas);
       }
@@ -7736,7 +7744,8 @@ Shift-click: next direction`,
       }
       freePath(folder, name, extension) {
         for (let attempt = 1; ; attempt++) {
-          const candidate = `${folder}${name}${attempt > 1 ? " " + attempt : ""}${extension}`;
+          const suffix = attempt > 1 ? ` ${attempt}` : "";
+          const candidate = `${folder}${name}${suffix}${extension}`;
           if (!this.app.vault.getAbstractFileByPath(candidate)) return candidate;
         }
       }

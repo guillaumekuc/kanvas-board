@@ -14,7 +14,8 @@ function registerTemplateInsertCommand(plugin) {
         const files = templateFiles(plugin);
         if (!files.length) {
           new Notice(
-            `Kanvas board: no template in ${TEMPLATE_DIR} (Save selected cards as a template)`,
+            `Kanvas board: no template in ${TEMPLATE_DIR} (Save selected ` +
+              `cards as a template)`,
           );
         } else {
           new Picker(plugin.app, {

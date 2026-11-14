@@ -19,7 +19,9 @@ module.exports = {
           }
           context.report({
             node: statement,
-            message: `Module-level '${statement.kind}' is shared mutable state; avoid globals.`,
+            message:
+              `Module-level '${statement.kind}' is shared mutable state; ` +
+              `avoid globals.`,
           });
         }
       },

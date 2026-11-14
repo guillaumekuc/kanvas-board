@@ -7,7 +7,8 @@ function starterBoardPath(vault, defaultBoard) {
   const parent = path.posix.dirname(defaultBoard);
   const folder = parent === '.' ? '' : `${parent}/`;
   for (let suffix = 1; ; suffix++) {
-    const board = `${folder}Starter board${suffix > 1 ? ` ${suffix}` : ''}.canvas`;
+    const board =
+      `${folder}Starter ` + `board${suffix > 1 ? ` ${suffix}` : ''}.canvas`;
     if (!vault.getAbstractFileByPath(board)) return board;
   }
 }

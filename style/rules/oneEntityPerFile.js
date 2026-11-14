@@ -13,7 +13,7 @@ module.exports = {
         for (const extraEntity of entities.slice(1)) {
           context.report({
             node: extraEntity,
-            message: `File holds ${entities.length} entities; keep one per file.`,
+            message: `File holds ${entities.length} entities, keep one a file`,
           });
         }
       },
