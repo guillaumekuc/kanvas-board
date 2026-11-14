@@ -1,15 +1,17 @@
 const defaultLaunch = require('./defaultLaunch.js');
 
 // [command, arguments] from the "Terminal command" setting, quotes allowed,
-// {vault} {board} {claude} filled in; else the platform's default terminal
+// {vault} {board} filled in and a {agent} word (old name {claude}) replaced by
+// the agent command with its prompt; else the platform's default terminal
 // (null when none is found).
-function terminalLaunch(template, vars) {
-  if (!template) return defaultLaunch(vars);
-  const words = (template.match(/"[^"]*"|\S+/g) || []).map((word) =>
-    word
-      .replace(/^"|"$/g, '')
-      .replace(/\{(vault|board|claude)\}/g, (match, name) => vars[name]),
-  );
+function terminalLaunch(template, { vault, board, agent }) {
+  if (!template) return defaultLaunch({ vault, board, agent });
+  const values = { vault, board };
+  const words = (template.match(/"[^"]*"|\S+/g) || []).flatMap((word) => {
+    const bare = word.replace(/^"|"$/g, '');
+    if (bare === '{agent}' || bare === '{claude}') return agent;
+    return [bare.replace(/\{(vault|board)\}/g, (match, name) => values[name])];
+  });
   const [command, ...commandArguments] = words;
   return [command, commandArguments];
 }

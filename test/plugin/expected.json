@@ -208,11 +208,11 @@
     "read"
   ],
   "settings": [
+    "agentCommand",
     "apm",
     "archiveFolder",
     "archiveMode",
     "cardWarning",
-    "claudePath",
     "colorLabels",
     "defaultBoard",
     "foldDirection",

@@ -150,7 +150,7 @@ class CanvasBoardSettings extends PluginSettingTab {
         .setDesc(meaning);
       row.nameEl.prepend(
         createSpan({
-          cls: 'canvas-board-dot canvas-board-workflow-dot',
+          cls: 'kanvas-board-dot kanvas-board-workflow-dot',
           attr: { style: this.plugin.dotStyle(colorNumber) },
         }),
       );
@@ -193,31 +193,34 @@ class CanvasBoardSettings extends PluginSettingTab {
     const { containerEl } = this;
     this.addHeading('Pass');
     this.addTextSetting(
-      'Claude path',
-      'Empty: ~/.local/bin/claude (claude.exe on Windows) if it ' +
-        'exists, else claude on PATH.',
-      'claudePath',
+      'Agent command',
+      'The agent CLI that runs the pass, e.g. codex, gemini -i ' +
+        '{prompt}, opencode --prompt {prompt}. {prompt} is replaced by ' +
+        'the pass prompt, else it goes last. Empty: Claude Code ' +
+        '(~/.local/bin/claude if it exists, else claude on PATH).',
+      'agentCommand',
     );
     this.addTextSetting(
       'Terminal command',
       'Starts the pass. Empty: Windows Terminal, macOS Terminal, or ' +
         'the first known terminal on Linux (gnome-terminal, konsole, ' +
         'xfce4-terminal, kitty, alacritty, wezterm, foot, xterm). ' +
-        'Otherwise {vault}, {board}, {claude} are replaced; quote ' +
-        'parts with spaces.',
+        'Otherwise {vault} and {board} are replaced and {agent} ' +
+        'becomes the agent command with its prompt; quote parts with ' +
+        'spaces.',
       'terminal',
     );
-    // The instructions the agent follows on a pass, edited here; the file stays
-    // where Claude Code finds the skill.
+    // The instructions the agent follows on a pass, edited here; the pass
+    // prompt points the agent at the file.
     const skillFile = this.plugin.skillPath();
     new Setting(containerEl)
       .setName('Agent instructions')
       .setDesc(
         'What the agent does on a pass. Saved when the field loses ' +
-          'focus, to .claude/skills/canvas-board/SKILL.md (where Claude ' +
-          'Code reads it; any agent can be pointed at it). Written once ' +
-          'from the plugin, then yours: plugin updates never overwrite ' +
-          "it. Reset brings back the plugin's version.",
+          `focus, to ${this.plugin.skillRelativePath()} (the pass ` +
+          'prompt points any agent at it). Written once from the ' +
+          'plugin, then yours: plugin updates never overwrite it. ' +
+          "Reset brings back the plugin's version.",
       )
       .addButton((button) =>
         button
@@ -238,7 +241,7 @@ class CanvasBoardSettings extends PluginSettingTab {
 
   addSkillEditor(skillFile) {
     const editor = this.containerEl.createEl('textarea', {
-      cls: 'canvas-board-skill-editor',
+      cls: 'kanvas-board-skill-editor',
       attr: { spellcheck: 'false', rows: '24' },
     });
     try {

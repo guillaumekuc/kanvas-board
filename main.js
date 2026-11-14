@@ -18,7 +18,9 @@ var require_constants = __commonJS({
     ];
     var DEFAULTS = {
       defaultBoard: "Board.canvas",
-      claudePath: "",
+      // empty: Claude Code; else the agent's command, {prompt} where the prompt
+      // goes (else last)
+      agentCommand: "",
       layoutDirection: "TB",
       // TB, LR, BT or RL
       colorLabels: {},
@@ -4289,7 +4291,7 @@ var require_NameSuggest = __commonJS({
       }
       renderSuggestion(name, element) {
         element.setText(name);
-        element.createSpan({ cls: "canvas-board-key", text: "overwrite" });
+        element.createSpan({ cls: "kanvas-board-key", text: "overwrite" });
       }
       selectSuggestion(name) {
         this.onPick(name);
@@ -4972,7 +4974,7 @@ var require_registerTemplateInsertCommand = __commonJS({
 var require_clearFrames = __commonJS({
   "src/plugin/clearFrames.js"(exports2, module2) {
     function clearFrames(root) {
-      for (const frame of root.querySelectorAll(".canvas-board-find-text")) {
+      for (const frame of root.querySelectorAll(".kanvas-board-find-text")) {
         const parent = frame.parentNode;
         frame.replaceWith(...frame.childNodes);
         parent.normalize();
@@ -5013,7 +5015,7 @@ var require_frameText = __commonJS({
           const hit = node.splitText(offset);
           hit.splitText(query.length);
           const frame = ownerDocument.createElement("span");
-          frame.className = "canvas-board-find-text";
+          frame.className = "kanvas-board-find-text";
           hit.replaceWith(frame);
           frame.append(hit);
           here.unshift(frame);
@@ -5058,7 +5060,7 @@ var require_FindBar = __commonJS({
           this.frameTimer = window.setTimeout(() => this.frame(), 100);
         });
         this.element = canvas.wrapperEl.createDiv({
-          cls: "document-search-container canvas-board-find"
+          cls: "document-search-container kanvas-board-find"
         });
         stopCanvasEvents(this.element);
         this.buildBox();
@@ -5167,9 +5169,9 @@ var require_FindBar = __commonJS({
       }
       mark(nodes) {
         for (const node of this.canvas.nodes.values()) {
-          node.nodeEl.removeClass("canvas-board-find-match", "is-current");
+          node.nodeEl.removeClass("kanvas-board-find-match", "is-current");
         }
-        for (const node of nodes) node.nodeEl.addClass("canvas-board-find-match");
+        for (const node of nodes) node.nodeEl.addClass("kanvas-board-find-match");
         this.frame(nodes);
       }
       // Frames the query in the given cards (default: the same ones again) and
@@ -5317,7 +5319,7 @@ var require_registerRestoreCommands = __commonJS({
         plugin.app.workspace.on("file-menu", (menu, file) => {
           if (isArchiveNote(plugin.app, file)) {
             menu.addItem(
-              (item) => item.setTitle("Restore archived card").setIcon("archive-restore").setSection("canvas-board").onClick(
+              (item) => item.setTitle("Restore archived card").setIcon("archive-restore").setSection("kanvas-board").onClick(
                 () => plugin.restore(file).catch((error) => new Notice(`Kanvas board: ${error.message}`))
               )
             );
@@ -6083,48 +6085,40 @@ var require_defaultLaunch = __commonJS({
   "src/plugin/defaultLaunch.js"(exports2, module2) {
     var { LINUX_TERMINALS } = require_constants();
     var onPath = require_onPath();
-    function defaultLaunch({ vault, board, claude }) {
-      const prompt = `/canvas-board ${board}`;
+    var MAC_SCRIPT = [
+      "on run argv",
+      'set agentLine to ""',
+      "repeat with wordIndex from 2 to count of argv",
+      'set agentLine to agentLine & " " & quoted form of item wordIndex of argv',
+      "end repeat",
+      'tell application "Terminal"',
+      "activate",
+      'do script "cd " & quoted form of item 1 of argv & " &&" & agentLine',
+      "end tell",
+      "end run"
+    ];
+    function defaultLaunch({ vault, board, agent }) {
       if (process.platform === "win32") {
         return [
           "wt.exe",
           [
             "-w",
-            "canvas-board",
+            "kanvas-board",
             "new-tab",
             "-d",
             vault,
             "--title",
             `pass ${board}`,
-            claude,
-            prompt
+            ...agent
           ]
         ];
       }
       if (process.platform === "darwin") {
-        return [
-          "osascript",
-          [
-            "-e",
-            "on run argv",
-            "-e",
-            'tell application "Terminal"',
-            "-e",
-            "activate",
-            "-e",
-            'do script "cd " & quoted form of item 1 of argv & " && " & quoted form of item 2 of argv & " " & quoted form of item 3 of argv',
-            "-e",
-            "end tell",
-            "-e",
-            "end run",
-            vault,
-            claude,
-            prompt
-          ]
-        ];
+        const script = MAC_SCRIPT.flatMap((line) => ["-e", line]);
+        return ["osascript", [...script, vault, ...agent]];
       }
       const found = LINUX_TERMINALS.find(([binary]) => onPath(binary));
-      return found ? [found[0], found[1](vault, [claude, prompt])] : null;
+      return found ? [found[0], found[1](vault, agent)] : null;
     }
     module2.exports = defaultLaunch;
   }
@@ -6134,11 +6128,14 @@ var require_defaultLaunch = __commonJS({
 var require_terminalLaunch = __commonJS({
   "src/plugin/terminalLaunch.js"(exports2, module2) {
     var defaultLaunch = require_defaultLaunch();
-    function terminalLaunch(template, vars) {
-      if (!template) return defaultLaunch(vars);
-      const words = (template.match(/"[^"]*"|\S+/g) || []).map(
-        (word) => word.replace(/^"|"$/g, "").replace(/\{(vault|board|claude)\}/g, (match, name) => vars[name])
-      );
+    function terminalLaunch(template, { vault, board, agent }) {
+      if (!template) return defaultLaunch({ vault, board, agent });
+      const values = { vault, board };
+      const words = (template.match(/"[^"]*"|\S+/g) || []).flatMap((word) => {
+        const bare = word.replace(/^"|"$/g, "");
+        if (bare === "{agent}" || bare === "{claude}") return agent;
+        return [bare.replace(/\{(vault|board)\}/g, (match, name) => values[name])];
+      });
       const [command, ...commandArguments] = words;
       return [command, commandArguments];
     }
@@ -6419,7 +6416,7 @@ var require_CanvasBoardSettings = __commonJS({
           const row = new Setting(containerEl).setName(colorNumber ? name : "uncolored").setDesc(meaning);
           row.nameEl.prepend(
             createSpan({
-              cls: "canvas-board-dot canvas-board-workflow-dot",
+              cls: "kanvas-board-dot kanvas-board-workflow-dot",
               attr: { style: this.plugin.dotStyle(colorNumber) }
             })
           );
@@ -6452,18 +6449,18 @@ var require_CanvasBoardSettings = __commonJS({
         const { containerEl } = this;
         this.addHeading("Pass");
         this.addTextSetting(
-          "Claude path",
-          "Empty: ~/.local/bin/claude (claude.exe on Windows) if it exists, else claude on PATH.",
-          "claudePath"
+          "Agent command",
+          "The agent CLI that runs the pass, e.g. codex, gemini -i {prompt}, opencode --prompt {prompt}. {prompt} is replaced by the pass prompt, else it goes last. Empty: Claude Code (~/.local/bin/claude if it exists, else claude on PATH).",
+          "agentCommand"
         );
         this.addTextSetting(
           "Terminal command",
-          "Starts the pass. Empty: Windows Terminal, macOS Terminal, or the first known terminal on Linux (gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm, foot, xterm). Otherwise {vault}, {board}, {claude} are replaced; quote parts with spaces.",
+          "Starts the pass. Empty: Windows Terminal, macOS Terminal, or the first known terminal on Linux (gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm, foot, xterm). Otherwise {vault} and {board} are replaced and {agent} becomes the agent command with its prompt; quote parts with spaces.",
           "terminal"
         );
         const skillFile = this.plugin.skillPath();
         new Setting(containerEl).setName("Agent instructions").setDesc(
-          "What the agent does on a pass. Saved when the field loses focus, to .claude/skills/canvas-board/SKILL.md (where Claude Code reads it; any agent can be pointed at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin's version."
+          `What the agent does on a pass. Saved when the field loses focus, to ${this.plugin.skillRelativePath()} (the pass prompt points any agent at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin's version.`
         ).addButton(
           (button) => button.setButtonText("Reset").setWarning().onClick(() => {
             this.plugin.resetSkill(
@@ -6479,7 +6476,7 @@ var require_CanvasBoardSettings = __commonJS({
       }
       addSkillEditor(skillFile) {
         const editor = this.containerEl.createEl("textarea", {
-          cls: "canvas-board-skill-editor",
+          cls: "kanvas-board-skill-editor",
           attr: { spellcheck: "false", rows: "24" }
         });
         try {
@@ -6620,6 +6617,34 @@ var require_claudeBin = __commonJS({
   }
 });
 
+// src/plugin/agentWords.js
+var require_agentWords = __commonJS({
+  "src/plugin/agentWords.js"(exports2, module2) {
+    var claudeBin = require_claudeBin();
+    function agentWords(setting, prompt) {
+      const template = String(setting || "").trim();
+      if (!template) return [claudeBin(""), prompt];
+      const words = (template.match(/"[^"]*"|\S+/g) || []).map(
+        (word) => word.replace(/^"|"$/g, "")
+      );
+      const hasPrompt = words.some((word) => word.includes("{prompt}"));
+      const filled = words.map((word) => word.replace(/\{prompt\}/g, prompt));
+      return hasPrompt ? filled : [...filled, prompt];
+    }
+    module2.exports = agentWords;
+  }
+});
+
+// src/plugin/passPrompt.js
+var require_passPrompt = __commonJS({
+  "src/plugin/passPrompt.js"(exports2, module2) {
+    function passPrompt(instructionsPath, board) {
+      return `Run a Kanvas board pass on ${board}: follow ${instructionsPath}`;
+    }
+    module2.exports = passPrompt;
+  }
+});
+
 // src/plugin/FilterPane.js
 var require_FilterPane = __commonJS({
   "src/plugin/FilterPane.js"(exports2, module2) {
@@ -6632,16 +6657,16 @@ var require_FilterPane = __commonJS({
         this.canvas = canvas;
         this.isOpen = false;
         this.key = "";
-        this.element = canvas.wrapperEl.createDiv({ cls: "canvas-board-pane" });
+        this.element = canvas.wrapperEl.createDiv({ cls: "kanvas-board-pane" });
         stopCanvasEvents(this.element);
         this.buildHead();
-        this.body = this.element.createDiv({ cls: "canvas-board-pane-body" });
+        this.body = this.element.createDiv({ cls: "kanvas-board-pane-body" });
         this.buildSections();
         this.buildFoot();
         this.toggle(false);
       }
       buildHead() {
-        const head = this.element.createDiv({ cls: "canvas-board-pane-head" });
+        const head = this.element.createDiv({ cls: "kanvas-board-pane-head" });
         const button = head.createDiv({
           cls: "clickable-icon",
           attr: {
@@ -6651,7 +6676,7 @@ var require_FilterPane = __commonJS({
         });
         setIcon(button, "filter");
         button.addEventListener("click", () => this.toggle());
-        this.badge = head.createSpan({ cls: "canvas-board-pane-badge" });
+        this.badge = head.createSpan({ cls: "kanvas-board-pane-badge" });
       }
       buildSections() {
         const { plugin, canvas } = this;
@@ -6659,23 +6684,23 @@ var require_FilterPane = __commonJS({
         this.colorsEl = this.addSection(
           "Colors",
           () => state().xcolors.clear()
-        ).createDiv({ cls: "canvas-board-chips" });
+        ).createDiv({ cls: "kanvas-board-chips" });
         this.tagsSection = this.addSection("Tags", () => state().xtags.clear());
-        this.tagsEl = this.tagsSection.createDiv({ cls: "canvas-board-chips" });
+        this.tagsEl = this.tagsSection.createDiv({ cls: "kanvas-board-chips" });
         this.foldedSection = this.addSection("Folded", () => {
           const unfolded = [...plugin.folds(canvas).keys()].map((id) => [id, null]);
           plugin.setFolds(canvas, new Map(unfolded));
         });
         this.foldedEl = this.foldedSection.createDiv({
-          cls: "canvas-board-pane-list"
+          cls: "kanvas-board-pane-list"
         });
       }
       addSection(title, reset) {
-        const sectionEl = this.body.createDiv({ cls: "canvas-board-pane-section" });
-        const headingEl = sectionEl.createDiv({ cls: "canvas-board-pane-heading" });
+        const sectionEl = this.body.createDiv({ cls: "kanvas-board-pane-section" });
+        const headingEl = sectionEl.createDiv({ cls: "kanvas-board-pane-heading" });
         headingEl.createSpan({ text: title });
         const resetEl = headingEl.createSpan({
-          cls: "clickable-icon canvas-board-pane-reset",
+          cls: "clickable-icon kanvas-board-pane-reset",
           attr: { "aria-label": "Reset" }
         });
         setIcon(resetEl, "rotate-ccw");
@@ -6686,7 +6711,7 @@ var require_FilterPane = __commonJS({
         return sectionEl;
       }
       buildFoot() {
-        const foot = this.body.createDiv({ cls: "canvas-board-pane-foot" });
+        const foot = this.body.createDiv({ cls: "kanvas-board-pane-foot" });
         const all = foot.createDiv({
           cls: "clickable-icon",
           attr: { "aria-label": "Unhide all (clear filter and folds)" }
@@ -6764,14 +6789,14 @@ var require_FilterPane = __commonJS({
           const count = counts[color] || 0;
           const action = isOut ? "show" : "hide";
           const chip = this.colorsEl.createDiv({
-            cls: "canvas-board-swatch",
+            cls: "kanvas-board-swatch",
             attr: {
               "aria-label": `${label} \xB7 ${count} cards \xB7 click to ${action} \xB7 shift-click to select`
             }
           });
           chip.toggleClass("is-out", isOut);
           chip.createSpan({
-            cls: "canvas-board-dot",
+            cls: "kanvas-board-dot",
             attr: {
               style: color ? `background: var(--canvas-color-${color})` : ""
             }
@@ -6789,7 +6814,7 @@ var require_FilterPane = __commonJS({
           const isOut = state.xtags.has(tag);
           const action = isOut ? "show" : "hide";
           const chip = this.tagsEl.createDiv({
-            cls: "canvas-board-chip",
+            cls: "kanvas-board-chip",
             text: "#" + tag,
             attr: { "aria-label": `click to ${action} \xB7 shift-click to select` }
           });
@@ -6813,32 +6838,32 @@ var require_FilterPane = __commonJS({
       renderFoldRow(node, direction) {
         const { plugin, canvas } = this;
         const row = this.foldedEl.createDiv({
-          cls: "canvas-board-pane-row canvas-board-pane-card",
+          cls: "kanvas-board-pane-row kanvas-board-pane-card",
           attr: {
             "aria-label": "Click to unfold the whole branch \xB7 shift-click to select the card"
           }
         });
         row.createSpan({
-          cls: "canvas-board-dot",
+          cls: "kanvas-board-dot",
           attr: { style: plugin.dotStyle(node.getData().color) }
         });
-        const text = row.createDiv({ cls: "canvas-board-pane-card-text" });
+        const text = row.createDiv({ cls: "kanvas-board-pane-card-text" });
         const [title, ...rest] = plugin.boardLibrary.plainLines(
           plugin.cardText(node)
         );
         text.createDiv({
-          cls: "canvas-board-pane-card-title",
+          cls: "kanvas-board-pane-card-title",
           text: title || "(empty)"
         });
         if (rest.length) {
           text.createDiv({
-            cls: "canvas-board-pane-card-rest",
+            cls: "kanvas-board-pane-card-rest",
             text: rest.join(" \xB7 ")
           });
         }
         const levels = plugin.branchLevels(canvas, node.id, direction);
         row.createSpan({
-          cls: "canvas-board-pane-card-count",
+          cls: "kanvas-board-pane-card-count",
           text: `\xB7 ${levels.flat().length} folded`
         });
         row.addEventListener(
@@ -6880,7 +6905,8 @@ var require_CanvasBoardPlugin = __commonJS({
     var unpackSubcanvas = require_unpackSubcanvas();
     var CanvasBoardSettings = require_CanvasBoardSettings();
     var emptyViewState = require_emptyViewState();
-    var claudeBin = require_claudeBin();
+    var agentWords = require_agentWords();
+    var passPrompt = require_passPrompt();
     var FilterPane = require_FilterPane();
     var fileSystem = require("fs");
     var nextTurn = require_nextTurn();
@@ -6894,6 +6920,7 @@ var require_CanvasBoardPlugin = __commonJS({
     var CanvasBoardPlugin = class extends Plugin {
       async onload() {
         this.settings = Object.assign({}, DEFAULTS, await this.loadData());
+        this.migrateClaudePath();
         this.addSettingTab(new CanvasBoardSettings(this.app, this));
         const pluginDir = path.join(
           this.app.vault.adapter.basePath,
@@ -6950,7 +6977,7 @@ var require_CanvasBoardPlugin = __commonJS({
         );
         for (const action of shown) {
           menu.addItem(
-            (item) => item.setTitle(this.keyedTitle(action.menu[0], action.id)).setIcon(action.menu[1]).setSection("canvas-board").onClick(() => this.runAction(action.run, canvas, selection))
+            (item) => item.setTitle(this.keyedTitle(action.menu[0], action.id)).setIcon(action.menu[1]).setSection("kanvas-board").onClick(() => this.runAction(action.run, canvas, selection))
           );
         }
       }
@@ -7065,7 +7092,7 @@ var require_CanvasBoardPlugin = __commonJS({
         if (!hotkey) return label;
         return createFragment((fragment) => {
           fragment.appendText(label);
-          fragment.createSpan({ cls: "canvas-board-key", text: hotkey });
+          fragment.createSpan({ cls: "kanvas-board-key", text: hotkey });
         });
       }
       // A notice with an Undo button: one canvas undo step and the files the action
@@ -7078,7 +7105,7 @@ var require_CanvasBoardPlugin = __commonJS({
         const noticeContent = createFragment((fragment) => {
           fragment.appendText(`Kanvas board: ${message} `);
           const button = fragment.createEl("button", {
-            cls: "canvas-board-notice-undo",
+            cls: "kanvas-board-notice-undo",
             text: "Undo"
           });
           button.addEventListener("click", async () => {
@@ -7113,7 +7140,7 @@ var require_CanvasBoardPlugin = __commonJS({
                 `Kanvas board: ${board} not found (setting "Default board"). `
               );
               const button = fragment.createEl("button", {
-                cls: "canvas-board-notice-undo",
+                cls: "kanvas-board-notice-undo",
                 text: "Create a starter board"
               });
               button.addEventListener("click", () => this.createStarterBoard());
@@ -7175,7 +7202,7 @@ var require_CanvasBoardPlugin = __commonJS({
       }
       // Control bar (top right): Search, Filter, Tidy layout, above Canvas help.
       decorateControls(view, controls) {
-        const group = controls.querySelector(".canvas-board-controls") || this.addControlGroup(view, controls);
+        const group = controls.querySelector(".kanvas-board-controls") || this.addControlGroup(view, controls);
         for (const button of group.children) {
           button.setAttr(
             "aria-label",
@@ -7187,7 +7214,7 @@ var require_CanvasBoardPlugin = __commonJS({
       }
       addControlGroup(view, controls) {
         const group = createDiv({
-          cls: "canvas-control-group mod-raised canvas-board-controls"
+          cls: "canvas-control-group mod-raised kanvas-board-controls"
         });
         controls.insertBefore(group, controls.lastElementChild);
         for (const [id, label, icon] of CONTROL_BUTTONS) {
@@ -7213,7 +7240,7 @@ var require_CanvasBoardPlugin = __commonJS({
       decorateTidyButton(tidy) {
         const direction = LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
         this.tidyTurn = nextTurn(this.tidyTurn ?? direction.turn, direction.turn);
-        tidy.style.setProperty("--canvas-board-tidy-turn", `${this.tidyTurn}deg`);
+        tidy.style.setProperty("--kanvas-board-tidy-turn", `${this.tidyTurn}deg`);
         tidy.setAttr(
           "aria-label",
           this.keyedLabel(
@@ -7236,7 +7263,7 @@ Shift-click: next direction`,
           try {
             plugin.menuButtons(canvas);
           } catch (error) {
-            console.error("canvas-board: selection toolbar", error);
+            console.error("kanvas-board: selection toolbar", error);
           }
           return result;
         };
@@ -7268,14 +7295,14 @@ Shift-click: next direction`,
       menuButtons(canvas) {
         const element = canvas.menu.menuEl;
         const selection = [...canvas.selection];
-        if (!selection.length || !element.childElementCount || element.querySelector(".canvas-board-menu-btn")) {
+        if (!selection.length || !element.childElementCount || element.querySelector(".kanvas-board-menu-btn")) {
           return;
         }
         for (const id of ["fold", "unfold", "archive"]) {
           const action = this.actions.find((candidate) => candidate.id === id);
           if (!action || !action.test(canvas, selection)) continue;
           const button = element.createEl("button", {
-            cls: "clickable-icon canvas-board-menu-btn",
+            cls: "clickable-icon kanvas-board-menu-btn",
             attr: {
               "aria-label": this.keyedLabel(action.menu[0], id),
               "data-tooltip-position": "top"
@@ -7296,7 +7323,7 @@ Shift-click: next direction`,
         }
         if (canvas.wrapperEl) {
           for (const element of canvas.wrapperEl.querySelectorAll(
-            ".canvas-board-controls, .canvas-board-menu-btn"
+            ".kanvas-board-controls, .kanvas-board-menu-btn"
           )) {
             element.remove();
           }
@@ -7520,7 +7547,7 @@ Shift-click: next direction`,
       // N folded" badge, a click on it unfolds one level.
       paint(canvas, hidden, folded) {
         for (const node of canvas.nodes.values()) {
-          node.nodeEl.toggleClass("canvas-board-hidden", hidden.has(node.id));
+          node.nodeEl.toggleClass("kanvas-board-hidden", hidden.has(node.id));
           this.paintFoldBadge(canvas, node, folded.get(node.id));
         }
         this.paintStale(canvas);
@@ -7532,20 +7559,20 @@ Shift-click: next direction`,
             edge.labelElement && edge.labelElement.wrapperEl
           ].filter(Boolean);
           for (const element of elements) {
-            element.classList.toggle("canvas-board-hidden", isOff);
+            element.classList.toggle("kanvas-board-hidden", isOff);
           }
         }
       }
       // count: cards folded under the node, undefined when it is not folded.
       paintFoldBadge(canvas, node, count) {
-        let badge = node.nodeEl.querySelector(":scope > .canvas-board-folded");
+        let badge = node.nodeEl.querySelector(":scope > .kanvas-board-folded");
         if (count === void 0) {
           if (badge) badge.remove();
           return;
         }
         if (!badge) {
           badge = node.nodeEl.createDiv({
-            cls: "canvas-board-folded",
+            cls: "kanvas-board-folded",
             attr: { "data-tooltip-position": "bottom" }
           });
           for (const eventName of ["pointerdown", "mousedown", "dblclick"]) {
@@ -7581,26 +7608,26 @@ Shift-click: next direction`,
         return Math.floor((Date.now() - file.stat.mtime) / 864e5);
       }
       paintStaleBadge(node, { age, days }) {
-        let badge = node.nodeEl.querySelector(":scope > .canvas-board-stale");
+        let badge = node.nodeEl.querySelector(":scope > .kanvas-board-stale");
         if (age < days || age < 0) {
           if (badge) badge.remove();
           return;
         }
         if (!badge) {
           badge = node.nodeEl.createDiv({
-            cls: "canvas-board-stale",
+            cls: "kanvas-board-stale",
             attr: { "data-tooltip-position": "top" }
           });
           setIcon(
-            badge.createSpan({ cls: "canvas-board-stale-icon" }),
+            badge.createSpan({ cls: "kanvas-board-stale-icon" }),
             "triangle-alert"
           );
-          badge.createSpan({ cls: "canvas-board-stale-text" });
+          badge.createSpan({ cls: "kanvas-board-stale-text" });
         }
         const label = age < 1 ? "today" : `${age}d`;
         if (badge.dataset.age === label) return;
         badge.dataset.age = label;
-        badge.querySelector(".canvas-board-stale-text").setText(label);
+        badge.querySelector(".kanvas-board-stale-text").setText(label);
         const unit = `day${age === 1 ? "" : "s"}`;
         badge.setAttr(
           "aria-label",
@@ -7680,7 +7707,7 @@ Shift-click: next direction`,
         this.countEl.empty();
         this.countEl.createSpan({
           text: `${cards.length} cards`,
-          cls: isOverLimit ? "canvas-board-over" : ""
+          cls: isOverLimit ? "kanvas-board-over" : ""
         });
         if (selectedCount) this.countEl.appendText(` \xB7 ${selectedCount} selected`);
         this.countEl.setAttr(
@@ -7690,24 +7717,37 @@ Shift-click: next direction`,
         this.countEl.setAttr("data-tooltip-position", "top");
         this.countEl.show();
       }
-      // The plugin folder holds the skill's default; the vault copy is written only
-      // when missing (then it is the user's, plugin updates never overwrite it) or
-      // on "Reset agent skill".
+      // Before "Agent command", the setting only held the Claude Code binary.
+      migrateClaudePath() {
+        if (!("claudePath" in this.settings)) return;
+        if (this.settings.claudePath && !this.settings.agentCommand) {
+          this.settings.agentCommand = `"${this.settings.claudePath}"`;
+        }
+        delete this.settings.claudePath;
+      }
+      // The plugin folder holds the skill's default (skill/SKILL.md) and the user's
+      // copy (agent-instructions.md, git-ignored: a pull never overwrites it),
+      // written only when missing or on "Reset agent skill".
+      skillRelativePath() {
+        return `${this.manifest.dir}/agent-instructions.md`;
+      }
       skillPath() {
-        return path.join(
-          this.app.vault.adapter.basePath,
-          ".claude",
-          "skills",
-          "canvas-board",
-          "SKILL.md"
-        );
+        return path.join(this.app.vault.adapter.basePath, this.skillRelativePath());
+      }
+      // Older versions kept the user's copy in .claude/skills/<id>/SKILL.md.
+      legacySkillPath() {
+        const vaultRoot = this.app.vault.adapter.basePath;
+        const skills = path.join(vaultRoot, ".claude", "skills");
+        return ["kanvas-board", "canvas-board"].map((name) => path.join(skills, name, "SKILL.md")).find((candidate) => fileSystem.existsSync(candidate));
       }
       installSkill(pluginDir) {
         try {
           if (fileSystem.existsSync(this.skillPath())) return;
+          const legacy = this.legacySkillPath();
+          if (legacy) return fileSystem.copyFileSync(legacy, this.skillPath());
           this.copySkill(pluginDir);
         } catch (error) {
-          console.error("canvas-board: skill sync failed", error);
+          console.error("kanvas-board: skill sync failed", error);
         }
       }
       resetSkill(pluginDir) {
@@ -7715,7 +7755,7 @@ Shift-click: next direction`,
           this.copySkill(pluginDir);
           new Notice("Kanvas board: agent skill reset to the plugin's version");
         } catch (error) {
-          console.error("canvas-board: skill sync failed", error);
+          console.error("kanvas-board: skill sync failed", error);
           new Notice(`Kanvas board: skill reset failed (${error.message})`);
         }
       }
@@ -7860,7 +7900,6 @@ Shift-click: next direction`,
       }
       async runPass() {
         const vault = this.app.vault.adapter.basePath;
-        const claude = claudeBin(this.settings.claudePath);
         const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
         const board = view && view.getViewType() === "canvas" && view.file ? view.file.path : this.settings.defaultBoard;
         const goColorSet = parseColors(this.settings.passColors);
@@ -7875,7 +7914,9 @@ Shift-click: next direction`,
           return;
         }
         const template = String(this.settings.terminal || "").trim();
-        const launch = terminalLaunch(template, { vault, board, claude });
+        const prompt = passPrompt(this.skillRelativePath(), board);
+        const agent = agentWords(this.settings.agentCommand, prompt);
+        const launch = terminalLaunch(template, { vault, board, agent });
         if (!launch) {
           new Notice(
             'Kanvas board: no terminal found to start the pass. Set "Terminal command" in the plugin settings.',
@@ -7892,7 +7933,7 @@ Shift-click: next direction`,
               "Kanvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. "
             );
             const button = fragment.createEl("button", {
-              cls: "canvas-board-notice-undo",
+              cls: "kanvas-board-notice-undo",
               text: "Open settings"
             });
             button.addEventListener("click", () => {
