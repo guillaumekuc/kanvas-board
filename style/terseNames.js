@@ -1,0 +1,6 @@
+// Abbreviations three letters or longer that the length rule cannot catch.
+module.exports = [
+  'ctx', 'idx', 'btn', 'evt', 'msg', 'str', 'num', 'val', 'tmp', 'arr',
+  'obj', 'opt', 'opts', 'cfg', 'ops', 'res', 'req', 'err', 'cnt', 'len',
+  'pos', 'src', 'dst', 'dir', 'cur', 'prev', 'acc', 'elm', 'doc', 'win',
+];
