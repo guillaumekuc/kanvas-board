@@ -42,7 +42,7 @@ function collapseOps(canvasData, ids, file, label) {
     }
   }
   for (const node of moving) operations.push({ op: 'remove', id: node.id });
-  return { operations, sub: subcanvas, id: card.id };
+  return { operations, subcanvas, id: card.id };
 }
 
 module.exports = collapseOps;

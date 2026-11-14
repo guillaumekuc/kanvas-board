@@ -77,18 +77,17 @@ const element = {
   },
   setAttribute() {},
 };
-let canvas = null;
+const active = { canvas: null, saves: 0 };
 const plugin = {
   app: { workspace: {} },
-  activeCanvas: () => canvas,
+  activeCanvas: () => active.canvas,
   addStatusBarItem: () => element,
 };
-let saves = 0;
 const counter = new ApmCounter(
   plugin,
   loadSettings(undefined, legacy),
   async () => {
-    saves++;
+    active.saves++;
   },
 );
 counter.element = element;
@@ -98,7 +97,7 @@ assert.strictEqual(element.text, '');
 counter.record(['Board.canvas#a']);
 assert.strictEqual(counter.pace(), 1);
 assert.strictEqual(element.shown, false);
-canvas = {};
+active.canvas = {};
 counter.refresh();
 assert.strictEqual(element.shown, true, 'shown on a canvas');
 assert.strictEqual(element.text, '1 AP15M · PB 23');
@@ -108,7 +107,7 @@ assert.strictEqual(element.text, '1 AP15M · PB 23');
   await counter.setWindow(5);
   assert.strictEqual(counter.settings.pb, 0);
   assert.strictEqual(counter.settings.unit, 'cards/5');
-  assert.strictEqual(saves, 1);
+  assert.strictEqual(active.saves, 1);
   console.log('ok');
 })().catch((error) => {
   console.error(error);

@@ -4,7 +4,7 @@ const path = require('path');
 
 const FIXED_TIME = new Date('2026-01-14T12:00:00Z');
 
-const card = (id, text, color, position) => ({
+const card = (id, text, { color, position }) => ({
   id,
   type: 'text',
   text,
@@ -17,18 +17,35 @@ const card = (id, text, color, position) => ({
 
 const BOARD = {
   nodes: [
-    card('wish0000000000a1', 'A cyan wish', '5', [0, 0]),
-    card('brief000000000a2', '[[Brief note]] · 1 questions', '3', [300, 0]),
-    card('plan0000000000a3', '[[Plan note]] · review plan', '6', [600, 0]),
-    card('done0000000000a4', 'Shipped · done · [[Plan note]]', '4', [0, 200]),
-    card('ctx00000000000a5', 'Context card', null, [300, 200]),
-    card('nest0000000000a6', '[[Sub.canvas|Sub]]', null, [600, 200]),
-    card('orng0000000000a7', 'Running elsewhere', '2', [0, 400]),
+    card('wish0000000000a1', 'A cyan wish', { color: '5', position: [0, 0] }),
+    card('brief000000000a2', '[[Brief note]] · 1 questions', {
+      color: '3',
+      position: [300, 0],
+    }),
+    card('plan0000000000a3', '[[Plan note]] · review plan', {
+      color: '6',
+      position: [600, 0],
+    }),
+    card('done0000000000a4', 'Shipped · done · [[Plan note]]', {
+      color: '4',
+      position: [0, 200],
+    }),
+    card('ctx00000000000a5', 'Context card', {
+      color: null,
+      position: [300, 200],
+    }),
+    card('nest0000000000a6', '[[Sub.canvas|Sub]]', {
+      color: null,
+      position: [600, 200],
+    }),
+    card('orng0000000000a7', 'Running elsewhere', {
+      color: '2',
+      position: [0, 400],
+    }),
     card(
       'para0000000000a8',
       'First paragraph\n\nSecond paragraph\n\n- one\n- two',
-      null,
-      [300, 400],
+      { color: null, position: [300, 400] },
     ),
     {
       id: 'grp00000000000a9',
@@ -57,8 +74,11 @@ const BOARD = {
 
 const SUB = {
   nodes: [
-    card('sub00000000000b1', 'Nested red', '1', [0, 0]),
-    card('sub00000000000b2', 'Nested green', '4', [300, 0]),
+    card('sub00000000000b1', 'Nested red', { color: '1', position: [0, 0] }),
+    card('sub00000000000b2', 'Nested green', {
+      color: '4',
+      position: [300, 0],
+    }),
   ],
   edges: [],
 };

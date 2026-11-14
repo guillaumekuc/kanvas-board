@@ -187,7 +187,7 @@ class CanvasBoardPlugin extends Plugin {
               ? board.parent.path + '/'
               : '';
           const file = this.freePath(folder, name, '.canvas');
-          const { operations, sub: subcanvas } = library.collapseOps(
+          const { operations, subcanvas } = library.collapseOps(
             canvas.getData(),
             selection.map((node) => node.id),
             file,
@@ -803,8 +803,9 @@ class CanvasBoardPlugin extends Plugin {
     const colorCommand =
       this.app.commands &&
       this.app.commands.commands[`${this.manifest.id}:color-${row[2]}`];
-    if (colorCommand)
+    if (colorCommand) {
       colorCommand.name = `${this.manifest.name}: ${this.colorCommandName(name)}`;
+    }
     for (const canvas of this.panes.keys()) this.refreshView(canvas);
   }
 
@@ -910,9 +911,9 @@ class CanvasBoardPlugin extends Plugin {
           ? ''
           : `${path.posix.dirname(board)}/`;
       let suffix = 1;
-      do
+      do {
         board = `${folder}Starter board${suffix > 1 ? ` ${suffix}` : ''}.canvas`;
-      while (vault.getAbstractFileByPath(board) && ++suffix);
+      } while (vault.getAbstractFileByPath(board) && ++suffix);
     }
     const id = () =>
       Array.from({ length: 16 }, () =>

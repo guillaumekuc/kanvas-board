@@ -9,10 +9,10 @@ childProcess.execFileSync = () => {
   throw missing;
 };
 
-let seed = 42;
+const generator = { seed: 42 };
 Math.random = () => {
-  seed = (seed * 1103515245 + 12345) % 2147483648;
-  return seed / 2147483648;
+  generator.seed = (generator.seed * 1103515245 + 12345) % 2147483648;
+  return generator.seed / 2147483648;
 };
 
 const RealDate = Date;

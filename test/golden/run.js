@@ -5,85 +5,10 @@ const operatingSystem = require('os');
 const path = require('path');
 const assert = require('assert');
 const { isDeepStrictEqual } = require('util');
-const { spawnSync } = require('child_process');
-const writeFixture = require('./fixture.js');
+const runScenario = require('./runScenario.js');
 const SCENARIOS = require('./scenarios.js');
 
-const REPO = path.resolve(__dirname, '..', '..');
-const SKIPPED = new Set(['.git', 'node_modules', 'test', 'style', 'data.json']);
 const GOLDEN = path.join(__dirname, 'golden.json');
-
-function pluginSources() {
-  const entries = fileSystem
-    .readdirSync(REPO)
-    .filter((name) => !SKIPPED.has(name));
-  return Object.fromEntries(
-    entries.map((name) => [name, path.join(REPO, name)]),
-  );
-}
-
-function readTree(root, directory = '') {
-  const snapshot = {};
-  for (const entry of fileSystem.readdirSync(path.join(root, directory), {
-    withFileTypes: true,
-  })) {
-    const relativePath = path.posix.join(directory, entry.name);
-    if (relativePath === '.obsidian') continue;
-    if (entry.isDirectory()) {
-      Object.assign(snapshot, readTree(root, relativePath));
-    } else {
-      snapshot[relativePath] = fileSystem.readFileSync(
-        path.join(root, relativePath),
-        'utf8',
-      );
-    }
-  }
-  return snapshot;
-}
-
-function runCommand(vaultRoot, commandArgs) {
-  const script = path.join(
-    vaultRoot,
-    '.obsidian',
-    'plugins',
-    'canvas-board',
-    'canvas.js',
-  );
-  const preload = path.join(__dirname, 'preload.js');
-  const result = spawnSync(
-    process.execPath,
-    ['-r', preload, script, ...commandArgs],
-    { cwd: vaultRoot, encoding: 'utf8' },
-  );
-  const errors = result.stderr
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => /^(\w*Error|Usage)/.test(line));
-  return {
-    args: commandArgs.join(' '),
-    status: result.status,
-    stdout: result.stdout,
-    errors,
-  };
-}
-
-function runScenario(commands) {
-  const vaultRoot = fileSystem.mkdtempSync(
-    path.join(operatingSystem.tmpdir(), 'kanvas-golden-'),
-  );
-  writeFixture(vaultRoot, pluginSources());
-  const outputs = commands.map((commandArgs) =>
-    runCommand(vaultRoot, commandArgs),
-  );
-  const anonymized = JSON.parse(
-    JSON.stringify(outputs)
-      .split(JSON.stringify(vaultRoot).slice(1, -1))
-      .join('<vault>'),
-  );
-  const files = readTree(vaultRoot);
-  fileSystem.rmSync(vaultRoot, { recursive: true, force: true });
-  return { outputs: anonymized, files };
-}
 
 const actual = Object.fromEntries(
   Object.entries(SCENARIOS).map(([name, commands]) => [
