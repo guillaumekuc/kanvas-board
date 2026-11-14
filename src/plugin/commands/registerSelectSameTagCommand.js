@@ -1,10 +1,11 @@
 const selectedCards = require('../selectedCards.js');
 
 function registerSelectSameTagCommand(plugin) {
-  const tagsOf = (selection) =>
-    new Set(
+  function tagsOf(selection) {
+    return new Set(
       selectedCards(selection).flatMap((node) => [...plugin.cardTagSet(node)]),
     );
+  }
   plugin.addCanvasCommand('select-same-tag', 'Select cards with the same tag', {
     menu: ['Select same tag', 'tag'],
     test: (canvas, selection) => tagsOf(selection).size > 0,

@@ -19,10 +19,11 @@ function layoutOps(canvasData, options) {
   const placed = dagrePlacement(moving, inner, layout);
   const offset = nearestFreeOffset(placed, { moving, fixed, direction });
   const [fromSide, toSide] = SIDES[direction];
-  const sides = (edge) =>
-    isBackEdge(edge, flow)
+  function sides(edge) {
+    return isBackEdge(edge, flow)
       ? { fromSide: toSide, toSide: fromSide }
       : { fromSide, toSide };
+  }
   return [
     ...placed.map((card) => ({
       op: 'set',

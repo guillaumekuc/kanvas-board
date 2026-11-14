@@ -5,8 +5,9 @@ function registerUnpackCommands(plugin) {
   // Unpack (dissolve) = cut and paste: the cards come out, the file goes to the
   // trash. Other links to the file (cards on any canvas, notes) would break:
   // then a choice. Unpack (copy) = copy and paste: the file stays.
-  const linked = (canvas, selection) =>
-    selection.length === 1 && !!plugin.linkedCanvas(selection[0]);
+  function linked(canvas, selection) {
+    return selection.length === 1 && !!plugin.linkedCanvas(selection[0]);
+  }
   plugin.addCanvasCommand('expand', 'Unpack subcanvas (dissolve)', {
     menu: ['Unpack subcanvas (dissolve)', 'package-open'],
     test: linked,

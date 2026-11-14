@@ -18,7 +18,7 @@ function check(board, ids) {
   const folder = notesFolder();
   const issues = [];
   const seen = new Set();
-  const walk = (current, depth) => {
+  function walk(current, depth) {
     seen.add(current);
     const colored = readBoard(current).nodes.filter(
       (node) => node.type !== 'group' && node.color,
@@ -42,7 +42,7 @@ function check(board, ids) {
         walk(canvas, depth + 1);
       }
     }
-  };
+  }
   walk(board, 0);
   return { issues };
 }

@@ -9,7 +9,7 @@ module.exports = {
   create(context) {
     const prefixes = context.options[0]?.prefixes ?? ['is', 'has'];
     const prefixPattern = new RegExp(`^(${prefixes.join('|')})[A-Z]`);
-    const reportBareName = (identifier) => {
+    function reportBareName(identifier) {
       if (prefixPattern.test(identifier.name)) return;
       context.report({
         node: identifier,
@@ -17,7 +17,7 @@ module.exports = {
           `Boolean '${identifier.name}' should start with ` +
           `${prefixes.join(' / ')}.`,
       });
-    };
+    }
     return {
       VariableDeclarator(declarator) {
         if (declarator.id.type !== 'Identifier') return;

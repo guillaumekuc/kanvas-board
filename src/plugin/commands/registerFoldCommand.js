@@ -5,9 +5,12 @@
 // the card (see foldOf), so Ctrl+Z undoes them. With several cards selected,
 // each one that can be folded (or unfolded) is.
 function registerFoldCommand(plugin) {
-  const canFold = (canvas, node) =>
-    !plugin.foldOf(node) &&
-    plugin.branchLinks(canvas, plugin.settings.foldDirection).has(node.id);
+  function canFold(canvas, node) {
+    return (
+      !plugin.foldOf(node) &&
+      plugin.branchLinks(canvas, plugin.settings.foldDirection).has(node.id)
+    );
+  }
   plugin.addCanvasCommand('fold', 'Fold branch', {
     menu: ['Fold branch', 'chevrons-down-up'],
     test: (canvas, selection) =>

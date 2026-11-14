@@ -1,7 +1,7 @@
 const fileSystem = require('fs');
 const path = require('path');
 
-const settings = () => {
+function settings() {
   try {
     return JSON.parse(
       fileSystem.readFileSync(path.join(__dirname, 'data.json'), 'utf8'),
@@ -9,6 +9,6 @@ const settings = () => {
   } catch (error) {
     return {};
   }
-};
+}
 
 module.exports = settings;

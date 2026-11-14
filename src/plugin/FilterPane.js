@@ -39,7 +39,9 @@ class FilterPane {
 
   buildSections() {
     const { plugin, canvas } = this;
-    const state = () => plugin.viewState(canvas);
+    function state() {
+      return plugin.viewState(canvas);
+    }
     this.colorsEl = this.addSection('Colors', () =>
       state().xcolors.clear(),
     ).createDiv({ cls: 'kanvas-board-chips' });

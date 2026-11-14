@@ -3,8 +3,11 @@ const { spawn } = require('child_process');
 
 // The terminal runs on its own: closing Obsidian does not stop the pass.
 function startPass([command, commandArguments], { vault, board }) {
-  const failed = (error) =>
-    new Notice(`Kanvas board: could not start the pass (${error.message})`);
+  function failed(error) {
+    return new Notice(
+      `Kanvas board: could not start the pass (${error.message})`,
+    );
+  }
   try {
     const child = spawn(command, commandArguments, {
       cwd: vault,
