@@ -6263,15 +6263,28 @@ var require_CanvasBoardSettings = __commonJS({
         this.plugin = plugin;
       }
       display() {
-        const { containerEl } = this;
-        containerEl.empty();
-        const text = (name, description, key) => new Setting(containerEl).setName(name).setDesc(description).addText(
+        this.containerEl.empty();
+        this.displayHotkeys();
+        this.displayBoard();
+        this.displayWorkflow();
+        this.displayPass();
+        this.displayApm();
+        this.displayApmTimes();
+        this.displayLayoutAndView();
+      }
+      addTextSetting(name, description, key) {
+        return new Setting(this.containerEl).setName(name).setDesc(description).addText(
           (component) => component.setPlaceholder(DEFAULTS[key]).setValue(this.plugin.settings[key]).onChange(async (value) => {
             this.plugin.settings[key] = value.trim() || DEFAULTS[key];
             await this.plugin.saveData(this.plugin.settings);
           })
         );
-        const heading = (name) => new Setting(containerEl).setName(name).setHeading();
+      }
+      addHeading(name) {
+        return new Setting(this.containerEl).setName(name).setHeading();
+      }
+      displayHotkeys() {
+        const { containerEl } = this;
         new Setting(containerEl).setName("Hotkeys").setDesc(
           "Every canvas board command can have a key; buttons and menu items show it."
         ).addButton(
@@ -6284,28 +6297,31 @@ var require_CanvasBoardSettings = __commonJS({
             }
           })
         );
-        heading("Board");
+      }
+      displayBoard() {
+        const { containerEl } = this;
+        this.addHeading("Board");
         new Setting(containerEl).setName("Starter board").setDesc(
           'A board with the color legend and first steps: the default board if it does not exist yet, else "Starter board.canvas".'
         ).addButton(
           (button) => button.setButtonText("Create").onClick(() => this.plugin.createStarterBoard())
         );
-        text(
+        this.addTextSetting(
           "Default board",
           'Board used by "Run pass" when the active tab is not a canvas, and by "Open the board" (ribbon).',
           "defaultBoard"
         );
-        text(
+        this.addTextSetting(
           "Card count warning",
           "The status bar card count turns to the warning color past this many cards (0: never).",
           "cardWarning"
         );
-        text(
+        this.addTextSetting(
           "Stale after (days)",
           'A yellow card whose note is untouched this many days gets a warning badge with its age; the roll-up adds "\xB7 Nd" from the same value (0: never).',
           "staleDays"
         );
-        text(
+        this.addTextSetting(
           "Agent notes folder",
           "Where the agent creates the notes and plan canvases for cards. Changing it does not move anything: rename the folder in Obsidian first, so links follow.",
           "notesFolder"
@@ -6320,13 +6336,16 @@ var require_CanvasBoardSettings = __commonJS({
           })
         );
         if (this.plugin.settings.archiveMode === "global") {
-          text(
+          this.addTextSetting(
             "Archive folder",
             "The folder for all boards' archive notes.",
             "archiveFolder"
           );
         }
-        heading("Workflow").setDesc(
+      }
+      displayWorkflow() {
+        const { containerEl } = this;
+        this.addHeading("Workflow").setDesc(
           'What each color does and its label, shown in tooltips, the filter pane and the color commands. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.'
         );
         const goColors = parseColors(this.plugin.settings.passColors);
@@ -6359,13 +6378,16 @@ var require_CanvasBoardSettings = __commonJS({
             );
           }
         }
-        heading("Pass");
-        text(
+      }
+      displayPass() {
+        const { containerEl } = this;
+        this.addHeading("Pass");
+        this.addTextSetting(
           "Claude path",
           "Empty: ~/.local/bin/claude (claude.exe on Windows) if it exists, else claude on PATH.",
           "claudePath"
         );
-        text(
+        this.addTextSetting(
           "Terminal command",
           "Starts the pass. Empty: Windows Terminal, macOS Terminal, or the first known terminal on Linux (gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm, foot, xterm). Otherwise {vault}, {board}, {claude} are replaced; quote parts with spaces.",
           "terminal"
@@ -6404,7 +6426,10 @@ var require_CanvasBoardSettings = __commonJS({
             );
           }
         });
-        heading("APM counter").setDesc(
+      }
+      displayApm() {
+        const { containerEl } = this;
+        this.addHeading("APM counter").setDesc(
           "Canvas cards touched in a rolling window, in the status bar while a canvas is the active tab."
         );
         const apm = this.plugin.apm;
@@ -6428,6 +6453,11 @@ var require_CanvasBoardSettings = __commonJS({
             this.display();
           });
         });
+      }
+      displayApmTimes() {
+        const { containerEl } = this;
+        const apm = this.plugin.apm;
+        const apmSettings = apm.settings;
         new Setting(containerEl).setName("Alert below").setDesc(
           "Percent of the personal best under which the counter turns red and pulses. Not in the first window of a session."
         ).addSlider(
@@ -6448,7 +6478,10 @@ var require_CanvasBoardSettings = __commonJS({
             apm.refresh();
           })
         );
-        heading("Layout");
+      }
+      displayLayoutAndView() {
+        const { containerEl } = this;
+        this.addHeading("Layout");
         new Setting(containerEl).setName("Layout direction").setDesc(
           'Tidy layout and agent-made plan canvases: the card a branch starts from comes first, following arrows in the fold direction ("depends on" prerequisites too). Shift-click the Tidy layout button, or commands "Tidy layout direction: \u2026", switch it on the fly.'
         ).addDropdown(
@@ -6459,7 +6492,7 @@ var require_CanvasBoardSettings = __commonJS({
             RL: "Right to left"
           }).setValue(this.plugin.settings.layoutDirection).onChange((value) => this.plugin.setLayoutDirection(value))
         );
-        heading("View");
+        this.addHeading("View");
         new Setting(containerEl).setName("Fold direction").setDesc(
           'Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Tidy layout reads branches the same way. Commands "Fold direction: \u2026" switch it on the fly.'
         ).addDropdown(
