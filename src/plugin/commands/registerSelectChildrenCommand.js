@@ -3,14 +3,15 @@ const selectedCards = require('../selectedCards.js');
 // Selection tools grow the selection to related cards. Children: every level
 // down, in the fold direction.
 function registerSelectChildrenCommand(plugin) {
-  const childIds = (canvas, selection) =>
-    new Set(
+  function childIds(canvas, selection) {
+    return new Set(
       selectedCards(selection).flatMap((node) =>
         plugin
           .branchLevels(canvas, node.id, plugin.settings.foldDirection)
           .flat(),
       ),
     );
+  }
   plugin.addCanvasCommand(
     'select-children',
     'Select children (all levels down, in the fold direction)',

@@ -6,11 +6,12 @@ const path = require('path');
 // through AppleScript (paths passed as argv, quoted by the shell); on Linux the
 // first known terminal on PATH. The agent runs in the vault folder with the
 // pass prompt.
-const onPath = (binary) =>
-  String(process.env.PATH || '')
+function onPath(binary) {
+  return String(process.env.PATH || '')
     .split(path.delimiter)
     .some(
       (folder) => folder && fileSystem.existsSync(path.join(folder, binary)),
     );
+}
 
 module.exports = onPath;

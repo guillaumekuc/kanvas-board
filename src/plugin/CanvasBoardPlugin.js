@@ -644,7 +644,9 @@ class CanvasBoardPlugin extends Plugin {
       return Boolean(eachNode && this.foldOf(eachNode));
     };
     const seen = new Set([id]);
-    const isNew = (each) => !seen.has(each) && Boolean(seen.add(each));
+    function isNew(each) {
+      return !seen.has(each) && Boolean(seen.add(each));
+    }
     const found = [];
     let level = [id];
     while (level.length) {
@@ -735,8 +737,11 @@ class CanvasBoardPlugin extends Plugin {
 
   hiddenByTagBranches(canvas, state) {
     if (!state.xtags.size || !this.settings.hideTagBranches) return [];
-    const isCard = (id) =>
-      canvas.nodes.get(id) && canvas.nodes.get(id).getData().type !== 'group';
+    function isCard(id) {
+      return (
+        canvas.nodes.get(id) && canvas.nodes.get(id).getData().type !== 'group'
+      );
+    }
     const tagged = [...canvas.nodes.values()].filter((node) => {
       const tags = this.cardTagSet(node);
       return [...state.xtags].some((tag) => tags.has(tag));
@@ -1035,12 +1040,13 @@ class CanvasBoardPlugin extends Plugin {
     const retyped = this.boardLibrary.applyOps(canvasData, operations);
     const history = canvas.history;
     const last = history && history.data && history.data[history.current];
-    const same = (data) =>
-      JSON.stringify(data, (key, value) =>
+    function same(data) {
+      return JSON.stringify(data, (key, value) =>
         value && typeof value === 'object' && !Array.isArray(value)
           ? Object.fromEntries(Object.entries(value).sort())
           : value,
-      ); // key order aside
+      );
+    } // key order aside
     if (canvas.pushHistory && (!last || same(last) !== same(before))) {
       canvas.pushHistory(before);
     }
@@ -1183,7 +1189,9 @@ class CanvasBoardPlugin extends Plugin {
         file && parseOrNull(await this.app.vault.cachedRead(file));
       return (canvasData && canvasData.nodes) || [];
     };
-    const isGo = (node) => goColorSet.has(node.color);
+    function isGo(node) {
+      return goColorSet.has(node.color);
+    }
     const open = this.openCanvas(board);
     const nodes = open ? open.getData().nodes : await read(board);
     if (nodes.some(isGo)) return true;

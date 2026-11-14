@@ -3,7 +3,9 @@ const YELLOW = '3';
 const GREEN = '4';
 
 function colorCounts(colors) {
-  const count = (color) => colors.filter((each) => each === color).length;
+  function count(color) {
+    return colors.filter((each) => each === color).length;
+  }
   return {
     red: count(RED),
     yellow: count(YELLOW),

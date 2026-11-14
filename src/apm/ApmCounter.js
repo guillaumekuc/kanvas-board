@@ -27,23 +27,10 @@ class ApmCounter {
     const { plugin } = this;
     this.element = plugin.addStatusBarItem();
     this.element.addClass('apm-counter');
-    const listen = (targetWindow) => {
-      const input = () => {
-        this.lastInput = Date.now();
-      };
-      plugin.registerDomEvent(targetWindow, 'keydown', input, {
-        capture: true,
-        passive: true,
-      });
-      plugin.registerDomEvent(targetWindow, 'mousedown', input, {
-        capture: true,
-        passive: true,
-      });
-    };
-    listen(window);
+    this.listenTo(window);
     plugin.registerEvent(
       this.app.workspace.on('window-open', (workspaceWindow) =>
-        listen(workspaceWindow.win),
+        this.listenTo(workspaceWindow.win),
       ),
     );
     plugin.registerEvent(
@@ -67,6 +54,16 @@ class ApmCounter {
     });
     plugin.registerInterval(window.setInterval(() => this.refresh(), 1000));
     this.refresh();
+  }
+
+  // Any key or click in a window counts as activity for the APM rate.
+  listenTo(targetWindow) {
+    const input = () => {
+      this.lastInput = Date.now();
+    };
+    const options = { capture: true, passive: true };
+    this.plugin.registerDomEvent(targetWindow, 'keydown', input, options);
+    this.plugin.registerDomEvent(targetWindow, 'mousedown', input, options);
   }
 
   async unload() {

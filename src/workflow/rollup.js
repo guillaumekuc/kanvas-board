@@ -15,7 +15,7 @@ function rollup(board) {
   const goColorSet = goColors();
   const days = staleDays();
   const changes = [];
-  const walk = (node) => {
+  function walk(node) {
     const operations = [];
     const colors = node.cards.map((card) => {
       if (!card.inside) return card.color;
@@ -30,7 +30,7 @@ function rollup(board) {
       changes.push({ board: node.board, via, operations });
     }
     return colorCounts(colors);
-  };
+  }
   walk(tree(board));
   return changes;
 }

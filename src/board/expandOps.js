@@ -16,7 +16,9 @@ function expandOps(canvasData, { id, subcanvas, group }) {
   const taken = new Set(
     [...canvasData.nodes, ...canvasData.edges].map((item) => item.id),
   );
-  const freeId = (itemId) => (taken.has(itemId) ? newId() : itemId);
+  function freeId(itemId) {
+    return taken.has(itemId) ? newId() : itemId;
+  }
   const ids = new Map(
     subcanvas.nodes.map((node) => [node.id, freeId(node.id)]),
   );

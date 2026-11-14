@@ -9,8 +9,9 @@ function noteIssues(source, color) {
   const keys = frontmatter
     ? [...frontmatter.matchAll(/^(\w[\w-]*):/gm)].map((match) => match[1])
     : [];
-  const hasHeading = (heading) =>
-    new RegExp(`^${heading}\s*$`, 'm').test(source);
+  function hasHeading(heading) {
+    return new RegExp(`^${heading}\s*$`, 'm').test(source);
+  }
   const issues = [];
   if (keys.join() !== 'context') {
     const listed = keys.join(', ') || 'none';

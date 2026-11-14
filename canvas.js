@@ -143,7 +143,9 @@ var require_vaultPath = __commonJS({
   "src/board/vaultPath.js"(exports2, module2) {
     var { ROOT } = require_constants();
     var path = require("path");
-    var vaultPath = (relativePath) => path.join(ROOT, relativePath);
+    function vaultPath(relativePath) {
+      return path.join(ROOT, relativePath);
+    }
     module2.exports = vaultPath;
   }
 });
@@ -153,14 +155,14 @@ var require_readFileBoard = __commonJS({
   "src/board/readFileBoard.js"(exports2, module2) {
     var vaultPath = require_vaultPath();
     var fileSystem = require("fs");
-    var readFileBoard = (board) => {
+    function readFileBoard(board) {
       const canvasData = JSON.parse(
         fileSystem.readFileSync(vaultPath(board), "utf8") || "{}"
       );
       canvasData.nodes ||= [];
       canvasData.edges ||= [];
       return canvasData;
-    };
+    }
     module2.exports = readFileBoard;
   }
 });
@@ -270,7 +272,7 @@ var require_settings = __commonJS({
   "src/workflow/settings.js"(exports2, module2) {
     var fileSystem = require("fs");
     var path = require("path");
-    var settings = () => {
+    function settings() {
       try {
         return JSON.parse(
           fileSystem.readFileSync(path.join(__dirname, "data.json"), "utf8")
@@ -278,7 +280,7 @@ var require_settings = __commonJS({
       } catch (error) {
         return {};
       }
-    };
+    }
     module2.exports = settings;
   }
 });
@@ -324,7 +326,7 @@ var require_settings2 = __commonJS({
   "src/board/settings.js"(exports2, module2) {
     var fileSystem = require("fs");
     var path = require("path");
-    var settings = () => {
+    function settings() {
       try {
         return JSON.parse(
           fileSystem.readFileSync(path.join(__dirname, "data.json"), "utf8")
@@ -332,7 +334,7 @@ var require_settings2 = __commonJS({
       } catch (error) {
         return {};
       }
-    };
+    }
     module2.exports = settings;
   }
 });
@@ -487,7 +489,9 @@ var require_tree2 = __commonJS({
   "src/workflow/tree.js"(exports2, module2) {
     var baseTree = require_tree();
     var noteState = require_noteState();
-    var tree = (board) => baseTree(board, { noteInfo: noteState });
+    function tree(board) {
+      return baseTree(board, { noteInfo: noteState });
+    }
     module2.exports = tree;
   }
 });
@@ -509,7 +513,9 @@ var require_treeCommand = __commonJS({
 var require_colorArg = __commonJS({
   "src/board/colorArg.js"(exports2, module2) {
     var { COLORS } = require_constants();
-    var colorArg = (color) => color === void 0 ? void 0 : color === "none" ? "" : COLORS[color] || color;
+    function colorArg(color) {
+      return color === void 0 ? void 0 : color === "none" ? "" : COLORS[color] || color;
+    }
     module2.exports = colorArg;
   }
 });
@@ -641,7 +647,9 @@ var require_applyOps = __commonJS({
 var require_serialize = __commonJS({
   "src/board/serialize.js"(exports2, module2) {
     function serialize(canvasData) {
-      const lines = (items) => items.map((item) => "		" + JSON.stringify(item)).join(",\n");
+      function lines(items) {
+        return items.map((item) => "		" + JSON.stringify(item)).join(",\n");
+      }
       return `{
 	"nodes":[
 ${lines(canvasData.nodes)}
@@ -722,7 +730,9 @@ var require_fitHeight = __commonJS({
 // src/board/newId.js
 var require_newId = __commonJS({
   "src/board/newId.js"(exports2, module2) {
-    var newId = () => [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join("");
+    function newId() {
+      return [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join("");
+    }
     module2.exports = newId;
   }
 });
@@ -733,9 +743,11 @@ var require_place = __commonJS({
     function place(canvasData, { near, width, height }) {
       const nearNode = canvasData.nodes.find((node) => node.id === near);
       if (!nearNode) throw new Error("no node " + near);
-      const overlaps = (left, top) => canvasData.nodes.some(
-        (node) => left < node.x + node.width + 20 && left + width + 20 > node.x && top < node.y + node.height + 20 && top + height + 20 > node.y
-      );
+      function overlaps(left, top) {
+        return canvasData.nodes.some(
+          (node) => left < node.x + node.width + 20 && left + width + 20 > node.x && top < node.y + node.height + 20 && top + height + 20 > node.y
+        );
+      }
       for (let step = 0; step < 20; step++) {
         const right = {
           x: nearNode.x + nearNode.width + 40,
@@ -810,7 +822,9 @@ var require_defaultDir = __commonJS({
   "src/board/defaultDir.js"(exports2, module2) {
     var { SIDES } = require_constants();
     var settings = require_settings2();
-    var defaultDir = () => SIDES[settings().layoutDirection] ? settings().layoutDirection : "TB";
+    function defaultDir() {
+      return SIDES[settings().layoutDirection] ? settings().layoutDirection : "TB";
+    }
     module2.exports = defaultDir;
   }
 });
@@ -3990,7 +4004,7 @@ var require_dagrePlacement = __commonJS({
 // src/board/bounds.js
 var require_bounds = __commonJS({
   "src/board/bounds.js"(exports2, module2) {
-    var bounds = (nodes) => {
+    function bounds(nodes) {
       const left = Math.min(...nodes.map((node) => node.x)), top = Math.min(...nodes.map((node) => node.y));
       return {
         x: left,
@@ -3998,7 +4012,7 @@ var require_bounds = __commonJS({
         width: Math.max(...nodes.map((node) => node.x + node.width)) - left,
         height: Math.max(...nodes.map((node) => node.y + node.height)) - top
       };
-    };
+    }
     module2.exports = bounds;
   }
 });
@@ -4008,7 +4022,9 @@ var require_overlapsAny = __commonJS({
   "src/board/overlapsAny.js"(exports2, module2) {
     var GAP = 40;
     function overlapsAny(moving, others, offset) {
-      const isNear = (card, other) => card.x + offset.x < other.x + other.width + GAP && card.x + offset.x + card.width + GAP > other.x && card.y + offset.y < other.y + other.height + GAP && card.y + offset.y + card.height + GAP > other.y;
+      function isNear(card, other) {
+        return card.x + offset.x < other.x + other.width + GAP && card.x + offset.x + card.width + GAP > other.x && card.y + offset.y < other.y + other.height + GAP && card.y + offset.y + card.height + GAP > other.y;
+      }
       return moving.some((card) => others.some((other) => isNear(card, other)));
     }
     module2.exports = overlapsAny;
@@ -4068,7 +4084,9 @@ var require_layoutOps = __commonJS({
       const placed = dagrePlacement(moving, inner, layout);
       const offset = nearestFreeOffset(placed, { moving, fixed, direction });
       const [fromSide, toSide] = SIDES[direction];
-      const sides = (edge) => isBackEdge(edge, flow) ? { fromSide: toSide, toSide: fromSide } : { fromSide, toSide };
+      function sides(edge) {
+        return isBackEdge(edge, flow) ? { fromSide: toSide, toSide: fromSide } : { fromSide, toSide };
+      }
       return [
         ...placed.map((card) => ({
           op: "set",
@@ -4123,7 +4141,9 @@ var require_withGroupMembers = __commonJS({
       const groups = canvasData.nodes.filter(
         (node) => node.type === "group" && pick.has(node.id)
       );
-      const isInside = (node, group) => node.x >= group.x && node.y >= group.y && node.x + node.width <= group.x + group.width && node.y + node.height <= group.y + group.height;
+      function isInside(node, group) {
+        return node.x >= group.x && node.y >= group.y && node.x + node.width <= group.x + group.width && node.y + node.height <= group.y + group.height;
+      }
       for (const node of canvasData.nodes) {
         if (groups.some((group) => isInside(node, group))) pick.add(node.id);
       }
@@ -4280,7 +4300,9 @@ var require_centeredFreeOffset = __commonJS({
 // src/board/byReading.js
 var require_byReading = __commonJS({
   "src/board/byReading.js"(exports2, module2) {
-    var byReading = (first, second) => first.y - second.y || first.x - second.x;
+    function byReading(first, second) {
+      return first.y - second.y || first.x - second.x;
+    }
     module2.exports = byReading;
   }
 });
@@ -4326,7 +4348,9 @@ var require_expandOps = __commonJS({
       const taken = new Set(
         [...canvasData.nodes, ...canvasData.edges].map((item) => item.id)
       );
-      const freeId = (itemId) => taken.has(itemId) ? newId() : itemId;
+      function freeId(itemId) {
+        return taken.has(itemId) ? newId() : itemId;
+      }
       const ids = new Map(
         subcanvas.nodes.map((node) => [node.id, freeId(node.id)])
       );
@@ -4419,14 +4443,20 @@ var require_linksTo = __commonJS({
     var vaultFileIndex = require_vaultFileIndex();
     var LINKABLE = /\.(md|canvas)$/;
     function linksTo(relativePath, board, skipId) {
-      const hits = (target) => findFile(target) === relativePath;
-      const isLinking = (text) => relinkText(text, hits, () => "\0") !== (text || "");
-      const isLinkingCard = (node) => node.type === "file" ? node.file === relativePath : isLinking(node.text);
-      const linksIn = (file, source) => {
+      function hits(target) {
+        return findFile(target) === relativePath;
+      }
+      function isLinking(text) {
+        return relinkText(text, hits, () => "\0") !== (text || "");
+      }
+      function isLinkingCard(node) {
+        return node.type === "file" ? node.file === relativePath : isLinking(node.text);
+      }
+      function linksIn(file, source) {
         if (file.endsWith(".md")) return isLinking(source) ? [file] : [];
         const nodes = (parseOrNull(source) || {}).nodes || [];
         return nodes.filter((node) => !(file === board && node.id === skipId)).filter(isLinkingCard).map((node) => `${file} (${node.id})`);
-      };
+      }
       const name2 = path.posix.basename(relativePath);
       const found = [];
       for (const file of vaultFileIndex.paths()) {
@@ -4446,13 +4476,13 @@ var require_toTrash = __commonJS({
     var vaultPath = require_vaultPath();
     var fileSystem = require("fs");
     var path = require("path");
-    var toTrash = (relativePath) => {
+    function toTrash(relativePath) {
       const destination = vaultPath(
         path.posix.join(".trash", path.posix.basename(relativePath))
       );
       fileSystem.mkdirSync(path.dirname(destination), { recursive: true });
       fileSystem.renameSync(vaultPath(relativePath), destination);
-    };
+    }
     module2.exports = toTrash;
   }
 });
@@ -4495,7 +4525,9 @@ var require_unpackCommand = __commonJS({
 var require_centerDistance = __commonJS({
   "src/board/centerDistance.js"(exports2, module2) {
     function centerDistance(first, second) {
-      const center = (node) => [node.x + node.width / 2, node.y + node.height / 2];
+      function center(node) {
+        return [node.x + node.width / 2, node.y + node.height / 2];
+      }
       const [firstX, firstY] = center(first);
       const [secondX, secondY] = center(second);
       return Math.hypot(firstX - secondX, firstY - secondY);
@@ -4555,7 +4587,9 @@ var require_mergeEdgeOps = __commonJS({
     var keptEdgeOps = require_keptEdgeOps();
     function mergeEdgeOps(canvasData, { keep, gone }) {
       const merged = /* @__PURE__ */ new Set([keep.id, ...gone]);
-      const nodeById = (id) => canvasData.nodes.find((node) => node.id === id);
+      function nodeById(id) {
+        return canvasData.nodes.find((node) => node.id === id);
+      }
       const operations = [];
       const linksByOther = /* @__PURE__ */ new Map();
       for (const edge of canvasData.edges) {
@@ -4583,7 +4617,9 @@ var require_mergeEdgeOps = __commonJS({
 var require_mostUrgent = __commonJS({
   "src/board/mostUrgent.js"(exports2, module2) {
     var { URGENCY } = require_constants();
-    var mostUrgent = (colors) => URGENCY.find((color) => colors.includes(color)) || "";
+    function mostUrgent(colors) {
+      return URGENCY.find((color) => colors.includes(color)) || "";
+    }
     module2.exports = mostUrgent;
   }
 });
@@ -4770,7 +4806,9 @@ var require_archiveDir = __commonJS({
 // src/board/noteName.js
 var require_noteName = __commonJS({
   "src/board/noteName.js"(exports2, module2) {
-    var noteName = (text) => (String(text).split("\n").find((line) => line.trim()) || "Card").replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, "").replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/[#^|[\]*_`>:\\/"?<]/g, "").replace(/\s+/g, " ").trim().slice(0, 60).trim() || "Card";
+    function noteName(text) {
+      return (String(text).split("\n").find((line) => line.trim()) || "Card").replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, "").replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/[#^|[\]*_`>:\\/"?<]/g, "").replace(/\s+/g, " ").trim().slice(0, 60).trim() || "Card";
+    }
     module2.exports = noteName;
   }
 });
@@ -4778,7 +4816,9 @@ var require_noteName = __commonJS({
 // src/board/yamlStr.js
 var require_yamlStr = __commonJS({
   "src/board/yamlStr.js"(exports2, module2) {
-    var yamlStr = (value) => JSON.stringify(String(value));
+    function yamlStr(value) {
+      return JSON.stringify(String(value));
+    }
     module2.exports = yamlStr;
   }
 });
@@ -4841,7 +4881,9 @@ var require_noteContexts = __commonJS({
   "src/board/noteContexts.js"(exports2, module2) {
     function noteContexts(frontmatter) {
       if (!frontmatter) return [];
-      const unquote = (value) => value.trim().replace(/^(["'])(.*)\1$/, "$2");
+      function unquote(value) {
+        return value.trim().replace(/^(["'])(.*)\1$/, "$2");
+      }
       const match = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m.exec(frontmatter);
       if (!match) return [];
       return (match[1].trim() ? match[1].replace(/^\[|\]$/g, "").split(",") : match[2].split(/\r?\n/).filter((line) => line.trim()).map((line) => line.replace(/^\s+-\s*/, ""))).map(unquote).filter(Boolean);
@@ -4870,7 +4912,9 @@ var require_cardContexts = __commonJS({
 // src/board/today.js
 var require_today = __commonJS({
   "src/board/today.js"(exports2, module2) {
-    var today = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    function today() {
+      return (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    }
     module2.exports = today;
   }
 });
@@ -4921,12 +4965,12 @@ var require_restoreOps = __commonJS({
       if (!frontmatter || !/^archived-from:/m.test(frontmatter)) {
         throw new Error("not an archived card note");
       }
-      const get = (field) => {
+      function get(field) {
         const match = new RegExp(`^${field}: (.*)$`, "m").exec(frontmatter);
         if (!match) return void 0;
         const value = match[1].trim();
         return value.startsWith('"') ? JSON.parse(value) : value;
-      };
+      }
       const board = get("archived-from").replace(/^\[\[|\]\]$/g, "");
       const body = source.slice(source.indexOf("---", 3) + 3).replace(/^\r?\n/, "").replace(/\s+$/, "");
       const type = get("card-type") || "text";
@@ -5010,7 +5054,9 @@ var require_colorCounts = __commonJS({
     var YELLOW = "3";
     var GREEN = "4";
     function colorCounts(colors) {
-      const count = (color) => colors.filter((each) => each === color).length;
+      function count(color) {
+        return colors.filter((each) => each === color).length;
+      }
       return {
         red: count(RED),
         yellow: count(YELLOW),
@@ -5067,10 +5113,10 @@ var require_nestedCardUpdate = __commonJS({
 var require_staleDays = __commonJS({
   "src/workflow/staleDays.js"(exports2, module2) {
     var settings = require_settings();
-    var staleDays = () => {
+    function staleDays() {
       const days = Number(settings().staleDays);
       return Number.isFinite(days) && settings().staleDays !== void 0 ? days : 7;
-    };
+    }
     module2.exports = staleDays;
   }
 });
@@ -5089,7 +5135,7 @@ var require_rollup = __commonJS({
       const goColorSet = goColors();
       const days = staleDays();
       const changes = [];
-      const walk = (node) => {
+      function walk(node) {
         const operations = [];
         const colors = node.cards.map((card) => {
           if (!card.inside) return card.color;
@@ -5104,7 +5150,7 @@ var require_rollup = __commonJS({
           changes.push({ board: node.board, via, operations });
         }
         return colorCounts(colors);
-      };
+      }
       walk(tree(board));
       return changes;
     }
@@ -5140,11 +5186,11 @@ var require_cardLinkTargets = __commonJS({
 // src/workflow/cardTextOk.js
 var require_cardTextOk = __commonJS({
   "src/workflow/cardTextOk.js"(exports2, module2) {
-    var cardTextOk = (raw) => {
+    function cardTextOk(raw) {
       const text = raw.trim();
       if (!text.includes("[[")) return text.split("\n").length <= 3;
       return /^\[\[[^\]]+\]\]( · .+)?$/.test(text) || /^[^\n]+ · done · \[\[[^\]]+\]\]$/.test(text);
-    };
+    }
     module2.exports = cardTextOk;
   }
 });
@@ -5189,7 +5235,9 @@ var require_noteIssues = __commonJS({
     function noteIssues(source, color) {
       const frontmatter = (source.match(/^---\n([\s\S]*?)\n---/) || [])[1];
       const keys = frontmatter ? [...frontmatter.matchAll(/^(\w[\w-]*):/gm)].map((match) => match[1]) : [];
-      const hasHeading = (heading) => new RegExp(`^${heading}s*$`, "m").test(source);
+      function hasHeading(heading) {
+        return new RegExp(`^${heading}s*$`, "m").test(source);
+      }
       const issues = [];
       if (keys.join() !== "context") {
         const listed = keys.join(", ") || "none";
@@ -5218,7 +5266,12 @@ var require_notesFolder = __commonJS({
   "src/workflow/notesFolder.js"(exports2, module2) {
     var { DEFAULT_NOTES_FOLDER } = require_constants2();
     var settings = require_settings();
-    var notesFolder = () => String(settings().notesFolder || DEFAULT_NOTES_FOLDER).replace(/[/]+$/, "") + "/";
+    function notesFolder() {
+      return String(settings().notesFolder || DEFAULT_NOTES_FOLDER).replace(
+        /[/]+$/,
+        ""
+      ) + "/";
+    }
     module2.exports = notesFolder;
   }
 });
@@ -5239,7 +5292,7 @@ var require_check = __commonJS({
       const folder = notesFolder();
       const issues = [];
       const seen = /* @__PURE__ */ new Set();
-      const walk = (current, depth) => {
+      function walk(current, depth) {
         seen.add(current);
         const colored = readBoard(current).nodes.filter(
           (node) => node.type !== "group" && node.color
@@ -5261,7 +5314,7 @@ var require_check = __commonJS({
             walk(canvas, depth + 1);
           }
         }
-      };
+      }
       walk(board, 0);
       return { issues };
     }
@@ -5313,15 +5366,17 @@ var require_parseArguments = __commonJS({
     var { DEFAULT_BOARD } = require_constants();
     var settings = require_settings2();
     function parseArguments2(args) {
-      const isValue = (index) => index > 0 && args[index - 1].startsWith("--");
+      function isValue(index) {
+        return index > 0 && args[index - 1].startsWith("--");
+      }
       const positional = args.filter(
         (argument, index) => !argument.startsWith("--") && !isValue(index)
       );
       const [commandName, boardArg, ...rest] = positional;
-      const option = (name2) => {
+      function option(name2) {
         const index = args.indexOf(name2);
         return index >= 0 ? args[index + 1] : void 0;
-      };
+      }
       const defaultBoard = String(settings().defaultBoard || "").trim();
       return {
         commandName,

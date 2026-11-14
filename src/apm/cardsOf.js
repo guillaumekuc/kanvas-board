@@ -1,6 +1,6 @@
 const { CONTENT_KEYS } = require('./constants.js');
 
-const cardsOf = (json) => {
+function cardsOf(json) {
   const map = new Map();
   for (const node of JSON.parse(json || '{}').nodes || []) {
     map.set(
@@ -9,6 +9,6 @@ const cardsOf = (json) => {
     );
   }
   return map;
-};
+}
 
 module.exports = cardsOf;

@@ -5,7 +5,9 @@ const keptEdgeOps = require('./keptEdgeOps.js');
 // become one (see keptEdgeOps).
 function mergeEdgeOps(canvasData, { keep, gone }) {
   const merged = new Set([keep.id, ...gone]);
-  const nodeById = (id) => canvasData.nodes.find((node) => node.id === id);
+  function nodeById(id) {
+    return canvasData.nodes.find((node) => node.id === id);
+  }
   const operations = [];
   const linksByOther = new Map();
   for (const edge of canvasData.edges) {
