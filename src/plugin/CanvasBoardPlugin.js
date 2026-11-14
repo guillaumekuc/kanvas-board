@@ -230,7 +230,7 @@ class CanvasBoardPlugin extends Plugin {
   // A notice with an Undo button: one canvas undo step and the files the action made go to the trash. Only while
   // the board has not changed since (else the undo would take back something else).
   // `restore` ({ path, content }) brings a trashed file back on undo (unpack). Redirected links are not undone.
-  undoNotice(canvas, message, files = [], restore = null) {
+  undoNotice(canvas, message, { files = [], restore = null } = {}) {
     const history = canvas.history;
     const historyIndex = history ? history.current : null;
     const noticeContent = createFragment((fragment) => {
@@ -1200,7 +1200,7 @@ class CanvasBoardPlugin extends Plugin {
 
   // mode: dissolve (file to trash, other links break), copy (file kept), group (cards in a group named after the
   // file, other links redirected: cards on this board get an edge to the group, other cards and notes link this board).
-  async unpack(canvas, node, file, mode, links = []) {
+  async unpack(canvas, node, { file, mode, links = [] }) {
     const subcanvas = JSON.parse((await this.app.vault.read(file)) || '{}');
     const content = JSON.stringify(
       { nodes: subcanvas.nodes || [], edges: subcanvas.edges || [] },
@@ -1314,12 +1314,10 @@ class CanvasBoardPlugin extends Plugin {
       copy: `unpacked ${cardCount} card${plural(cardCount)}, ${file.path} kept`,
       group: `unpacked ${cardCount} card${plural(cardCount)} into a group, ${linkCount} link${plural(linkCount)} redirected`,
     }[mode];
-    this.undoNotice(
-      canvas,
-      what,
-      [],
-      mode === 'copy' ? null : { path: file.path, content },
-    );
+    this.undoNotice(canvas, what, {
+      files: [],
+      restore: mode === 'copy' ? null : { path: file.path, content },
+    });
   }
 
   linkedCanvas(node) {

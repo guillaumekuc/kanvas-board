@@ -2,7 +2,7 @@ const { AbstractInputSuggest } = require('obsidian');
 
 // Names under a text field that contain what is typed (all of them when it is empty); picking one calls `onPick`.
 class NameSuggest extends AbstractInputSuggest {
-  constructor(app, inputEl, names, onPick) {
+  constructor(app, inputEl, { names, onPick }) {
     super(app, inputEl);
     this.names = names;
     this.onPick = onPick;

@@ -17,13 +17,12 @@ function registerTemplateInsertCommand(plugin) {
             `Kanvas board: no template in ${TEMPLATE_DIR} (Save selected cards as a template)`,
           );
         } else {
-          new Picker(
-            plugin.app,
-            'Template',
-            files,
-            (file) => file.basename,
-            (file) => plugin.insertTemplate(canvas, file),
-          ).open();
+          new Picker(plugin.app, {
+            placeholder: 'Template',
+            items: files,
+            label: (file) => file.basename,
+            onChoose: (file) => plugin.insertTemplate(canvas, file),
+          }).open();
         }
       }
       return true;

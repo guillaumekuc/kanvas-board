@@ -30,7 +30,7 @@ function registerArchiveCommand(plugin) {
       plugin.undoNotice(
         canvas,
         `archived ${selection.length} card${selection.length > 1 ? 's' : ''}`,
-        notes,
+        { files: notes },
       );
     },
   });

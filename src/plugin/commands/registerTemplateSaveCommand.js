@@ -22,10 +22,9 @@ function registerTemplateSaveCommand(plugin) {
             file,
           ]),
         );
-        new NamePrompt(
-          plugin.app,
-          'Template name',
-          async (name) => {
+        new NamePrompt(plugin.app, {
+          title: 'Template name',
+          onSubmit: async (name) => {
             const content = JSON.stringify(
               (({ nodes, edges }) => ({ nodes, edges }))(
                 canvas.getSelectionData(),
@@ -46,13 +45,9 @@ function registerTemplateSaveCommand(plugin) {
             await plugin.app.vault.create(file, content);
             new Notice(`Kanvas board: template saved to ${file}`);
           },
-          {
-            suggestions: [...existing.values()].map((file) =>
-              templateName(file),
-            ),
-            overwrite: (name) => existing.has(name.toLowerCase()),
-          },
-        ).open();
+          suggestions: [...existing.values()].map((file) => templateName(file)),
+          overwrite: (name) => existing.has(name.toLowerCase()),
+        }).open();
       },
     },
   );

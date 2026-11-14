@@ -2,10 +2,11 @@ const { Modal, Notice, Setting } = require('obsidian');
 const NameSuggest = require('./NameSuggest.js');
 
 class NamePrompt extends Modal {
-  constructor(app, title, onSubmit, options = {}) {
+  // options: { title, onSubmit, suggestions, overwrite }
+  constructor(app, options) {
     super(app);
-    this.title = title;
-    this.onSubmit = onSubmit;
+    this.title = options.title;
+    this.onSubmit = options.onSubmit;
     this.options = options;
   }
 
@@ -51,11 +52,9 @@ class NamePrompt extends Modal {
           refresh();
         });
         if (suggestions && suggestions.length) {
-          suggest = new NameSuggest(
-            this.app,
-            text.inputEl,
-            suggestions,
-            (suggestion) => {
+          suggest = new NameSuggest(this.app, text.inputEl, {
+            names: suggestions,
+            onPick: (suggestion) => {
               text.setValue(suggestion);
               value = suggestion;
               refresh();
@@ -64,7 +63,7 @@ class NamePrompt extends Modal {
                 isPicked = false;
               }, 0); // the Enter that picked a suggestion does not also submit
             },
-          );
+          });
         }
         text.inputEl.addEventListener('keydown', (event) => {
           if (

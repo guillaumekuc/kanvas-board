@@ -5,7 +5,7 @@ const { Modal, Setting } = require('obsidian');
 // reads "Overwrite", in the warning color).
 // Unpack (dissolve) when other cards or notes link the subcanvas: group and redirect, keep the file, or break them.
 class UnpackChoice extends Modal {
-  constructor(app, file, links, onPick) {
+  constructor(app, file, { links, onPick }) {
     super(app);
     this.file = file;
     this.links = links;
