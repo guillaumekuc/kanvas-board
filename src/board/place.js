@@ -1,4 +1,4 @@
-function place(canvasData, near, width, height) {
+function place(canvasData, { near, width, height }) {
   const nearNode = canvasData.nodes.find((node) => node.id === near);
   if (!nearNode) throw new Error('no node ' + near);
   const overlaps = (x, y) =>

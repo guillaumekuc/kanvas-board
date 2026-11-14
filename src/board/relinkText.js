@@ -4,13 +4,12 @@ const path = require('path');
 function relinkText(text, hits, replace) {
   return (text || '').replace(
     /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
-    (link, target, subpath, alias) =>
-      hits(target.trim())
-        ? replace(
-            alias ||
-              path.posix.basename(target.trim()).replace(/\.canvas$/, ''),
-          )
-        : link,
+    (link, ...groups) => {
+      const [target, , alias] = groups; // the #subpath group is not needed
+      if (!hits(target.trim())) return link;
+      const name = path.posix.basename(target.trim()).replace(/\.canvas$/, '');
+      return replace(alias || name);
+    },
   );
 }
 
