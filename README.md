@@ -90,6 +90,12 @@ The plugin starts processes (`child_process`): the terminal for a pass, and `can
 | Terminal command | empty: the platform's terminal |
 | Claude path | empty: `~/.local/bin/claude`, else `claude` |
 
+No setting screen: `skipFolders` in `data.json` (folder names, e.g. `["private"]`) keeps `canvas.js` out of those folders when it looks up linked notes.
+
+## License
+
+MIT, see `LICENSE`.
+
 ## Credits
 
 Layout by [dagre](https://github.com/dagrejs/dagre) (MIT, `dagre.LICENSE`).
