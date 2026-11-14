@@ -7,23 +7,19 @@ const {
 } = require('./constants.js');
 const { Notice, Plugin, setIcon } = require('obsidian');
 const { spawn } = require('child_process');
-const ApmCounter = require('../apm/ApmCounter.js');
 const boardLibrary = require('./boardLibrary.js');
+const COMMAND_GROUPS = require('./commands/index.js');
+const createApi = require('./createApi.js');
+const startApmCounter = require('./startApmCounter.js');
 const CanvasBoardSettings = require('./CanvasBoardSettings.js');
-const dagre = require('../../dagre.min.js');
 const emptyViewState = require('./emptyViewState.js');
-const loadSettings = require('../apm/loadSettings.js');
 const claudeBin = require('./claudeBin.js');
 const defaultLaunch = require('./defaultLaunch.js');
 const FilterPane = require('./FilterPane.js');
-const FindBar = require('./FindBar.js');
 const fileSystem = require('fs');
-const NamePrompt = require('./NamePrompt.js');
 const nextTurn = require('./nextTurn.js');
 const parseColors = require('./parseColors.js');
 const path = require('path');
-const Picker = require('./Picker.js');
-const UnpackChoice = require('./UnpackChoice.js');
 
 class CanvasBoardPlugin extends Plugin {
   async onload() {
@@ -33,697 +29,90 @@ class CanvasBoardPlugin extends Plugin {
       this.app.vault.adapter.basePath,
       this.manifest.dir,
     );
-    const library = boardLibrary;
-    const { applyOps, layoutOps } = library;
-    this.boardLibrary = library;
-    let legacyApm;
-    if (!this.settings.apm) {
-      try {
-        legacyApm = JSON.parse(
-          fileSystem.readFileSync(
-            path.join(pluginDir, '..', 'apm-counter', 'data.json'),
-            'utf8',
-          ),
-        );
-      } catch (error) {
-        /* never installed */
-      }
-    }
-    this.settings.apm = loadSettings(this.settings.apm, legacyApm);
-    this.apm = new ApmCounter(this, this.settings.apm, () =>
-      this.saveData(this.settings),
-    );
-    this.apm.load();
-    this.register(() => this.apm.unload());
-    this.api = {
-      read: (board) => {
-        const canvas = this.openCanvas(board);
-        return canvas ? JSON.stringify(canvas.getData()) : null;
-      },
-      // Changing a card's type needs setData() without the card, then with it, to keep its id.
-      apply: async (board, operations) => {
-        const canvas = this.openCanvas(board);
-        if (!canvas) return null;
-        const canvasData = canvas.getData();
-        const retyped = applyOps(canvasData, operations);
-        if (retyped.length) {
-          canvas.setData({
-            ...canvasData,
-            nodes: canvasData.nodes.filter(
-              (node) => !retyped.includes(node.id),
-            ),
-          });
-        }
-        canvas.setData(canvasData);
-        canvas.requestSave();
-        await new Promise((resolve) => setTimeout(resolve, 2500));
-        return 'obsidian';
-      },
-    };
+    this.boardLibrary = boardLibrary;
+    this.apm = startApmCounter(this, pluginDir);
+    this.api = createApi(this);
     this.installSkill(pluginDir);
     this.addCommand({
       id: 'reset-skill',
       name: "Reset agent skill to the plugin's version (overwrites your edits)",
       callback: () => this.resetSkill(pluginDir),
     });
-
-    for (const [name, color, key] of COLORS) {
-      this.addCommand({
-        id: `color-${key}`,
-        name: this.colorCommandName(name),
-        checkCallback: (checking) => {
-          const canvas = this.activeCanvas();
-          if (!canvas || canvas.selection.size === 0) return false;
-          if (!checking) {
-            for (const node of canvas.selection) node.setColor(color);
-            canvas.requestSave();
-          }
-          return true;
-        },
-      });
-    }
-
-    // Selected cards only (2+; the rest never moves): never the whole board unasked (Ctrl+A first). Ctrl+Z undoes it.
-    this.addCommand({
-      id: 'tidy-layout',
-      name: 'Tidy layout (selected cards)',
-      checkCallback: (checking) => {
-        const canvas = this.activeCanvas();
-        if (!canvas) return false;
-        if (!checking) {
-          if (canvas.selection.size < 2) {
-            new Notice(
-              'Tidy layout: select the cards to tidy first (2 or more; Ctrl+A for the whole canvas).',
-            );
-            return true;
-          }
-          const ids = [...canvas.selection].map((node) => node.id);
-          const canvasData = canvas.getData();
-          this.edit(
-            canvas,
-            layoutOps(canvasData, {
-              ids,
-              direction: this.settings.layoutDirection,
-              dagre,
-              flow: this.settings.foldDirection,
-            }),
-            canvasData,
-          );
-        }
-        return true;
-      },
-    });
-    this.addCommand({
-      id: 'tidy-direction-next',
-      name: 'Tidy layout direction: next',
-      callback: () => this.cycleLayoutDirection(),
-    });
-    for (const [direction, { name }] of Object.entries(LAYOUT_DIRS)) {
-      this.addCommand({
-        id: `tidy-direction-${direction.toLowerCase()}`,
-        name: `Tidy layout direction: ${name}`,
-        checkCallback: (checking) => {
-          if (this.settings.layoutDirection === direction) return false;
-          if (!checking) this.setLayoutDirection(direction);
-          return true;
-        },
-      });
-    }
-
-    // Refactor and archive commands: one undo step each (Ctrl+Z), same code as canvas.js for agents.
-    // Each is also a right-click item (label `menu`) on the cards it applies to.
-    // `menu` is [title, Lucide icon], or null for a command with no menu item.
-    const actions = (this.actions = []);
-    const runAction = (this.runAction = (run, canvas, selection) =>
-      Promise.resolve(run(canvas, selection)).catch(
-        (error) => new Notice(`Kanvas board: ${error.message}`),
-      ));
-    const canvasCommand = (id, name, menu, test, run) => {
-      actions.push({ id, menu, test, run });
-      this.addCommand({
-        id,
-        name,
-        checkCallback: (checking) => {
-          const canvas = this.activeCanvas();
-          if (!canvas || !test(canvas, [...canvas.selection])) return false;
-          if (!checking) runAction(run, canvas, [...canvas.selection]);
-          return true;
-        },
-      });
-    };
-    const isText = (node) => node.getData().type === 'text';
-
-    // Pack / unpack (ids stay collapse / expand so hotkeys keep working). Pack moves cards into a new subcanvas.
-    canvasCommand(
-      'collapse',
-      'Pack into subcanvas',
-      ['Pack into subcanvas', 'package'],
-      (canvas, selection) => selection.length > 0,
-      (canvas, selection) =>
-        new NamePrompt(this.app, 'Subcanvas name', async (name) => {
-          const board = this.activeFile();
-          const folder =
-            board.parent && board.parent.path !== '/'
-              ? board.parent.path + '/'
-              : '';
-          const file = this.freePath(folder, name, '.canvas');
-          const { operations, subcanvas } = library.collapseOps(
-            canvas.getData(),
-            {
-              ids: selection.map((node) => node.id),
-              file,
-              label: name,
-            },
-          );
-          await this.app.vault.create(
-            file,
-            JSON.stringify(subcanvas, null, '\t'),
-          );
-          this.edit(canvas, operations);
-          this.undoNotice(
-            canvas,
-            `packed ${selection.length} card${selection.length > 1 ? 's' : ''} into ${file}`,
-            [file],
-          );
-        }).open(),
-    );
-
-    // Unpack (dissolve) = cut and paste: the cards come out, the file goes to the trash. Other links to the file
-    // (cards on any canvas, notes) would break: then a choice. Unpack (copy) = copy and paste: the file stays.
-    const linked = (canvas, selection) =>
-      selection.length === 1 && !!this.linkedCanvas(selection[0]);
-    canvasCommand(
-      'expand',
-      'Unpack subcanvas (dissolve)',
-      ['Unpack subcanvas (dissolve)', 'package-open'],
-      linked,
-      async (canvas, [node]) => {
-        const file = this.linkedCanvas(node);
-        const links = await this.subcanvasLinks(file, canvas, node.id);
-        if (!links.length) return this.unpack(canvas, node, file, 'dissolve');
-        new UnpackChoice(this.app, file, links, (mode) =>
-          this.unpack(canvas, node, file, mode, links).catch(
-            (error) => new Notice(`Kanvas board: ${error.message}`),
-          ),
-        ).open();
-      },
-    );
-    canvasCommand(
-      'unpack-copy',
-      'Unpack subcanvas (copy)',
-      ['Unpack subcanvas (copy)', 'copy'],
-      linked,
-      (canvas, [node]) =>
-        this.unpack(canvas, node, this.linkedCanvas(node), 'copy'),
-    );
-
-    canvasCommand(
-      'merge',
-      'Merge selected cards',
-      ['Merge cards', 'merge'],
-      (canvas, selection) => selection.length > 1 && selection.every(isText),
-      (canvas, selection) =>
-        this.edit(
-          canvas,
-          library.mergeOps(
-            canvas.getData(),
-            selection.map((node) => node.id),
-          ),
-        ),
-    );
-
-    // Only the top-level split is a menu item; the others stay commands.
-    for (const [separator, label] of [
-      ['paragraph', 'paragraph'],
-      ['bullet', 'top-level bullet'],
-      ['h1', 'heading 1'],
-      ['h2', 'heading 2'],
-      ['h3', 'heading 3'],
-    ]) {
-      canvasCommand(
-        `split-${separator}`,
-        `Split card by ${label}`,
-        separator === 'bullet' ? ['Split by top-level bullet', 'split'] : null,
-        (canvas, selection) =>
-          selection.length === 1 &&
-          isText(selection[0]) &&
-          !selection[0].isEditing,
-        (canvas, [node]) =>
-          this.edit(
-            canvas,
-            library.splitOps(canvas.getData(), node.id, separator),
-          ),
-      );
-    }
-
-    // The card being edited, with text selected: the selection becomes a new card.
-    canvasCommand(
-      'extract',
-      'Extract current selection to a new card',
-      ['Extract current selection to a new card', 'text-select'],
-      (canvas, selection) =>
-        selection.length === 1 &&
-        selection[0].isEditing &&
-        !!this.cardEditor(selection[0]),
-      (canvas, [node]) => {
-        const editor = this.cardEditor(node);
-        const part = editor.getSelection();
-        if (!part.trim()) throw new Error('select some text in the card first');
-        const from = editor.posToOffset(editor.getCursor('from'));
-        const before = editor.getValue();
-        editor.replaceSelection('');
-        node.blur();
-        const canvasData = canvas.getData();
-        const savedNode = canvasData.nodes.find((x) => x.id === node.id);
-        if (savedNode) savedNode.text = before; // the editor may not have saved yet: work from what it showed
-        this.edit(
-          canvas,
-          library.extractOps(canvasData, { id: node.id, part, from }),
-          canvasData,
-        );
-      },
-    );
-
-    canvasCommand(
-      'archive',
-      'Archive selected cards',
-      ['Archive', 'archive'],
-      (canvas, selection) => selection.length > 0,
-      async (canvas, selection) => {
-        const board = this.activeFile().path;
-        const canvasData = canvas.getData();
-        const folder = library.archiveDir(board, this.settings);
-        if (!this.app.vault.getAbstractFileByPath(folder)) {
-          await this.app.vault.createFolder(folder);
-        }
-        const notes = [];
-        for (const node of selection) {
-          const archived = library.archiveNote(canvasData, {
-            id: node.id,
-            board,
-            date: window.moment().format('YYYY-MM-DD'),
-            contexts: this.cardContexts(node, board),
-          });
-          notes.push(this.freePath(folder + '/', archived.name, '.md'));
-          await this.app.vault.create(
-            notes[notes.length - 1],
-            archived.content,
-          );
-        }
-        this.edit(
-          canvas,
-          selection.map((node) => ({ op: 'remove', id: node.id })),
-        );
-        this.undoNotice(
-          canvas,
-          `archived ${selection.length} card${selection.length > 1 ? 's' : ''}`,
-          notes,
-        );
-      },
-    );
-
-    // Fold hides the cards linked to a card, following edges in the "Fold direction" setting (out: the cards it
-    // points to, then on; in: the cards pointing to it, then on). Unfold shows N levels again and folds the cards
-    // at level N, so a branch opens in stages, like folders. Folds are stored on the card (see foldOf), so Ctrl+Z
-    // undoes them. With several cards selected, each one that can be folded (or unfolded) is.
-    const canFold = (canvas, node) =>
-      !this.foldOf(node) &&
-      this.branchLinks(canvas, this.settings.foldDirection).has(node.id);
-    canvasCommand(
-      'fold',
-      'Fold branch',
-      ['Fold branch', 'chevrons-down-up'],
-      (canvas, selection) => selection.some((node) => canFold(canvas, node)),
-      (canvas, selection) =>
-        this.setFolds(
-          canvas,
-          new Map(
-            selection
-              .filter((node) => canFold(canvas, node))
-              .map((node) => [node.id, this.settings.foldDirection]),
-          ),
-        ),
-    );
-    for (const [levels, id, name, menu] of [
-      [
-        1,
-        'unfold',
-        'Unfold branch 1 level',
-        ['Unfold 1 level', 'chevron-down'],
-      ],
-      [2, 'unfold-2', 'Unfold branch 2 levels', null],
-      [3, 'unfold-3', 'Unfold branch 3 levels', null],
-      [
-        Infinity,
-        'unfold-all',
-        'Unfold whole branch',
-        ['Unfold whole branch', 'chevrons-up-down'],
-      ],
-    ]) {
-      canvasCommand(
-        id,
-        name,
-        menu,
-        (canvas, selection) =>
-          selection.some((node) => this.unfoldTargets(canvas, node.id).length),
-        (canvas, selection) =>
-          this.unfold(
-            canvas,
-            [
-              ...new Set(
-                selection.flatMap((node) =>
-                  this.unfoldTargets(canvas, node.id),
-                ),
-              ),
-            ],
-            levels,
-          ),
-      );
-    }
-    for (const [direction, label] of [
-      ['out', 'outgoing (cards it points to)'],
-      ['in', 'incoming (cards pointing to it)'],
-    ]) {
-      this.addCommand({
-        id: `fold-direction-${direction}`,
-        name: `Fold direction: ${label}`,
-        checkCallback: (checking) => {
-          if (this.settings.foldDirection === direction) return false;
-          if (!checking) {
-            this.settings.foldDirection = direction;
-            this.saveData(this.settings);
-            new Notice(`Kanvas board: fold direction ${label}`);
-          }
-          return true;
-        },
-      });
-    }
-
-    // Templates: the selection (and edges between its cards) as Templates/Canvas/<name>.canvas. Typing the name
-    // suggests the existing templates: picking one (or typing its name) overwrites it, the button says so.
-    const templates = () =>
-      this.app.vault
-        .getFiles()
-        .filter(
-          (file) =>
-            file.extension === 'canvas' &&
-            file.path.startsWith(library.TEMPLATE_DIR + '/'),
-        );
-    const templateName = (file) =>
-      file.path.slice(library.TEMPLATE_DIR.length + 1, -'.canvas'.length); // subfolders kept
-    canvasCommand(
-      'template-save',
-      'Save selected cards as a template',
-      ['Save as template', 'layout-template'],
-      (canvas, selection) => selection.length > 0,
-      (canvas) => {
-        const existing = new Map(
-          templates().map((file) => [templateName(file).toLowerCase(), file]),
-        );
-        new NamePrompt(
-          this.app,
-          'Template name',
-          async (name) => {
-            const content = JSON.stringify(
-              (({ nodes, edges }) => ({ nodes, edges }))(
-                canvas.getSelectionData(),
-              ),
-              null,
-              '\t',
-            );
-            const old = existing.get(name.toLowerCase());
-            if (old) {
-              await this.app.vault.modify(old, content);
-              new Notice(`Kanvas board: template ${old.path} overwritten`);
-              return;
-            }
-            if (!this.app.vault.getAbstractFileByPath(library.TEMPLATE_DIR)) {
-              await this.app.vault.createFolder(library.TEMPLATE_DIR);
-            }
-            const file = this.freePath(
-              library.TEMPLATE_DIR + '/',
-              name,
-              '.canvas',
-            );
-            await this.app.vault.create(file, content);
-            new Notice(`Kanvas board: template saved to ${file}`);
-          },
-          {
-            suggestions: [...existing.values()].map(templateName),
-            overwrite: (name) => existing.has(name.toLowerCase()),
-          },
-        ).open();
-      },
-    );
-    // Selection tools: the selection grows to related cards (visible ones only: hidden cards never stay selected).
-    // Children: every level down, in the fold direction. The selected cards stay selected.
-    const cards = (selection) =>
-      selection.filter((node) => !node.from && node.getData().type !== 'group');
-    const selectMore = (this.selectMore = (canvas, selection, keep) => {
-      const add = [...canvas.nodes.values()].filter(
-        (node) =>
-          node.getData().type !== 'group' &&
-          !this.isHidden(canvas, node) &&
-          keep(node),
-      );
-      canvas.updateSelection(() => {
-        canvas.selection.clear();
-        for (const node of [...selection, ...add]) canvas.selection.add(node);
-      });
-      return add.length;
-    });
-    const childIds = (canvas, selection) =>
-      new Set(
-        cards(selection).flatMap((node) =>
-          this.branchLevels(
-            canvas,
-            node.id,
-            this.settings.foldDirection,
-          ).flat(),
-        ),
-      );
-    canvasCommand(
-      'select-children',
-      'Select children (all levels down, in the fold direction)',
-      ['Select children', 'list-tree'],
-      (canvas, selection) =>
-        [...childIds(canvas, selection)].some(
-          (id) =>
-            canvas.nodes.get(id) &&
-            !this.isHidden(canvas, canvas.nodes.get(id)) &&
-            !canvas.selection.has(canvas.nodes.get(id)),
-        ),
-      (canvas, selection) => {
-        const ids = childIds(canvas, selection);
-        selectMore(canvas, selection, (node) => ids.has(node.id));
-      },
-    );
-    const tagsOf = (selection) =>
-      new Set(cards(selection).flatMap((node) => [...this.cardTagSet(node)]));
-    canvasCommand(
-      'select-same-tag',
-      'Select cards with the same tag',
-      ['Select same tag', 'tag'],
-      (canvas, selection) => tagsOf(selection).size > 0,
-      (canvas, selection) => {
-        const tags = tagsOf(selection);
-        selectMore(canvas, selection, (node) =>
-          [...this.cardTagSet(node)].some((tag) => tags.has(tag)),
-        );
-      },
-    );
-    canvasCommand(
-      'select-same-color',
-      'Select cards with the same color',
-      ['Select same color', 'palette'],
-      (canvas, selection) => cards(selection).length > 0,
-      (canvas, selection) => {
-        const colors = new Set(
-          cards(selection).map((node) => node.getData().color || ''),
-        );
-        selectMore(canvas, selection, (node) =>
-          colors.has(node.getData().color || ''),
-        );
-      },
-    );
-
-    this.addCommand({
-      id: 'template-insert',
-      name: 'Insert cards from template',
-      checkCallback: (checking) => {
-        const canvas = this.activeCanvas();
-        if (!canvas) return false;
-        if (!checking) {
-          const files = this.app.vault
-            .getFiles()
-            .filter(
-              (file) =>
-                file.extension === 'canvas' &&
-                file.path.startsWith(library.TEMPLATE_DIR + '/'),
-            );
-          if (!files.length) {
-            new Notice(
-              `Kanvas board: no template in ${library.TEMPLATE_DIR} (Save selected cards as a template)`,
-            );
-          } else {
-            new Picker(
-              this.app,
-              'Template',
-              files,
-              (file) => file.basename,
-              (file) => this.insertTemplate(canvas, file),
-            ).open();
-          }
-        }
-        return true;
-      },
-    });
-
-    // Search, filter: the active canvas only. Filter and folds hide cards (styles.css). The filter is
-    // view only (the file is untouched, it resets when the board is reopened); folds are in the file.
-    this.views = new WeakMap(); // canvas → { xcolors, xtags (hidden colors and tags), hidden (card ids) }
+    // Search, filter: the active canvas only. Filter and folds hide cards
+    // (styles.css). The filter is view only (the file is untouched, it resets
+    // when the board is reopened); folds are in the file.
+    this.views = new WeakMap(); // canvas → emptyViewState() shape
     this.panes = new Map(); // canvas → FilterPane, one per open canvas
-    // A find bar like the one in notes (count, previous / next, all), named after Obsidian's "Search current file".
     this.finds = new Map(); // canvas → FindBar
+    this.actions = [];
+    for (const register of COMMAND_GROUPS) register(this);
+    this.startStatusBar();
+    this.registerEvent(
+      this.app.workspace.on('active-leaf-change', () => this.tick()),
+    );
+    this.registerInterval(window.setInterval(() => this.tick(), 2000));
+    this.tick();
+    this.register(() => this.clearScreens());
+  }
+
+  // Refactor and archive commands: one undo step each (Ctrl+Z), same code as
+  // canvas.js for agents. Each is also a right-click item on the cards it
+  // applies to: `menu` is [title, Lucide icon], or null for none.
+  addCanvasCommand(id, name, { menu, test, run }) {
+    this.actions.push({ id, menu, test, run });
     this.addCommand({
-      id: 'find',
-      name: 'Search current canvas',
+      id,
+      name,
       checkCallback: (checking) => {
         const canvas = this.activeCanvas();
-        if (!canvas) return false;
-        if (!checking) {
-          let findBar = this.finds.get(canvas);
-          if (!findBar) {
-            findBar = new FindBar(this, canvas);
-            this.finds.set(canvas, findBar);
-          }
-          findBar.open();
-        }
+        if (!canvas || !test(canvas, [...canvas.selection])) return false;
+        if (!checking) this.runAction(run, canvas, [...canvas.selection]);
         return true;
       },
     });
-    this.addCommand({
-      id: 'filter',
-      name: 'Toggle filter pane',
-      checkCallback: (checking) => {
-        const canvas = this.activeCanvas();
-        if (!canvas) return false;
-        if (!checking) this.pane(canvas).toggle();
-        return true;
-      },
-    });
-    this.addCommand({
-      id: 'show-all',
-      name: 'Unhide all',
-      checkCallback: (checking) => {
-        const canvas = this.activeCanvas();
-        if (!canvas || !this.viewLabel(canvas)) return false;
-        if (!checking) this.showAll(canvas);
-        return true;
-      },
-    });
+  }
 
-    // Right-click on one card, on a selection, or inside a card being edited (Extract).
-    const addActions = (menu, canvas, selection) => {
-      for (const action of actions) {
-        if (action.menu && action.test(canvas, selection)) {
-          menu.addItem((item) =>
-            item
-              .setTitle(this.keyedTitle(action.menu[0], action.id))
-              .setIcon(action.menu[1])
-              .setSection('canvas-board')
-              .onClick(() => runAction(action.run, canvas, selection)),
-          );
-        }
-      }
-    };
-    this.registerEvent(
-      this.app.workspace.on('canvas:selection-menu', (menu, canvas) =>
-        addActions(menu, canvas, [...canvas.selection]),
-      ),
+  runAction(run, canvas, selection) {
+    return Promise.resolve(run(canvas, selection)).catch(
+      (error) => new Notice(`Kanvas board: ${error.message}`),
     );
-    this.registerEvent(
-      this.app.workspace.on('canvas:node-menu', (menu, node) =>
-        addActions(
-          menu,
-          node.canvas,
-          node.canvas.selection.has(node) ? [...node.canvas.selection] : [node],
-        ),
-      ),
-    );
-    this.registerEvent(
-      this.app.workspace.on('editor-menu', (menu, editor) => {
-        const canvas = this.activeCanvas();
-        const node =
-          canvas &&
-          [...canvas.selection].find(
-            (node) => node.isEditing && this.cardEditor(node) === editor,
-          );
-        if (node) addActions(menu, canvas, [node]);
-      }),
-    );
+  }
 
-    const isArchived = (file) => {
-      const frontmatter =
-        file &&
-        file.extension === 'md' &&
-        (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
-      return !!(frontmatter && frontmatter['archived-from']);
-    };
-    this.addCommand({
-      id: 'restore',
-      name: 'Restore archived card (from its archive note)',
-      checkCallback: (checking) => {
-        const file = this.app.workspace.getActiveFile();
-        if (!isArchived(file)) return false;
-        if (!checking) {
-          this.restore(file).catch(
-            (error) => new Notice(`Kanvas board: ${error.message}`),
-          );
-        }
-        return true;
-      },
-    });
-    // Right-click on an archive note: a link to it, the file explorer, its tab.
-    this.registerEvent(
-      this.app.workspace.on('file-menu', (menu, file) => {
-        if (isArchived(file)) {
-          menu.addItem((item) =>
-            item
-              .setTitle('Restore archived card')
-              .setIcon('archive-restore')
-              .setSection('canvas-board')
-              .onClick(() =>
-                this.restore(file).catch(
-                  (error) => new Notice(`Kanvas board: ${error.message}`),
-                ),
-              ),
-          );
-        }
-      }),
+  addActionItems(menu, canvas, selection) {
+    const shown = this.actions.filter(
+      (action) => action.menu && action.test(canvas, selection),
     );
+    for (const action of shown) {
+      menu.addItem((item) =>
+        item
+          .setTitle(this.keyedTitle(action.menu[0], action.id))
+          .setIcon(action.menu[1])
+          .setSection('canvas-board')
+          .onClick(() => this.runAction(action.run, canvas, selection)),
+      );
+    }
+  }
 
-    this.addCommand({
-      id: 'run-pass',
-      name: 'Run pass (recheck the board)',
-      callback: () => this.runPass(),
-    });
-    this.addCommand({
-      id: 'open-board',
-      name: 'Open the board',
-      callback: () => this.openBoard(),
-    });
-    this.addCommand({
-      id: 'create-starter-board',
-      name: 'Create a starter board (color legend and first cards)',
-      callback: () => this.createStarterBoard(),
-    });
-    this.addRibbonIcon('kanban-square', 'Open the board (Kanvas board)', () =>
-      this.openBoard(),
+  // The selection grows to the visible cards that `keep` accepts (hidden
+  // cards never stay selected); the selected cards stay selected.
+  selectMore(canvas, selection, keep) {
+    const added = [...canvas.nodes.values()].filter(
+      (node) =>
+        node.getData().type !== 'group' &&
+        !this.isHidden(canvas, node) &&
+        keep(node),
     );
+    canvas.updateSelection(() => {
+      canvas.selection.clear();
+      for (const node of [...selection, ...added]) canvas.selection.add(node);
+    });
+    return added.length;
+  }
 
-    // Card count of the active canvas in the status bar: boards get hard to manage past a threshold.
-    // Next to it, the active filter and folds; click to change them.
+  // Card count of the active canvas in the status bar: boards get hard to
+  // manage past a threshold. Next to it, the active filter and folds; click
+  // to change them.
+  startStatusBar() {
     this.countEl = this.addStatusBarItem();
     this.viewEl = this.addStatusBarItem();
     this.viewEl.addClass('mod-clickable');
@@ -731,48 +120,45 @@ class CanvasBoardPlugin extends Plugin {
       const canvas = this.activeCanvas();
       if (canvas) this.pane(canvas).toggle(true);
     });
-    const tick = () => {
-      this.updateCount();
-      // Cards that come into view or are added get the classes again. Every open canvas has its filter pane.
-      const open = new Set();
-      for (const leaf of this.app.workspace.getLeavesOfType('canvas')) {
-        const canvas = leaf.view.canvas;
-        if (!canvas || !canvas.wrapperEl) continue;
-        open.add(canvas);
-        this.decorate(leaf.view);
-        this.refreshView(canvas); // folds come with the file: every canvas
-        this.pane(canvas).update();
+  }
+
+  // Cards that come into view or are added get the classes again. Every open
+  // canvas has its filter pane; closed canvases lose theirs.
+  tick() {
+    this.updateCount();
+    const open = new Set();
+    for (const leaf of this.app.workspace.getLeavesOfType('canvas')) {
+      const canvas = leaf.view.canvas;
+      if (!canvas || !canvas.wrapperEl) continue;
+      open.add(canvas);
+      this.decorate(leaf.view);
+      this.refreshView(canvas); // folds come with the file: every canvas
+      this.pane(canvas).update();
+    }
+    for (const widgets of [this.panes, this.finds]) {
+      const closed = [...widgets].filter(([canvas]) => !open.has(canvas));
+      for (const [canvas, widget] of closed) {
+        widget.destroy();
+        widgets.delete(canvas);
       }
-      for (const [canvas, pane] of this.panes) {
-        if (!open.has(canvas)) {
-          pane.destroy();
-          this.panes.delete(canvas);
-        }
-      }
-      for (const [canvas, findBar] of this.finds) {
-        if (!open.has(canvas)) {
-          findBar.destroy();
-          this.finds.delete(canvas);
-        }
-      }
-    };
-    this.registerEvent(this.app.workspace.on('active-leaf-change', tick));
-    this.registerInterval(window.setInterval(tick, 2000));
-    tick();
-    this.register(() => {
-      for (const pane of this.panes.values()) pane.destroy();
-      this.panes.clear();
-      for (const findBar of this.finds.values()) findBar.destroy();
-      this.finds.clear();
-      for (const leaf of this.app.workspace.getLeavesOfType('canvas')) {
-        const canvas = leaf.view.canvas;
-        this.undecorate(leaf.view);
-        if (!this.views.has(canvas)) continue;
-        delete canvas.updateSelection;
-        delete canvas.applyHistory;
-        this.paint(canvas, new Set(), new Map()); // folds stay in the file, only the screen is cleared
-      }
-    });
+    }
+  }
+
+  // On unload: folds stay in the file, only the screen is cleared.
+  clearScreens() {
+    for (const widget of [...this.panes.values(), ...this.finds.values()]) {
+      widget.destroy();
+    }
+    this.panes.clear();
+    this.finds.clear();
+    for (const leaf of this.app.workspace.getLeavesOfType('canvas')) {
+      const canvas = leaf.view.canvas;
+      this.undecorate(leaf.view);
+      if (!this.views.has(canvas)) continue;
+      delete canvas.updateSelection;
+      delete canvas.applyHistory;
+      this.paint(canvas, new Set(), new Map());
+    }
   }
 
   // --- Presentation: where the commands show on screen ---------------------------------------------------------
@@ -1655,7 +1041,7 @@ class CanvasBoardPlugin extends Plugin {
     if (selectedCount) this.countEl.appendText(` · ${selectedCount} selected`);
     this.countEl.setAttr(
       'aria-label',
-      (over ? `over ${max} · ` : '') +
+      (isOverLimit ? `over ${max} · ` : '') +
         Object.entries(byColor)
           .map(([colorName, count]) => `${colorName} ${count}`)
           .join(' · '),
