@@ -21,7 +21,7 @@ const sourceDir = path.resolve(
 const vaultRoot = fileSystem.mkdtempSync(
   path.join(operatingSystem.tmpdir(), 'kanvas-smoke-'),
 );
-const pluginDir = path.join(vaultRoot, '.obsidian', 'plugins', 'canvas-board');
+const pluginDir = path.join(vaultRoot, '.obsidian', 'plugins', 'kanvas-board');
 fileSystem.mkdirSync(pluginDir, { recursive: true });
 for (const name of PLUGIN_FILES) {
   const source = path.join(sourceDir, name);
@@ -55,7 +55,7 @@ async function main() {
   app.vault = stub.anything();
   app.vault.adapter = { basePath: path.resolve(pluginDir, '..', '..', '..') };
   const manifest = {
-    id: 'canvas-board',
+    id: 'kanvas-board',
     // eslint-disable-next-line id-denylist -- Obsidian manifest field
     dir: path.relative(app.vault.adapter.basePath, pluginDir),
   };

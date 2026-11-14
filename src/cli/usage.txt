@@ -1,9 +1,9 @@
-// Read and edit Obsidian canvas boards safely, for the canvas-board skill. Ships with the canvas-board plugin.
-// If the board is open in Obsidian, edits go through the plugin's API (`app.plugins.plugins['canvas-board'].api`,
+// Read and edit Obsidian canvas boards safely, for the kanvas-board skill. Ships with the kanvas-board plugin.
+// If the board is open in Obsidian, edits go through the plugin's API (`app.plugins.plugins['kanvas-board'].api`,
 // called with the Obsidian CLI `obsidian eval`) so Obsidian does not save its in-memory copy over them;
 // otherwise the .canvas file is edited directly. Built from src/ (npm run build); the plugin bundles the same board code.
 //
-// Usage (paths relative to the vault root; CANVAS = node .obsidian/plugins/canvas-board/canvas.js):
+// Usage (paths relative to the vault root; CANVAS = node .obsidian/plugins/kanvas-board/canvas.js):
 //   CANVAS read <board>                       nodes and edges as JSON
 //   CANVAS tree [<board>] [--active]          board + linked notes (level, parts) + nested canvases, as JSON
 //                                             --active: go (cyan/purple)/orange cards, cards edged to them, yellow/red count

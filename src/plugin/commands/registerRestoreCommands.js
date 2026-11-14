@@ -24,7 +24,7 @@ function registerRestoreCommands(plugin) {
           item
             .setTitle('Restore archived card')
             .setIcon('archive-restore')
-            .setSection('canvas-board')
+            .setSection('kanvas-board')
             .onClick(() =>
               plugin
                 .restore(file)

@@ -109,7 +109,7 @@ module.exports = function writeFixture(vaultRoot, pluginSources) {
     vaultRoot,
     '.obsidian',
     'plugins',
-    'canvas-board',
+    'kanvas-board',
   );
   fileSystem.mkdirSync(pluginDir, { recursive: true });
   for (const [name, source] of Object.entries(pluginSources)) {
