@@ -6,6 +6,7 @@ const COMMAND_GROUPS = require('./commands/index.js');
 const createApi = require('./createApi.js');
 const createStarterBoard = require('./starterBoard/createStarterBoard.js');
 const startApmCounter = require('./startApmCounter.js');
+const unpackSubcanvas = require('./unpack/unpackSubcanvas.js');
 const CanvasBoardSettings = require('./CanvasBoardSettings.js');
 const emptyViewState = require('./emptyViewState.js');
 const claudeBin = require('./claudeBin.js');
@@ -1094,124 +1095,8 @@ class CanvasBoardPlugin extends Plugin {
 
   // mode: dissolve (file to trash, other links break), copy (file kept), group (cards in a group named after the
   // file, other links redirected: cards on this board get an edge to the group, other cards and notes link this board).
-  async unpack(canvas, node, { file, mode, links = [] }) {
-    const subcanvas = JSON.parse((await this.app.vault.read(file)) || '{}');
-    const content = JSON.stringify(
-      { nodes: subcanvas.nodes || [], edges: subcanvas.edges || [] },
-      null,
-      '\t',
-    );
-    const label = (
-      ((node.getData().text || '').match(/\|([^\]]+)\]\]/) || [])[1] ||
-      file.basename
-    ).trim(); // the card's alias, else the file name
-    const operations = this.boardLibrary.expandOps(canvas.getData(), {
-      id: node.id,
-      subcanvas: { nodes: subcanvas.nodes || [], edges: subcanvas.edges || [] },
-      group: mode === 'group' ? label : undefined,
-    });
-    const here = this.canvasFile(canvas);
-    const isSub = (from) => (target) => {
-      const destination = this.app.metadataCache.getFirstLinkpathDest(
-        target,
-        from,
-      );
-      return !!destination && destination.path === file.path;
-    };
-    if (mode === 'group') {
-      const [fromSide, toSide] =
-        this.boardLibrary.SIDES[this.settings.layoutDirection] ||
-        this.boardLibrary.SIDES.TB;
-      for (const link of links.filter((link) => link.path === here)) {
-        const node = canvas.getData().nodes.find((x) => x.id === link.id);
-        if (!node) continue;
-        operations.push({
-          op: 'set',
-          id: node.id,
-          text:
-            node.type === 'text'
-              ? this.boardLibrary.relinkText(
-                  node.text,
-                  isSub(here),
-                  (linkText) => linkText,
-                )
-              : label,
-        });
-        operations.push({
-          op: 'edge',
-          edge: {
-            id: [...Array(16)]
-              .map(() => Math.floor(Math.random() * 16).toString(16))
-              .join(''),
-            fromNode: node.id,
-            fromSide: fromSide,
-            toNode: operations.group,
-            toSide: toSide,
-          },
-        });
-      }
-    }
-    this.edit(canvas, operations);
-    if (mode === 'group') {
-      const toLink = (alias) => `[[${here}|${alias}]]`;
-      for (const filePath of [
-        ...new Set(
-          links.filter((link) => link.path !== here).map((link) => link.path),
-        ),
-      ]) {
-        const linkingFile = this.app.vault.getAbstractFileByPath(filePath);
-        if (!linkingFile) continue;
-        if (filePath.endsWith('.canvas')) {
-          const relink = (canvasData) => {
-            for (const node of canvasData.nodes || []) {
-              if (node.type === 'file' && node.file === file.path) {
-                node.file = here;
-              } else if (node.type === 'text') {
-                node.text = this.boardLibrary.relinkText(
-                  node.text,
-                  isSub(filePath),
-                  toLink,
-                );
-              }
-            }
-          };
-          const open = this.openCanvas(filePath);
-          if (open) {
-            const canvasData = open.getData();
-            relink(canvasData);
-            open.setData(canvasData);
-            open.requestSave();
-          } else {
-            await this.app.vault.process(linkingFile, (content) => {
-              const canvasData = JSON.parse(content || '{}');
-              relink(canvasData);
-              return JSON.stringify(canvasData, null, '\t');
-            });
-          }
-        } else {
-          await this.app.vault.process(linkingFile, (content) =>
-            this.boardLibrary.relinkText(content, isSub(filePath), toLink),
-          );
-        }
-      }
-    }
-    if (mode !== 'copy') await this.app.fileManager.trashFile(file);
-    const cardCount = (subcanvas.nodes || []).length,
-      linkCount = links.length,
-      plural = (x) => (x > 1 ? 's' : '');
-    const what = {
-      dissolve:
-        `unpacked ${cardCount} card${plural(cardCount)}, ${file.path} trashed` +
-        (linkCount
-          ? ` (${linkCount} link${plural(linkCount)} now broken)`
-          : ''),
-      copy: `unpacked ${cardCount} card${plural(cardCount)}, ${file.path} kept`,
-      group: `unpacked ${cardCount} card${plural(cardCount)} into a group, ${linkCount} link${plural(linkCount)} redirected`,
-    }[mode];
-    this.undoNotice(canvas, what, {
-      files: [],
-      restore: mode === 'copy' ? null : { path: file.path, content },
-    });
+  unpack(canvas, node, { file, mode, links }) {
+    return unpackSubcanvas(this, canvas, { node, file, mode, links });
   }
 
   linkedCanvas(node) {

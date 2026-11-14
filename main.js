@@ -5903,6 +5903,159 @@ var require_startApmCounter = __commonJS({
   }
 });
 
+// src/plugin/unpack/groupLinkOperations.js
+var require_groupLinkOperations = __commonJS({
+  "src/plugin/unpack/groupLinkOperations.js"(exports2, module2) {
+    var newId = require_newId();
+    function groupLinkOperations(plugin, canvas, unpacked) {
+      const { here, label, isSubcanvas, links, groupId } = unpacked;
+      const library = plugin.boardLibrary;
+      const [fromSide, toSide] = library.SIDES[plugin.settings.layoutDirection] || library.SIDES.TB;
+      const nodes = canvas.getData().nodes;
+      const linking = links.filter((link) => link.path === here).map((link) => nodes.find((node) => node.id === link.id)).filter(Boolean);
+      return linking.flatMap((node) => [
+        {
+          op: "set",
+          id: node.id,
+          text: node.type === "text" ? library.relinkText(node.text, isSubcanvas(here), (text) => text) : label
+        },
+        {
+          op: "edge",
+          edge: {
+            id: newId(),
+            fromNode: node.id,
+            fromSide,
+            toNode: groupId,
+            toSide
+          }
+        }
+      ]);
+    }
+    module2.exports = groupLinkOperations;
+  }
+});
+
+// src/plugin/unpack/relinkCanvasData.js
+var require_relinkCanvasData = __commonJS({
+  "src/plugin/unpack/relinkCanvasData.js"(exports2, module2) {
+    function relinkCanvasData(canvasData, redirect) {
+      const { library, subcanvasPath, here, hits, toLink } = redirect;
+      for (const node of canvasData.nodes || []) {
+        if (node.type === "file" && node.file === subcanvasPath) node.file = here;
+        else if (node.type === "text") {
+          node.text = library.relinkText(node.text, hits, toLink);
+        }
+      }
+    }
+    module2.exports = relinkCanvasData;
+  }
+});
+
+// src/plugin/unpack/redirectOutsideLinks.js
+var require_redirectOutsideLinks = __commonJS({
+  "src/plugin/unpack/redirectOutsideLinks.js"(exports2, module2) {
+    var relinkCanvasData = require_relinkCanvasData();
+    async function redirectOutsideLinks(plugin, unpacked) {
+      const { file, here, isSubcanvas, links } = unpacked;
+      const library = plugin.boardLibrary;
+      const toLink = (alias) => `[[${here}|${alias}]]`;
+      const paths = new Set(
+        links.filter((link) => link.path !== here).map((link) => link.path)
+      );
+      for (const filePath of paths) {
+        const linkingFile = plugin.app.vault.getAbstractFileByPath(filePath);
+        if (!linkingFile) continue;
+        const hits = isSubcanvas(filePath);
+        const redirect = { library, subcanvasPath: file.path, here, hits, toLink };
+        const open = filePath.endsWith(".canvas") && plugin.openCanvas(filePath);
+        if (open) {
+          const canvasData = open.getData();
+          relinkCanvasData(canvasData, redirect);
+          open.setData(canvasData);
+          open.requestSave();
+          continue;
+        }
+        await plugin.app.vault.process(linkingFile, (content) => {
+          if (!filePath.endsWith(".canvas")) {
+            return library.relinkText(content, hits, toLink);
+          }
+          const canvasData = JSON.parse(content || "{}");
+          relinkCanvasData(canvasData, redirect);
+          return JSON.stringify(canvasData, null, "	");
+        });
+      }
+    }
+    module2.exports = redirectOutsideLinks;
+  }
+});
+
+// src/plugin/unpack/unpackMessage.js
+var require_unpackMessage = __commonJS({
+  "src/plugin/unpack/unpackMessage.js"(exports2, module2) {
+    var plural = (count) => count > 1 ? "s" : "";
+    function unpackMessage(mode, { cardCount, linkCount, path }) {
+      const cards = `${cardCount} card${plural(cardCount)}`;
+      const links = `${linkCount} link${plural(linkCount)}`;
+      const broken = linkCount ? ` (${links} now broken)` : "";
+      return {
+        dissolve: `unpacked ${cards}, ${path} trashed${broken}`,
+        copy: `unpacked ${cards}, ${path} kept`,
+        group: `unpacked ${cards} into a group, ${links} redirected`
+      }[mode];
+    }
+    module2.exports = unpackMessage;
+  }
+});
+
+// src/plugin/unpack/unpackSubcanvas.js
+var require_unpackSubcanvas = __commonJS({
+  "src/plugin/unpack/unpackSubcanvas.js"(exports2, module2) {
+    var groupLinkOperations = require_groupLinkOperations();
+    var redirectOutsideLinks = require_redirectOutsideLinks();
+    var unpackMessage = require_unpackMessage();
+    async function unpackSubcanvas(plugin, canvas, request) {
+      const { node, file, mode, links = [] } = request;
+      const parsed = JSON.parse(await plugin.app.vault.read(file) || "{}");
+      const subcanvas = { nodes: parsed.nodes || [], edges: parsed.edges || [] };
+      const content = JSON.stringify(subcanvas, null, "	");
+      const alias = ((node.getData().text || "").match(/\|([^\]]+)\]\]/) || [])[1];
+      const label = (alias || file.basename).trim();
+      const operations = plugin.boardLibrary.expandOps(canvas.getData(), {
+        id: node.id,
+        subcanvas,
+        group: mode === "group" ? label : void 0
+      });
+      const here = plugin.canvasFile(canvas);
+      const isSubcanvas = (from) => (target) => {
+        const destination = plugin.app.metadataCache.getFirstLinkpathDest(
+          target,
+          from
+        );
+        return Boolean(destination) && destination.path === file.path;
+      };
+      const unpacked = { file, here, label, isSubcanvas, links };
+      if (mode === "group") {
+        const groupId = operations.group;
+        operations.push(
+          ...groupLinkOperations(plugin, canvas, { ...unpacked, groupId })
+        );
+      }
+      plugin.edit(canvas, operations);
+      if (mode === "group") await redirectOutsideLinks(plugin, unpacked);
+      if (mode !== "copy") await plugin.app.fileManager.trashFile(file);
+      const counts = {
+        cardCount: subcanvas.nodes.length,
+        linkCount: links.length,
+        path: file.path
+      };
+      plugin.undoNotice(canvas, unpackMessage(mode, counts), {
+        restore: mode === "copy" ? null : { path: file.path, content }
+      });
+    }
+    module2.exports = unpackSubcanvas;
+  }
+});
+
 // src/plugin/parseColors.js
 var require_parseColors = __commonJS({
   "src/plugin/parseColors.js"(exports2, module2) {
@@ -6487,6 +6640,7 @@ var require_CanvasBoardPlugin = __commonJS({
     var createApi = require_createApi();
     var createStarterBoard = require_createStarterBoard();
     var startApmCounter = require_startApmCounter();
+    var unpackSubcanvas = require_unpackSubcanvas();
     var CanvasBoardSettings = require_CanvasBoardSettings();
     var emptyViewState = require_emptyViewState();
     var claudeBin = require_claudeBin();
@@ -7423,109 +7577,8 @@ Shift-click: next direction`,
       }
       // mode: dissolve (file to trash, other links break), copy (file kept), group (cards in a group named after the
       // file, other links redirected: cards on this board get an edge to the group, other cards and notes link this board).
-      async unpack(canvas, node, { file, mode, links = [] }) {
-        const subcanvas = JSON.parse(await this.app.vault.read(file) || "{}");
-        const content = JSON.stringify(
-          { nodes: subcanvas.nodes || [], edges: subcanvas.edges || [] },
-          null,
-          "	"
-        );
-        const label = (((node.getData().text || "").match(/\|([^\]]+)\]\]/) || [])[1] || file.basename).trim();
-        const operations = this.boardLibrary.expandOps(canvas.getData(), {
-          id: node.id,
-          subcanvas: { nodes: subcanvas.nodes || [], edges: subcanvas.edges || [] },
-          group: mode === "group" ? label : void 0
-        });
-        const here = this.canvasFile(canvas);
-        const isSub = (from) => (target) => {
-          const destination = this.app.metadataCache.getFirstLinkpathDest(
-            target,
-            from
-          );
-          return !!destination && destination.path === file.path;
-        };
-        if (mode === "group") {
-          const [fromSide, toSide] = this.boardLibrary.SIDES[this.settings.layoutDirection] || this.boardLibrary.SIDES.TB;
-          for (const link of links.filter((link2) => link2.path === here)) {
-            const node2 = canvas.getData().nodes.find((x) => x.id === link.id);
-            if (!node2) continue;
-            operations.push({
-              op: "set",
-              id: node2.id,
-              text: node2.type === "text" ? this.boardLibrary.relinkText(
-                node2.text,
-                isSub(here),
-                (linkText) => linkText
-              ) : label
-            });
-            operations.push({
-              op: "edge",
-              edge: {
-                id: [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join(""),
-                fromNode: node2.id,
-                fromSide,
-                toNode: operations.group,
-                toSide
-              }
-            });
-          }
-        }
-        this.edit(canvas, operations);
-        if (mode === "group") {
-          const toLink = (alias) => `[[${here}|${alias}]]`;
-          for (const filePath of [
-            ...new Set(
-              links.filter((link) => link.path !== here).map((link) => link.path)
-            )
-          ]) {
-            const linkingFile = this.app.vault.getAbstractFileByPath(filePath);
-            if (!linkingFile) continue;
-            if (filePath.endsWith(".canvas")) {
-              const relink = (canvasData) => {
-                for (const node2 of canvasData.nodes || []) {
-                  if (node2.type === "file" && node2.file === file.path) {
-                    node2.file = here;
-                  } else if (node2.type === "text") {
-                    node2.text = this.boardLibrary.relinkText(
-                      node2.text,
-                      isSub(filePath),
-                      toLink
-                    );
-                  }
-                }
-              };
-              const open = this.openCanvas(filePath);
-              if (open) {
-                const canvasData = open.getData();
-                relink(canvasData);
-                open.setData(canvasData);
-                open.requestSave();
-              } else {
-                await this.app.vault.process(linkingFile, (content2) => {
-                  const canvasData = JSON.parse(content2 || "{}");
-                  relink(canvasData);
-                  return JSON.stringify(canvasData, null, "	");
-                });
-              }
-            } else {
-              await this.app.vault.process(
-                linkingFile,
-                (content2) => this.boardLibrary.relinkText(content2, isSub(filePath), toLink)
-              );
-            }
-          }
-        }
-        if (mode !== "copy") await this.app.fileManager.trashFile(file);
-        const cardCount = (subcanvas.nodes || []).length, linkCount = links.length, plural = (x) => x > 1 ? "s" : "";
-        const what = {
-          dissolve: `unpacked ${cardCount} card${plural(cardCount)}, ${file.path} trashed` + (linkCount ? ` (${linkCount} link${plural(linkCount)} now broken)` : ""),
-          copy: `unpacked ${cardCount} card${plural(cardCount)}, ${file.path} kept`,
-          group: `unpacked ${cardCount} card${plural(cardCount)} into a group, ${linkCount} link${plural(linkCount)} redirected`
-        }[mode];
-        this.undoNotice(canvas, what, {
-          files: [],
-          restore: mode === "copy" ? null : { path: file.path, content }
-        });
+      unpack(canvas, node, { file, mode, links }) {
+        return unpackSubcanvas(this, canvas, { node, file, mode, links });
       }
       linkedCanvas(node) {
         const nodeData = node.getData();
