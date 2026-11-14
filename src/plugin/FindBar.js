@@ -1,6 +1,7 @@
 const { Notice, Scope, setIcon } = require('obsidian');
 const clearFrames = require('./clearFrames.js');
 const frameText = require('./frameText.js');
+const stopCanvasEvents = require('./stopCanvasEvents.js');
 
 // Find bar at the top of a canvas, built with the classes of the notes' find bar (document-search-*) so it looks
 // the same: matches are the cards whose text (or file, link, group label) contains the query, ignoring case, in
@@ -21,19 +22,17 @@ class FindBar {
       window.clearTimeout(this.frameTimer);
       this.frameTimer = window.setTimeout(() => this.frame(), 100);
     });
-    const element = (this.element = canvas.wrapperEl.createDiv({
+    this.element = canvas.wrapperEl.createDiv({
       cls: 'document-search-container canvas-board-find',
-    }));
-    for (const eventName of [
-      'pointerdown',
-      'mousedown',
-      'wheel',
-      'dblclick',
-      'contextmenu',
-    ]) {
-      element.addEventListener(eventName, (event) => event.stopPropagation());
-    }
-    const box = element.createDiv({ cls: 'document-search' });
+    });
+    stopCanvasEvents(this.element);
+    this.buildBox();
+    this.bindKeys();
+    this.element.hide();
+  }
+
+  buildBox() {
+    const box = this.element.createDiv({ cls: 'document-search' });
     const field = (this.field = box.createDiv({
       cls: 'search-input-container document-search-input',
     }));
@@ -65,8 +64,11 @@ class FindBar {
     });
     setIcon(close, 'x');
     close.addEventListener('click', () => this.close());
+  }
+
+  bindKeys() {
     // Own key scope while the field has focus: canvas keys (Delete, arrows) stay off, global hotkeys still work.
-    this.scope = new Scope(plugin.app.scope);
+    this.scope = new Scope(this.plugin.app.scope);
     this.input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && event.altKey) {
         event.preventDefault();
@@ -80,13 +82,12 @@ class FindBar {
       }
     });
     this.input.addEventListener('focus', () =>
-      plugin.app.keymap.pushScope(this.scope),
+      this.plugin.app.keymap.pushScope(this.scope),
     );
     this.input.addEventListener('blur', () =>
-      plugin.app.keymap.popScope(this.scope),
+      this.plugin.app.keymap.popScope(this.scope),
     );
     this.input.addEventListener('input', () => this.search());
-    element.hide();
   }
 
   open() {
