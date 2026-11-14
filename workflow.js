@@ -8,7 +8,7 @@ const { readBoard, writeOps, tree: baseTree, findFile, cardLinks, abs, noteConte
 const staleDays = () => { const n = Number(settings().staleDays); return Number.isFinite(n) && settings().staleDays !== undefined ? n : 7; }; // plugin setting "Stale after"
 const ORANGE_STALE_MS = 3600000;
 const DEFAULT_PASS_COLORS = 'cyan purple';
-const DEFAULT_NOTES_FOLDER = 'Projects/_assets/bot-tasks';
+const DEFAULT_NOTES_FOLDER = 'Board notes';
 const WORKING = '2'; // orange: a pass is on the card
 const WAITING = new Set(['1', '3']); // red, yellow: needs the human
 

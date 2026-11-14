@@ -26,19 +26,19 @@
 //   CANVAS split <board> <id> [--by b]        b: paragraph (default), bullet, h1..h6; pieces stack under it
 //   CANVAS extract <board> <id> --text t      the text t leaves the card for a new card right of it, overlaps allowed
 //   CANVAS archive <board> <id>[,id]          cards become notes in "<board> archive/" next to the board (setting "Archive":
-//                                             or one folder for all boards, default Projects/_assets/canvas-board/archive/)
+//                                             or one folder for all boards, default Board notes/Archive/)
 //   CANVAS restore <note>                     puts an archived card back on its board, note to .trash
 //   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
 //   CANVAS check [<board>] [--ids a,b]        read-only: broken invariants (links, card text, plan notes) as JSON. --ids: only
 //                                             the cards a pass wrote; without it, an audit of every colored card
 // tree, rollup and check are the agent workflow: they live in workflow.js (go colors: plugin setting "Workflow").
-// Default board: Plans.canvas. Default direction: the plugin setting "Layout direction" (data.json), else TB.
+// Default board: the plugin setting "Default board" (data.json), else Board.canvas. Default direction: the plugin setting "Layout direction" (data.json), else TB.
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..'); // <vault>/.obsidian/plugins/canvas-board
-const DEFAULT_BOARD = 'Plans.canvas';
+const DEFAULT_BOARD = 'Board.canvas';
 const SKIP_DIRS = new Set(['.git', '.obsidian', '.trash', '_secrets', 'node_modules']);
 const COLORS = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
 
@@ -254,7 +254,7 @@ function templateOps(tpl, at) {
 // An archived card becomes a note (body = its text, or a link to its file) whose frontmatter keeps what a
 // restore needs: board, id, place, size, color and its edges. Listed by Canvas archive.base.
 
-const ARCHIVE_DIR = 'Projects/_assets/canvas-board/archive'; // the folder for all boards (setting "Archive": global)
+const ARCHIVE_DIR = 'Board notes/Archive'; // the folder for all boards (setting "Archive": global)
 
 // Where a board's archive notes go: "<board name> archive" next to the board, or with the setting "Archive" on
 // global, one folder for all boards (setting "Archive folder"). `s`: the plugin settings (data.json).
@@ -552,7 +552,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 if (require.main === module) {
   const [cmd, boardArg, ...rest] = positional;
-  const board = boardArg || DEFAULT_BOARD;
+  const board = boardArg || String(settings().defaultBoard || '').trim() || DEFAULT_BOARD;
   const print = x => console.log(JSON.stringify(x, null, 2));
 
   switch (cmd) {
