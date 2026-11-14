@@ -656,7 +656,7 @@ var require_collapseOps = __commonJS({
         }
       }
       for (const node of moving) operations.push({ op: "remove", id: node.id });
-      return { operations, sub: subcanvas, id: card.id };
+      return { operations, subcanvas, id: card.id };
     }
     module2.exports = collapseOps;
   }
@@ -5491,7 +5491,7 @@ var require_CanvasBoardPlugin = __commonJS({
             const board = this.activeFile();
             const folder = board.parent && board.parent.path !== "/" ? board.parent.path + "/" : "";
             const file = this.freePath(folder, name, ".canvas");
-            const { operations, sub: subcanvas } = library.collapseOps(
+            const { operations, subcanvas } = library.collapseOps(
               canvas.getData(),
               selection.map((node) => node.id),
               file,
@@ -6026,8 +6026,9 @@ var require_CanvasBoardPlugin = __commonJS({
         await this.saveData(this.settings);
         const row = COLORS.find((colorRow) => colorRow[0] === name);
         const colorCommand = this.app.commands && this.app.commands.commands[`${this.manifest.id}:color-${row[2]}`];
-        if (colorCommand)
+        if (colorCommand) {
           colorCommand.name = `${this.manifest.name}: ${this.colorCommandName(name)}`;
+        }
         for (const canvas of this.panes.keys()) this.refreshView(canvas);
       }
       // Hotkey of a plugin command as Obsidian prints it ("Alt + ↑"), or ''.
@@ -6118,9 +6119,9 @@ var require_CanvasBoardPlugin = __commonJS({
         if (vault.getAbstractFileByPath(board)) {
           const folder = path.posix.dirname(board) === "." ? "" : `${path.posix.dirname(board)}/`;
           let suffix = 1;
-          do
+          do {
             board = `${folder}Starter board${suffix > 1 ? ` ${suffix}` : ""}.canvas`;
-          while (vault.getAbstractFileByPath(board) && ++suffix);
+          } while (vault.getAbstractFileByPath(board) && ++suffix);
         }
         const id = () => Array.from(
           { length: 16 },

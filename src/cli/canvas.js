@@ -83,7 +83,7 @@ const option = name => { const index = args.indexOf(name); return index >= 0 ? a
       const name = option('--name');
       if (!name) throw new Error('collapse needs --name');
       const file = freePath(path.posix.dirname(board), name, '.canvas');
-      const { operations, sub: subcanvas, id } = collapseOps(readBoard(board), (option('--ids') || '').split(',').filter(Boolean), file, name);
+      const { operations, subcanvas, id } = collapseOps(readBoard(board), (option('--ids') || '').split(',').filter(Boolean), file, name);
       fileSystem.writeFileSync(vaultPath(file), serialize(subcanvas));
       writeOps(board, operations);
       console.log(file, id);
