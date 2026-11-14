@@ -6,7 +6,7 @@ argument-hint: "[board path, default: plugin setting \"Default board\"]"
 
 # Kanvas board pass
 
-This skill holds the steps; read `Wiki/G&A/PKM/SOP - Canvas Board.md` only for an edge case it does not cover. **The card color is the state**: notes carry no board fields beyond `context`.
+This skill holds the steps. **The card color is the state**: notes carry no board fields beyond `context`.
 
 **Name the person "User"** in everything a pass writes (cards, notes, report), never by name.
 
