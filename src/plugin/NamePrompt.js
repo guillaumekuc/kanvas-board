@@ -2,27 +2,29 @@ const { Modal, Notice, Setting } = require('obsidian');
 const NameSuggest = require('./NameSuggest.js');
 
 class NamePrompt extends Modal {
-  constructor(app, title, onSubmit, opts = {}) {
+  constructor(app, title, onSubmit, options = {}) {
     super(app);
     this.title = title;
     this.onSubmit = onSubmit;
-    this.opts = opts;
+    this.options = options;
   }
 
   onOpen() {
     this.setTitle(this.title);
-    const { suggestions, overwrite } = this.opts;
+    const { suggestions, overwrite } = this.options;
     let value = '';
     let button,
       suggest,
       picked = false;
-    const clean = (v) => v.trim().replace(/[\\/:#^|[\]]/g, '');
+    const clean = (value) => value.trim().replace(/[\\/:#^|[\]]/g, '');
     // Subfolder names (a/b) are allowed for suggestions only: they name an existing file.
-    const nameOf = (v) =>
+    const nameOf = (value) =>
       suggestions &&
-      suggestions.some((s) => s.toLowerCase() === v.trim().toLowerCase())
-        ? v.trim()
-        : clean(v);
+      suggestions.some(
+        (suggestion) => suggestion.toLowerCase() === value.trim().toLowerCase(),
+      )
+        ? value.trim()
+        : clean(value);
     const refresh = () => {
       if (!button) return;
       const over = !!(overwrite && value.trim() && overwrite(nameOf(value)));
@@ -35,40 +37,47 @@ class NamePrompt extends Modal {
       if (!name) return;
       this.close();
       Promise.resolve(this.onSubmit(name)).catch(
-        (e) => new Notice(`Kanvas board: ${e.message}`),
+        (error) => new Notice(`Kanvas board: ${error.message}`),
       );
     };
     new Setting(this.contentEl)
-      .addText((t) => {
-        t.onChange((v) => {
-          value = v;
+      .addText((text) => {
+        text.onChange((typed) => {
+          value = typed;
           refresh();
         });
         if (suggestions && suggestions.length) {
-suggest = new NameSuggest(this.app, t.inputEl, suggestions, (v) => {
-            t.setValue(v);
-            value = v;
-            refresh();
-            picked = true;
-            setTimeout(() => {
-              picked = false;
-            }, 0); // the Enter that picked does not also submit
-          });
-}
-        t.inputEl.addEventListener('keydown', (e) => {
+          suggest = new NameSuggest(
+            this.app,
+            text.inputEl,
+            suggestions,
+            (suggestion) => {
+              text.setValue(suggestion);
+              value = suggestion;
+              refresh();
+              picked = true;
+              setTimeout(() => {
+                picked = false;
+              }, 0); // the Enter that picked does not also submit
+            },
+          );
+        }
+        text.inputEl.addEventListener('keydown', (event) => {
           if (
-            e.key !== 'Enter' ||
+            event.key !== 'Enter' ||
             picked ||
             (suggest && suggest.suggestEl && suggest.suggestEl.isConnected)
-          ) {return;}
-          e.preventDefault();
+          ) {
+            return;
+          }
+          event.preventDefault();
           submit();
         });
-        setTimeout(() => t.inputEl.focus(), 0);
+        setTimeout(() => text.inputEl.focus(), 0);
       })
-      .addButton((b) => {
-        button = b;
-        b.setButtonText('Create').setCta().onClick(submit);
+      .addButton((buttonComponent) => {
+        button = buttonComponent;
+        buttonComponent.setButtonText('Create').setCta().onClick(submit);
       });
   }
 

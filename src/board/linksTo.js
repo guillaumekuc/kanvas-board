@@ -1,6 +1,6 @@
 const abs = require('./abs.js');
 const findFile = require('./findFile.js');
-const fs = require('fs');
+const fileSystem = require('fs');
 const path = require('path');
 const relinkText = require('./relinkText.js');
 const vaultFileIndex = require('./vaultFileIndex.js');
@@ -8,34 +8,36 @@ const vaultFileIndex = require('./vaultFileIndex.js');
 // Cards (any .canvas) and notes (.md) that link `rel`, except card `skipId` on `board`: ['path (card id)' | 'path'].
 function linksTo(rel, board, skipId) {
   const out = [];
-  const hits = (t) => findFile(t) === rel;
-  for (const f of vaultFileIndex.paths()) {
-    if (f === rel || !/\.(md|canvas)$/.test(f)) continue;
-    let src;
+  const hits = (target) => findFile(target) === rel;
+  for (const file of vaultFileIndex.paths()) {
+    if (file === rel || !/\.(md|canvas)$/.test(file)) continue;
+    let source;
     try {
-      src = fs.readFileSync(abs(f), 'utf8');
-    } catch (e) {
+      source = fileSystem.readFileSync(abs(file), 'utf8');
+    } catch (error) {
       continue;
     }
-    if (!src.includes(path.posix.basename(rel))) continue;
-    if (f.endsWith('.md')) {
-      if (relinkText(src, hits, () => '\u0000') !== src) out.push(f);
+    if (!source.includes(path.posix.basename(rel))) continue;
+    if (file.endsWith('.md')) {
+      if (relinkText(source, hits, () => '\u0000') !== source) out.push(file);
       continue;
     }
-    let d;
+    let canvasData;
     try {
-      d = JSON.parse(src || '{}');
-    } catch (e) {
+      canvasData = JSON.parse(source || '{}');
+    } catch (error) {
       continue;
     }
-    for (const n of d.nodes || []) {
-if (
-        !(f === board && n.id === skipId) &&
-        (n.type === 'file'
-          ? n.file === rel
-          : relinkText(n.text, hits, () => '\u0000') !== (n.text || ''))
-      ) {out.push(`${f} (${n.id})`);}
-}
+    for (const node of canvasData.nodes || []) {
+      if (
+        !(file === board && node.id === skipId) &&
+        (node.type === 'file'
+          ? node.file === rel
+          : relinkText(node.text, hits, () => '\u0000') !== (node.text || ''))
+      ) {
+        out.push(`${file} (${node.id})`);
+      }
+    }
   }
   return out;
 }

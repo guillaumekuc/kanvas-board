@@ -1,6 +1,6 @@
 const { COLORS, COLOR_NUM, DEFAULTS, WORKFLOW } = require('./constants.js');
 const { Notice, PluginSettingTab, Setting } = require('obsidian');
-const fs = require('fs');
+const fileSystem = require('fs');
 const parseColors = require('./parseColors.js');
 const path = require('path');
 
@@ -17,12 +17,12 @@ class CanvasBoardSettings extends PluginSettingTab {
       new Setting(containerEl)
         .setName(name)
         .setDesc(desc)
-        .addText((t) =>
-          t
+        .addText((component) =>
+          component
             .setPlaceholder(DEFAULTS[key])
             .setValue(this.plugin.settings[key])
-            .onChange(async (v) => {
-              this.plugin.settings[key] = v.trim() || DEFAULTS[key];
+            .onChange(async (value) => {
+              this.plugin.settings[key] = value.trim() || DEFAULTS[key];
               await this.plugin.saveData(this.plugin.settings);
             }),
         );
@@ -33,8 +33,8 @@ class CanvasBoardSettings extends PluginSettingTab {
       .setDesc(
         'Every canvas board command can have a key; buttons and menu items show it.',
       )
-      .addButton((b) =>
-        b.setButtonText('Open hotkeys').onClick(() => {
+      .addButton((button) =>
+        button.setButtonText('Open hotkeys').onClick(() => {
           this.app.setting.openTabById('hotkeys');
           const tab = this.app.setting.activeTab;
           if (tab && tab.searchComponent) {
@@ -49,8 +49,8 @@ class CanvasBoardSettings extends PluginSettingTab {
       .setDesc(
         'A board with the color legend and first steps: the default board if it does not exist yet, else "Starter board.canvas".',
       )
-      .addButton((b) =>
-        b
+      .addButton((button) =>
+        button
           .setButtonText('Create')
           .onClick(() => this.plugin.createStarterBoard()),
       );
@@ -79,67 +79,67 @@ class CanvasBoardSettings extends PluginSettingTab {
       .setDesc(
         'Where "Archive selected cards" puts the notes: a "<board> archive" folder next to each board, or one folder for all boards. Changing it does not move notes already archived; restore works from any folder.',
       )
-      .addDropdown((dd) =>
-        dd
+      .addDropdown((dropdown) =>
+        dropdown
           .addOption('board', 'Next to each board')
           .addOption('global', 'One folder for all boards')
           .setValue(this.plugin.settings.archiveMode)
-          .onChange(async (v) => {
-            this.plugin.settings.archiveMode = v;
+          .onChange(async (value) => {
+            this.plugin.settings.archiveMode = value;
             await this.plugin.saveData(this.plugin.settings);
             this.display();
           }),
       );
     if (this.plugin.settings.archiveMode === 'global') {
-text(
+      text(
         'Archive folder',
         "The folder for all boards' archive notes.",
         'archiveFolder',
       );
-}
+    }
     heading('Workflow').setDesc(
       'What each color does and its label, shown in tooltips, the filter pane and the color commands. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.',
     );
-    const go = parseColors(this.plugin.settings.passColors);
+    const goColors = parseColors(this.plugin.settings.passColors);
     for (const [name, meaning] of WORKFLOW) {
-      const num = COLOR_NUM[name];
+      const colorNumber = COLOR_NUM[name];
       const row = new Setting(containerEl)
-        .setName(num ? name : 'uncolored')
+        .setName(colorNumber ? name : 'uncolored')
         .setDesc(meaning);
       row.nameEl.prepend(
         createSpan({
           cls: 'canvas-board-dot canvas-board-workflow-dot',
-          attr: { style: this.plugin.dotStyle(num) },
+          attr: { style: this.plugin.dotStyle(colorNumber) },
         }),
       );
-      row.addText((t) =>
-        t
-          .setPlaceholder(COLORS.find((c) => c[0] === name)[3])
+      row.addText((component) =>
+        component
+          .setPlaceholder(COLORS.find((color) => color[0] === name)[3])
           .setValue((this.plugin.settings.colorLabels || {})[name] || '')
-          .onChange((v) => this.plugin.setColorLabel(name, v.trim())),
+          .onChange((value) => this.plugin.setColorLabel(name, value.trim())),
       );
-      if (!num) {
-row.addToggle((t) =>
-          t // uncolored never triggers the agent: same pill for the layout, locked
+      if (!colorNumber) {
+        row.addToggle((component) =>
+          component // uncolored never triggers the agent: same pill for the layout, locked
             .setTooltip('Never triggers the agent')
             .setValue(false)
             .setDisabled(true),
         );
-} else {
-row.addToggle((t) =>
-          t
+      } else {
+        row.addToggle((component) =>
+          component
             .setTooltip('Triggers the agent')
-            .setValue(go.has(num))
-            .onChange(async (on) => {
-              if (on) go.add(num);
-              else go.delete(num);
-              this.plugin.settings.passColors = WORKFLOW.map(([n]) => n)
-                .filter((n) => go.has(COLOR_NUM[n]))
+            .setValue(goColors.has(colorNumber))
+            .onChange(async (isOn) => {
+              if (isOn) goColors.add(colorNumber);
+              else goColors.delete(colorNumber);
+              this.plugin.settings.passColors = WORKFLOW.map(([node]) => node)
+                .filter((node) => goColors.has(COLOR_NUM[node]))
                 .join(' ');
               await this.plugin.saveData(this.plugin.settings);
             }),
         );
-}
+      }
     }
     heading('Pass');
     text(
@@ -159,8 +159,8 @@ row.addToggle((t) =>
       .setDesc(
         "What the agent does on a pass. Saved when the field loses focus, to .claude/skills/canvas-board/SKILL.md (where Claude Code reads it; any agent can be pointed at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin's version.",
       )
-      .addButton((b) =>
-        b
+      .addButton((button) =>
+        button
           .setButtonText('Reset')
           .setWarning()
           .onClick(() => {
@@ -179,19 +179,19 @@ row.addToggle((t) =>
       attr: { spellcheck: 'false', rows: '24' },
     });
     try {
-      editor.value = fs.readFileSync(skillFile, 'utf8');
-    } catch (e) {
+      editor.value = fileSystem.readFileSync(skillFile, 'utf8');
+    } catch (error) {
       editor.placeholder =
         "No instructions file yet: Reset writes the plugin's version.";
     }
     editor.addEventListener('change', () => {
       try {
-        fs.mkdirSync(path.dirname(skillFile), { recursive: true });
-        fs.writeFileSync(skillFile, editor.value);
+        fileSystem.mkdirSync(path.dirname(skillFile), { recursive: true });
+        fileSystem.writeFileSync(skillFile, editor.value);
         new Notice('Kanvas board: agent instructions saved');
-      } catch (e) {
+      } catch (error) {
         new Notice(
-          `Kanvas board: could not save the agent instructions (${e.message})`,
+          `Kanvas board: could not save the agent instructions (${error.message})`,
         );
       }
     });
@@ -199,16 +199,16 @@ row.addToggle((t) =>
       'Canvas cards touched in a rolling window, in the status bar while a canvas is the active tab.',
     );
     const apm = this.plugin.apm;
-    const a = apm.settings;
+    const apmSettings = apm.settings;
     new Setting(containerEl)
       .setName('Personal best')
       .setDesc(
-        a.pb
-          ? `${a.pb} cards in ${a.windowMinutes} min${a.pbDate ? `, set ${a.pbDate}` : ''}.`
+        apmSettings.pb
+          ? `${apmSettings.pb} cards in ${apmSettings.windowMinutes} min${apmSettings.pbDate ? `, set ${apmSettings.pbDate}` : ''}.`
           : 'None yet.',
       )
-      .addButton((b) =>
-        b
+      .addButton((button) =>
+        button
           .setButtonText('Reset')
           .setWarning()
           .onClick(async () => {
@@ -221,12 +221,12 @@ row.addToggle((t) =>
       .setDesc(
         'Cards are counted over this rolling window. Changing it resets the personal best: the numbers are not comparable.',
       )
-      .addText((t) => {
-        t.setValue(String(a.windowMinutes));
-        t.inputEl.addEventListener('change', async () => {
-          const n = Number(t.getValue());
-          if (!(n > 0) || n === a.windowMinutes) return;
-          await apm.setWindow(n);
+      .addText((component) => {
+        component.setValue(String(apmSettings.windowMinutes));
+        component.inputEl.addEventListener('change', async () => {
+          const node = Number(component.getValue());
+          if (!(node > 0) || node === apmSettings.windowMinutes) return;
+          await apm.setWindow(node);
           this.display();
         });
       });
@@ -235,13 +235,13 @@ row.addToggle((t) =>
       .setDesc(
         'Percent of the personal best under which the counter turns red and pulses. Not in the first window of a session.',
       )
-      .addSlider((sl) =>
-        sl
+      .addSlider((slider) =>
+        slider
           .setLimits(5, 50, 5)
-          .setValue(a.lowPercent)
+          .setValue(apmSettings.lowPercent)
           .setDynamicTooltip()
-          .onChange(async (v) => {
-            a.lowPercent = v;
+          .onChange(async (value) => {
+            apmSettings.lowPercent = value;
             await this.plugin.saveData(this.plugin.settings);
             apm.refresh();
           }),
@@ -251,14 +251,16 @@ row.addToggle((t) =>
       .setDesc(
         'Without an action for this long, the alert stops and the counter dims. It also dims while Obsidian is not focused.',
       )
-      .addText((t) =>
-        t.setValue(String(a.idleMinutes)).onChange(async (v) => {
-          const n = Number(v);
-          if (!(n > 0)) return;
-          a.idleMinutes = n;
-          await this.plugin.saveData(this.plugin.settings);
-          apm.refresh();
-        }),
+      .addText((component) =>
+        component
+          .setValue(String(apmSettings.idleMinutes))
+          .onChange(async (value) => {
+            const node = Number(value);
+            if (!(node > 0)) return;
+            apmSettings.idleMinutes = node;
+            await this.plugin.saveData(this.plugin.settings);
+            apm.refresh();
+          }),
       );
     heading('Layout');
     new Setting(containerEl)
@@ -266,8 +268,8 @@ row.addToggle((t) =>
       .setDesc(
         'Tidy layout and agent-made plan canvases: the card a branch starts from comes first, following arrows in the fold direction ("depends on" prerequisites too). Shift-click the Tidy layout button, or commands "Tidy layout direction: …", switch it on the fly.',
       )
-      .addDropdown((dd) =>
-        dd
+      .addDropdown((dropdown) =>
+        dropdown
           .addOptions({
             TB: 'Top to bottom',
             LR: 'Left to right',
@@ -275,7 +277,7 @@ row.addToggle((t) =>
             RL: 'Right to left',
           })
           .setValue(this.plugin.settings.layoutDirection)
-          .onChange((v) => this.plugin.setLayoutDirection(v)),
+          .onChange((value) => this.plugin.setLayoutDirection(value)),
       );
     heading('View');
     new Setting(containerEl)
@@ -283,12 +285,12 @@ row.addToggle((t) =>
       .setDesc(
         'Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Tidy layout reads branches the same way. Commands "Fold direction: …" switch it on the fly.',
       )
-      .addDropdown((dd) =>
-        dd
+      .addDropdown((dropdown) =>
+        dropdown
           .addOptions({ out: 'Outgoing', in: 'Incoming' })
           .setValue(this.plugin.settings.foldDirection)
-          .onChange(async (v) => {
-            this.plugin.settings.foldDirection = v;
+          .onChange(async (value) => {
+            this.plugin.settings.foldDirection = value;
             await this.plugin.saveData(this.plugin.settings);
           }),
       );
@@ -297,12 +299,16 @@ row.addToggle((t) =>
       .setDesc(
         'Hiding a tag in the filter pane also hides the branch of each card that has it, in the fold direction.',
       )
-      .addToggle((t) =>
-        t.setValue(this.plugin.settings.hideTagBranches).onChange(async (v) => {
-          this.plugin.settings.hideTagBranches = v;
-          await this.plugin.saveData(this.plugin.settings);
-          for (const canvas of this.plugin.panes.keys()) {this.plugin.refreshView(canvas);}
-        }),
+      .addToggle((component) =>
+        component
+          .setValue(this.plugin.settings.hideTagBranches)
+          .onChange(async (value) => {
+            this.plugin.settings.hideTagBranches = value;
+            await this.plugin.saveData(this.plugin.settings);
+            for (const canvas of this.plugin.panes.keys()) {
+              this.plugin.refreshView(canvas);
+            }
+          }),
       );
   }
 }

@@ -5,80 +5,89 @@ const newId = require('./newId.js');
 // The reverse (unpack): the subcanvas's cards come back centered on the card, shifted right until they overlap nothing;
 // edges on the card go to the first of them in reading order. The caller trashes the .canvas file (dissolve) or
 // keeps it (copy). With `group` (a label), a group is drawn around them and the edges on the card go to it.
-function expandOps(d, id, sub, { group } = {}) {
-  const card = d.nodes.find((n) => n.id === id);
+function expandOps(canvasData, id, sub, { group } = {}) {
+  const card = canvasData.nodes.find((node) => node.id === id);
   if (!card) throw new Error('no node ' + id);
   if (!sub.nodes.length) throw new Error('empty subcanvas');
   const taken = new Set(
-    d.nodes.map((n) => n.id).concat(d.edges.map((e) => e.id)),
+    canvasData.nodes
+      .map((node) => node.id)
+      .concat(canvasData.edges.map((edge) => edge.id)),
   );
   const ids = new Map(
-    sub.nodes.map((n) => [n.id, taken.has(n.id) ? newId() : n.id]),
+    sub.nodes.map((node) => [node.id, taken.has(node.id) ? newId() : node.id]),
   );
-  const b = bounds(sub.nodes);
-  const others = d.nodes.filter((n) => n.id !== id);
-  let ox = Math.round(card.x + (card.width - b.w) / 2) - b.x;
-  const oy = Math.round(card.y + (card.height - b.h) / 2) - b.y;
+  const box = bounds(sub.nodes);
+  const others = canvasData.nodes.filter((node) => node.id !== id);
+  let offsetX = Math.round(card.x + (card.width - box.w) / 2) - box.x;
+  const offsetY = Math.round(card.y + (card.height - box.h) / 2) - box.y;
   const hits = () =>
-    sub.nodes.some((p) =>
+    sub.nodes.some((subNode) =>
       others.some(
-        (n) =>
-          p.x + ox < n.x + n.width + 40 &&
-          p.x + ox + p.width + 40 > n.x &&
-          p.y + oy < n.y + n.height + 40 &&
-          p.y + oy + p.height + 40 > n.y,
+        (node) =>
+          subNode.x + offsetX < node.x + node.width + 40 &&
+          subNode.x + offsetX + subNode.width + 40 > node.x &&
+          subNode.y + offsetY < node.y + node.height + 40 &&
+          subNode.y + offsetY + subNode.height + 40 > node.y,
       ),
     );
-  for (let k = 0; k < 200 && hits(); k++) ox += 40;
-  const nodes = sub.nodes.map((n) => ({
-    ...n,
-    id: ids.get(n.id),
-    x: n.x + ox,
-    y: n.y + oy,
+  for (let attempt = 0; attempt < 200 && hits(); attempt++) offsetX += 40;
+  const nodes = sub.nodes.map((node) => ({
+    ...node,
+    id: ids.get(node.id),
+    x: node.x + offsetX,
+    y: node.y + offsetY,
   }));
   let first =
-    nodes.filter((n) => n.type !== 'group').sort(byReading)[0] || nodes[0];
-  const ops = [];
+    nodes.filter((node) => node.type !== 'group').sort(byReading)[0] ||
+    nodes[0];
+  const operations = [];
   if (group) {
     // added first: drawn behind the cards
-    const P = 30;
-    const gx = Math.min(...nodes.map((n) => n.x)) - P,
-      gy = Math.min(...nodes.map((n) => n.y)) - P;
+    const padding = 30;
+    const groupX = Math.min(...nodes.map((node) => node.x)) - padding,
+      groupY = Math.min(...nodes.map((node) => node.y)) - padding;
     first = {
       id: newId(),
       type: 'group',
       label: group,
-      x: gx,
-      y: gy,
-      width: Math.max(...nodes.map((n) => n.x + n.width)) + P - gx,
-      height: Math.max(...nodes.map((n) => n.y + n.height)) + P - gy,
+      x: groupX,
+      y: groupY,
+      width:
+        Math.max(...nodes.map((node) => node.x + node.width)) +
+        padding -
+        groupX,
+      height:
+        Math.max(...nodes.map((node) => node.y + node.height)) +
+        padding -
+        groupY,
     };
-    ops.push({ op: 'add', node: first });
+    operations.push({ op: 'add', node: first });
   }
-  ops.push(...nodes.map((node) => ({ op: 'add', node })));
-  for (const e of sub.edges) {
-ops.push({
+  operations.push(...nodes.map((node) => ({ op: 'add', node })));
+  for (const edge of sub.edges) {
+    operations.push({
       op: 'edge',
       edge: {
-        ...e,
-        id: taken.has(e.id) ? newId() : e.id,
-        fromNode: ids.get(e.fromNode),
-        toNode: ids.get(e.toNode),
+        ...edge,
+        id: taken.has(edge.id) ? newId() : edge.id,
+        fromNode: ids.get(edge.fromNode),
+        toNode: ids.get(edge.toNode),
       },
     });
-}
-  for (const e of d.edges) {
-if (e.fromNode === id || e.toNode === id) {
-ops.push({
+  }
+  for (const edge of canvasData.edges) {
+    if (edge.fromNode === id || edge.toNode === id) {
+      operations.push({
         op: 'retarget',
-        id: e.id,
-        fromNode: e.fromNode === id ? first.id : e.fromNode,
-        toNode: e.toNode === id ? first.id : e.toNode,
+        id: edge.id,
+        fromNode: edge.fromNode === id ? first.id : edge.fromNode,
+        toNode: edge.toNode === id ? first.id : edge.toNode,
       });
-}
-}
-  ops.push({ op: 'remove', id });
-  return group ? Object.assign(ops, { group: first.id }) : ops;
+    }
+  }
+  operations.push({ op: 'remove', id });
+  return group ? Object.assign(operations, { group: first.id }) : operations;
 }
 
 module.exports = expandOps;

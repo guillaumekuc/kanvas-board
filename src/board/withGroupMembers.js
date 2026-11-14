@@ -1,16 +1,20 @@
 // Cards inside a selected group come with it.
-function withGroupMembers(d, ids) {
+function withGroupMembers(canvasData, ids) {
   const pick = new Set(ids);
-  for (const g of d.nodes.filter((n) => n.type === 'group' && pick.has(n.id))) {
-for (const n of d.nodes) {
-if (
-        n.x >= g.x &&
-        n.y >= g.y &&
-        n.x + n.width <= g.x + g.width &&
-        n.y + n.height <= g.y + g.height
-      ) {pick.add(n.id);}
-}
-}
+  for (const group of canvasData.nodes.filter(
+    (node) => node.type === 'group' && pick.has(node.id),
+  )) {
+    for (const node of canvasData.nodes) {
+      if (
+        node.x >= group.x &&
+        node.y >= group.y &&
+        node.x + node.width <= group.x + group.width &&
+        node.y + node.height <= group.y + group.height
+      ) {
+        pick.add(node.id);
+      }
+    }
+  }
   return pick;
 }
 

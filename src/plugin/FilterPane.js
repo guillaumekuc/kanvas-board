@@ -11,54 +11,62 @@ class FilterPane {
     this.canvas = canvas;
     this.isOpen = false;
     this.key = '';
-    const el = (this.el = canvas.wrapperEl.createDiv({
+    const element = (this.element = canvas.wrapperEl.createDiv({
       cls: 'canvas-board-pane',
     }));
     // Clicks and scrolls stay in the pane (no canvas pan, no deselect).
-    for (const ev of [
+    for (const eventName of [
       'pointerdown',
       'mousedown',
       'wheel',
       'dblclick',
       'contextmenu',
-    ]) {el.addEventListener(ev, (e) => e.stopPropagation());}
-    const head = el.createDiv({ cls: 'canvas-board-pane-head' });
-    const btn = head.createDiv({
+    ]) {
+      element.addEventListener(eventName, (event) => event.stopPropagation());
+    }
+    const head = element.createDiv({ cls: 'canvas-board-pane-head' });
+    const button = head.createDiv({
       cls: 'clickable-icon',
       attr: {
         'aria-label': plugin.keyedLabel('Filter cards', 'filter'),
         'data-tooltip-position': 'right',
       },
     });
-    setIcon(btn, 'filter');
-    btn.addEventListener('click', () => this.toggle());
+    setIcon(button, 'filter');
+    button.addEventListener('click', () => this.toggle());
     this.badge = head.createSpan({ cls: 'canvas-board-pane-badge' });
-    this.body = el.createDiv({ cls: 'canvas-board-pane-body' });
-    const v = () => plugin.viewState(canvas);
+    this.body = element.createDiv({ cls: 'canvas-board-pane-body' });
+    const viewState = () => plugin.viewState(canvas);
     const apply = () => plugin.refreshView(canvas);
 
     const section = (title, reset) => {
-      const s = this.body.createDiv({ cls: 'canvas-board-pane-section' });
-      const h = s.createDiv({ cls: 'canvas-board-pane-heading' });
-      h.createSpan({ text: title });
+      const sectionEl = this.body.createDiv({
+        cls: 'canvas-board-pane-section',
+      });
+      const headingEl = sectionEl.createDiv({
+        cls: 'canvas-board-pane-heading',
+      });
+      headingEl.createSpan({ text: title });
       if (reset) {
-        const r = h.createSpan({
+        const resetEl = headingEl.createSpan({
           cls: 'clickable-icon canvas-board-pane-reset',
           attr: { 'aria-label': 'Reset' },
         });
-        setIcon(r, 'rotate-ccw');
-        r.addEventListener('click', () => {
+        setIcon(resetEl, 'rotate-ccw');
+        resetEl.addEventListener('click', () => {
           reset();
           apply();
         });
       }
-      return s;
+      return sectionEl;
     };
 
-    this.colorsEl = section('Colors', () => v().xcolors.clear()).createDiv({
+    this.colorsEl = section('Colors', () =>
+      viewState().xcolors.clear(),
+    ).createDiv({
       cls: 'canvas-board-chips',
     });
-    this.tagsSection = section('Tags', () => v().xtags.clear());
+    this.tagsSection = section('Tags', () => viewState().xtags.clear());
     this.tagsEl = this.tagsSection.createDiv({ cls: 'canvas-board-chips' });
 
     this.foldedSection = section('Folded', () =>
@@ -83,13 +91,15 @@ class FilterPane {
 
   tags() {
     const tags = new Set();
-    for (const node of this.canvas.nodes.values()) {for (const t of this.plugin.cardTagSet(node)) tags.add(t);}
+    for (const node of this.canvas.nodes.values()) {
+      for (const tag of this.plugin.cardTagSet(node)) tags.add(tag);
+    }
     return tags;
   }
 
   toggle(open = !this.isOpen) {
     this.isOpen = open;
-    this.el.toggleClass('is-open', open);
+    this.element.toggleClass('is-open', open);
     this.key = '';
     this.update();
   }
@@ -97,14 +107,16 @@ class FilterPane {
   // Redraws the chips and lists only when something changed (called every 2 s), never the text fields.
   update() {
     const { plugin, canvas } = this;
-    const v = plugin.viewState(canvas, false);
+    const viewSnapshot = plugin.viewState(canvas, false);
     const counts = {};
-    for (const n of canvas.nodes.values()) {
-      const d = n.getData();
-      if (d.type !== 'group') {counts[d.color || ''] = (counts[d.color || ''] || 0) + 1;}
+    for (const node of canvas.nodes.values()) {
+      const data = node.getData();
+      if (data.type !== 'group') {
+        counts[data.color || ''] = (counts[data.color || ''] || 0) + 1;
+      }
     }
     const folds = plugin.folds(canvas);
-    const active = plugin.filtering(v) || folds.size > 0;
+    const active = plugin.filtering(viewSnapshot) || folds.size > 0;
     this.badge.setText(active ? plugin.viewLabel(canvas) : '');
     this.badge.toggle(!this.isOpen && active);
     if (!this.isOpen) return;
@@ -113,7 +125,7 @@ class FilterPane {
     const foldedCards = [...folds.keys()]
       .map((id) => canvas.nodes.get(id))
       .filter(Boolean)
-      .map((n) => [n.getData().color, plugin.cardText(n)]);
+      .map((node) => [node.getData().color, plugin.cardText(node)]);
     const key = JSON.stringify([
       counts,
       [...state.xcolors],
@@ -132,7 +144,9 @@ class FilterPane {
       apply();
     };
     const select = (keep) => {
-      if (!plugin.selectMore(canvas, [...canvas.selection], keep)) {new Notice('Kanvas board: no visible card to select');}
+      if (!plugin.selectMore(canvas, [...canvas.selection], keep)) {
+        new Notice('Kanvas board: no visible card to select');
+      }
     };
 
     // Dots only, on one line; the name and card count are in the tooltip.
@@ -152,36 +166,36 @@ class FilterPane {
           style: color ? `background: var(--canvas-color-${color})` : '',
         },
       });
-      chip.addEventListener('click', (e) =>
-        e.shiftKey
-          ? select((n) => (n.getData().color || '') === color)
+      chip.addEventListener('click', (event) =>
+        event.shiftKey
+          ? select((node) => (node.getData().color || '') === color)
           : toggle(state.xcolors, color),
       );
     }
 
     this.tagsEl.empty();
     this.tagsSection.toggle(tags.length > 0);
-    for (const t of tags) {
-      const out = state.xtags.has(t);
+    for (const tag of tags) {
+      const out = state.xtags.has(tag);
       const chip = this.tagsEl.createDiv({
         cls: 'canvas-board-chip',
-        text: '#' + t,
+        text: '#' + tag,
         attr: {
           'aria-label': `click to ${out ? 'show' : 'hide'} · shift-click to select`,
         },
       });
       chip.toggleClass('is-out', out);
-      chip.addEventListener('click', (e) =>
-        e.shiftKey
-          ? select((n) => plugin.cardTagSet(n).has(t))
-          : toggle(state.xtags, t),
+      chip.addEventListener('click', (event) =>
+        event.shiftKey
+          ? select((node) => plugin.cardTagSet(node).has(tag))
+          : toggle(state.xtags, tag),
       );
     }
 
     this.foldedEl.empty();
     this.foldedSection.toggle(folds.size > 0);
     // Color dot, first line as title, the rest muted below, and how many cards the fold hides.
-    for (const [id, dir] of folds) {
+    for (const [id, direction] of folds) {
       const node = canvas.nodes.get(id);
       if (!node) continue;
       const row = this.foldedEl.createDiv({
@@ -196,31 +210,33 @@ class FilterPane {
         attr: { style: plugin.dotStyle(node.getData().color) },
       });
       const text = row.createDiv({ cls: 'canvas-board-pane-card-text' });
-      const [title, ...rest] = plugin.cb.plainLines(plugin.cardText(node));
+      const [title, ...rest] = plugin.boardLibrary.plainLines(
+        plugin.cardText(node),
+      );
       text.createDiv({
         cls: 'canvas-board-pane-card-title',
         text: title || '(empty)',
       });
       if (rest.length) {
-text.createDiv({
+        text.createDiv({
           cls: 'canvas-board-pane-card-rest',
           text: rest.join(' · '),
         });
-}
+      }
       row.createSpan({
         cls: 'canvas-board-pane-card-count',
-        text: `· ${plugin.branchLevels(canvas, id, dir).flat().length} folded`,
+        text: `· ${plugin.branchLevels(canvas, id, direction).flat().length} folded`,
       });
-      row.addEventListener('click', (e) =>
-        e.shiftKey
-          ? select((n) => n.id === id)
+      row.addEventListener('click', (event) =>
+        event.shiftKey
+          ? select((node) => node.id === id)
           : plugin.unfold(canvas, [id], Infinity),
       );
     }
   }
 
   destroy() {
-    this.el.remove();
+    this.element.remove();
   }
 }
 

@@ -65,15 +65,24 @@ var require_constants = __commonJS({
     };
     var LINUX_TERMINALS = [
       // [binary, (vault, command) => args]
-      ["gnome-terminal", (v, c) => [`--working-directory=${v}`, "--", ...c]],
-      ["konsole", (v, c) => ["--workdir", v, "-e", ...c]],
-      ["xfce4-terminal", (v, c) => ["--working-directory", v, "-x", ...c]],
-      ["kitty", (v, c) => ["--directory", v, ...c]],
-      ["alacritty", (v, c) => ["--working-directory", v, "-e", ...c]],
-      ["wezterm", (v, c) => ["start", "--cwd", v, "--", ...c]],
-      ["foot", (v, c) => [`--working-directory=${v}`, ...c]],
-      ["x-terminal-emulator", (v, c) => ["-e", ...c]],
-      ["xterm", (v, c) => ["-e", ...c]]
+      [
+        "gnome-terminal",
+        (vault, command) => [`--working-directory=${vault}`, "--", ...command]
+      ],
+      ["konsole", (vault, command) => ["--workdir", vault, "-e", ...command]],
+      [
+        "xfce4-terminal",
+        (vault, command) => ["--working-directory", vault, "-x", ...command]
+      ],
+      ["kitty", (vault, command) => ["--directory", vault, ...command]],
+      [
+        "alacritty",
+        (vault, command) => ["--working-directory", vault, "-e", ...command]
+      ],
+      ["wezterm", (vault, command) => ["start", "--cwd", vault, "--", ...command]],
+      ["foot", (vault, command) => [`--working-directory=${vault}`, ...command]],
+      ["x-terminal-emulator", (vault, command) => ["-e", ...command]],
+      ["xterm", (vault, command) => ["-e", ...command]]
     ];
     module2.exports = {
       COLORS,
@@ -116,10 +125,10 @@ var require_constants2 = __commonJS({
 var require_band = __commonJS({
   "src/apm/band.js"(exports2, module2) {
     var { MIN_PB } = require_constants2();
-    function band(pace, pb, lowPercent, warmingUp = false) {
-      if (pb < MIN_PB) return "calibrating";
-      if (pace >= pb) return "best";
-      const ratio = pace / pb * 100;
+    function band(pace, personalBest, lowPercent, warmingUp = false) {
+      if (personalBest < MIN_PB) return "calibrating";
+      if (pace >= personalBest) return "best";
+      const ratio = pace / personalBest * 100;
       if (ratio < lowPercent) return warmingUp ? "calibrating" : "low";
       if (ratio < 50) return "orange";
       if (ratio < 75) return "yellow";
@@ -135,8 +144,11 @@ var require_cardsOf = __commonJS({
     var { CONTENT_KEYS } = require_constants2();
     var cardsOf = (json) => {
       const map = /* @__PURE__ */ new Map();
-      for (const n of JSON.parse(json || "{}").nodes || []) {
-        map.set(n.id, JSON.stringify(CONTENT_KEYS.map((k) => n[k] ?? null)));
+      for (const node of JSON.parse(json || "{}").nodes || []) {
+        map.set(
+          node.id,
+          JSON.stringify(CONTENT_KEYS.map((key) => node[key] ?? null))
+        );
       }
       return map;
     };
@@ -157,7 +169,9 @@ var require_touchedCards = __commonJS({
   "src/apm/touchedCards.js"(exports2, module2) {
     function touchedCards(before, after) {
       const out = [];
-      for (const [id, v] of after) if (before.get(id) !== v) out.push(id);
+      for (const [id, content] of after) {
+        if (before.get(id) !== content) out.push(id);
+      }
       for (const id of before.keys()) if (!after.has(id)) out.push(id);
       return out;
     }
@@ -200,39 +214,42 @@ var require_ApmCounter = __commonJS({
       }
       load() {
         const { plugin } = this;
-        this.el = plugin.addStatusBarItem();
-        this.el.addClass("apm-counter");
-        const listen = (win) => {
+        this.element = plugin.addStatusBarItem();
+        this.element.addClass("apm-counter");
+        const listen = (targetWindow) => {
           const input = () => {
             this.lastInput = Date.now();
           };
-          plugin.registerDomEvent(win, "keydown", input, {
+          plugin.registerDomEvent(targetWindow, "keydown", input, {
             capture: true,
             passive: true
           });
-          plugin.registerDomEvent(win, "mousedown", input, {
+          plugin.registerDomEvent(targetWindow, "mousedown", input, {
             capture: true,
             passive: true
           });
         };
         listen(window);
         plugin.registerEvent(
-          this.app.workspace.on("window-open", (w) => listen(w.win))
+          this.app.workspace.on(
+            "window-open",
+            (workspaceWindow) => listen(workspaceWindow.win)
+          )
         );
         plugin.registerEvent(
           this.app.workspace.on("active-leaf-change", () => this.refresh())
         );
         this.app.workspace.onLayoutReady(async () => {
-          for (const f of this.app.vault.getFiles()) {
-            if (f.extension === "canvas") await this.snapshot(f);
+          for (const file of this.app.vault.getFiles()) {
+            if (file.extension === "canvas") await this.snapshot(file);
           }
           plugin.registerEvent(
-            this.app.vault.on("modify", (f) => this.onModify(f))
+            this.app.vault.on("modify", (file) => this.onModify(file))
           );
           plugin.registerEvent(
-            this.app.vault.on("rename", (f, old) => {
+            this.app.vault.on("rename", (file, old) => {
               if (this.snapshots.has(old)) {
-                this.snapshots.set(f.path, this.snapshots.get(old));
+                this.snapshots.set(file.path, this.snapshots.get(old));
                 this.snapshots.delete(old);
               }
             })
@@ -270,7 +287,7 @@ var require_ApmCounter = __commonJS({
       }
       record(keys, now = Date.now()) {
         if (!keys.length) return;
-        for (const k of keys) this.touched.set(k, now);
+        for (const cardId of keys) this.touched.set(cardId, now);
         if (now - this.lastAction > this.settings.idleMinutes * MINUTE_MS) {
           this.sessionStart = now;
         }
@@ -279,8 +296,8 @@ var require_ApmCounter = __commonJS({
       }
       pace(now = Date.now()) {
         const windowMs = this.settings.windowMinutes * MINUTE_MS;
-        for (const [k, t] of this.touched) {
-          if (t <= now - windowMs) this.touched.delete(k);
+        for (const [cardId, touchedAt] of this.touched) {
+          if (touchedAt <= now - windowMs) this.touched.delete(cardId);
         }
         return this.touched.size;
       }
@@ -291,17 +308,19 @@ var require_ApmCounter = __commonJS({
         const windows = [
           window,
           ...[...this.app.workspace.floatingSplit?.children ?? []].map(
-            (c) => c.win
+            (container) => container.win
           )
         ];
-        return !windows.some((w) => w && w.document.hasFocus());
+        return !windows.some(
+          (candidateWindow) => candidateWindow && candidateWindow.document.hasFocus()
+        );
       }
       refresh(now = Date.now()) {
         const pace = this.pace(now);
-        const s = this.settings;
-        if (pace > s.pb) {
-          s.pb = pace;
-          s.pbDate = new Date(now).toISOString().slice(0, 10);
+        const settings = this.settings;
+        if (pace > settings.pb) {
+          settings.pb = pace;
+          settings.pbDate = new Date(now).toISOString().slice(0, 10);
           this.dirty = true;
         }
         if (this.dirty && now - this.lastSave >= SAVE_EVERY_MS) {
@@ -311,29 +330,29 @@ var require_ApmCounter = __commonJS({
         }
         const shown = !!this.plugin.activeCanvas();
         if (this.shown !== shown) {
-          this.el.toggle(shown);
+          this.element.toggle(shown);
           this.shown = shown;
         }
         if (!shown) return;
         const state = this.isIdle(now) ? "idle" : band(
           pace,
-          s.pb,
-          s.lowPercent,
-          now - this.sessionStart < s.windowMinutes * MINUTE_MS
+          settings.pb,
+          settings.lowPercent,
+          now - this.sessionStart < settings.windowMinutes * MINUTE_MS
         );
         if (this.state !== state) {
-          if (this.state) this.el.removeClass("apm-" + this.state);
-          this.el.addClass("apm-" + state);
+          if (this.state) this.element.removeClass("apm-" + this.state);
+          this.element.addClass("apm-" + state);
           this.state = state;
         }
-        const text = `${pace} ${rateName(s.windowMinutes)} \xB7 PB ${s.pb}`;
+        const text = `${pace} ${rateName(settings.windowMinutes)} \xB7 PB ${settings.pb}`;
         if (this.text !== text) {
-          this.el.setText(text);
+          this.element.setText(text);
           this.text = text;
-          const what = `Cards touched in the last ${s.windowMinutes} min.`;
-          this.el.setAttribute(
+          const what = `Cards touched in the last ${settings.windowMinutes} min.`;
+          this.element.setAttribute(
             "aria-label",
-            s.pbDate ? `${what} Personal best set ${s.pbDate}.` : what
+            settings.pbDate ? `${what} Personal best set ${settings.pbDate}.` : what
           );
         }
       }
@@ -401,56 +420,62 @@ var require_constants3 = __commonJS({
 // src/board/applyOps.js
 var require_applyOps = __commonJS({
   "src/board/applyOps.js"(exports2, module2) {
-    function applyOps(d, ops) {
+    function applyOps(canvasData, operations) {
       const retyped = [];
-      for (const o of ops) {
-        if (o.op === "set") {
-          const n = d.nodes.find((n2) => n2.id === o.id);
-          if (!n) throw new Error("no node " + o.id);
-          if (o.color !== void 0) {
-            if (o.color) n.color = o.color;
-            else delete n.color;
+      for (const operation of operations) {
+        if (operation.op === "set") {
+          const node = canvasData.nodes.find((node2) => node2.id === operation.id);
+          if (!node) throw new Error("no node " + operation.id);
+          if (operation.color !== void 0) {
+            if (operation.color) node.color = operation.color;
+            else delete node.color;
           }
-          if (o.file !== void 0) {
-            if (n.type !== "file") retyped.push(n.id);
-            n.type = "file";
-            n.file = o.file;
-            delete n.text;
+          if (operation.file !== void 0) {
+            if (node.type !== "file") retyped.push(node.id);
+            node.type = "file";
+            node.file = operation.file;
+            delete node.text;
           }
-          if (o.text !== void 0) {
-            if (n.type !== "text") retyped.push(n.id);
-            n.type = "text";
-            n.text = o.text;
-            delete n.file;
+          if (operation.text !== void 0) {
+            if (node.type !== "text") retyped.push(node.id);
+            node.type = "text";
+            node.text = operation.text;
+            delete node.file;
           }
-          for (const k of ["x", "y", "width", "height"]) {
-            if (o[k] !== void 0) n[k] = o[k];
+          for (const field of ["x", "y", "width", "height"]) {
+            if (operation[field] !== void 0) node[field] = operation[field];
           }
-        } else if (o.op === "sides") {
-          const e = d.edges.find((e2) => e2.id === o.id);
-          if (e) {
-            e.fromSide = o.fromSide;
-            e.toSide = o.toSide;
+        } else if (operation.op === "sides") {
+          const edge = canvasData.edges.find((edge2) => edge2.id === operation.id);
+          if (edge) {
+            edge.fromSide = operation.fromSide;
+            edge.toSide = operation.toSide;
           }
-        } else if (o.op === "add") d.nodes.push(o.node);
-        else if (o.op === "remove") {
-          d.nodes = d.nodes.filter((n) => n.id !== o.id);
-          d.edges = d.edges.filter((e) => e.fromNode !== o.id && e.toNode !== o.id);
-        } else if (o.op === "edge") d.edges.push(o.edge);
-        else if (o.op === "retarget") {
-          const e = d.edges.find((e2) => e2.id === o.id);
-          if (e) {
-            e.fromNode = o.fromNode;
-            e.toNode = o.toNode;
+        } else if (operation.op === "add") canvasData.nodes.push(operation.node);
+        else if (operation.op === "remove") {
+          canvasData.nodes = canvasData.nodes.filter(
+            (node) => node.id !== operation.id
+          );
+          canvasData.edges = canvasData.edges.filter(
+            (edge) => edge.fromNode !== operation.id && edge.toNode !== operation.id
+          );
+        } else if (operation.op === "edge") canvasData.edges.push(operation.edge);
+        else if (operation.op === "retarget") {
+          const edge = canvasData.edges.find((edge2) => edge2.id === operation.id);
+          if (edge) {
+            edge.fromNode = operation.fromNode;
+            edge.toNode = operation.toNode;
           }
-        } else if (o.op === "ends") {
-          const e = d.edges.find((e2) => e2.id === o.id);
-          if (e) {
-            e.fromEnd = o.fromEnd;
-            e.toEnd = o.toEnd;
+        } else if (operation.op === "ends") {
+          const edge = canvasData.edges.find((edge2) => edge2.id === operation.id);
+          if (edge) {
+            edge.fromEnd = operation.fromEnd;
+            edge.toEnd = operation.toEnd;
           }
-        } else if (o.op === "unedge") {
-          d.edges = d.edges.filter((e) => e.id !== o.id);
+        } else if (operation.op === "unedge") {
+          canvasData.edges = canvasData.edges.filter(
+            (edge) => edge.id !== operation.id
+          );
         }
       }
       return retyped;
@@ -464,12 +489,12 @@ var require_archiveDir = __commonJS({
   "src/board/archiveDir.js"(exports2, module2) {
     var { ARCHIVE_DIR } = require_constants3();
     var path = require("path");
-    function archiveDir(board, s = {}) {
-      if (s.archiveMode === "global") {
-        return String(s.archiveFolder || ARCHIVE_DIR).trim().replace(/[/\\]+$/, "") || ARCHIVE_DIR;
+    function archiveDir(board, options = {}) {
+      if (options.archiveMode === "global") {
+        return String(options.archiveFolder || ARCHIVE_DIR).trim().replace(/[/\\]+$/, "") || ARCHIVE_DIR;
       }
-      const b = String(board).replace(/\\/g, "/"), dir = path.posix.dirname(b);
-      return (dir === "." ? "" : dir + "/") + path.posix.basename(b, ".canvas") + " archive";
+      const boardPath = String(board).replace(/\\/g, "/"), folder = path.posix.dirname(boardPath);
+      return (folder === "." ? "" : folder + "/") + path.posix.basename(boardPath, ".canvas") + " archive";
     }
     module2.exports = archiveDir;
   }
@@ -478,7 +503,7 @@ var require_archiveDir = __commonJS({
 // src/board/noteName.js
 var require_noteName = __commonJS({
   "src/board/noteName.js"(exports2, module2) {
-    var noteName = (text) => (String(text).split("\n").find((l) => l.trim()) || "Card").replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, "").replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/[#^|[\]*_`>:\\/"?<]/g, "").replace(/\s+/g, " ").trim().slice(0, 60).trim() || "Card";
+    var noteName = (text) => (String(text).split("\n").find((line) => line.trim()) || "Card").replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, "").replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/[#^|[\]*_`>:\\/"?<]/g, "").replace(/\s+/g, " ").trim().slice(0, 60).trim() || "Card";
     module2.exports = noteName;
   }
 });
@@ -486,7 +511,7 @@ var require_noteName = __commonJS({
 // src/board/yamlStr.js
 var require_yamlStr = __commonJS({
   "src/board/yamlStr.js"(exports2, module2) {
-    var yamlStr = (s) => JSON.stringify(String(s));
+    var yamlStr = (value) => JSON.stringify(String(value));
     module2.exports = yamlStr;
   }
 });
@@ -496,46 +521,48 @@ var require_archiveNote = __commonJS({
   "src/board/archiveNote.js"(exports2, module2) {
     var noteName = require_noteName();
     var yamlStr = require_yamlStr();
-    function archiveNote(d, id, board, date, contexts = ["G&A"]) {
-      const n = d.nodes.find((n2) => n2.id === id);
-      if (!n) throw new Error("no node " + id);
-      const edges = d.edges.filter((e) => e.fromNode === id || e.toNode === id).map(
-        (e) => yamlStr(
+    function archiveNote(canvasData, id, board, date, contexts = ["G&A"]) {
+      const node = canvasData.nodes.find((node2) => node2.id === id);
+      if (!node) throw new Error("no node " + id);
+      const edges = canvasData.edges.filter((edge) => edge.fromNode === id || edge.toNode === id).map(
+        (edge) => yamlStr(
           [
-            e.id,
-            e.fromNode,
-            e.fromSide || "",
-            e.toNode,
-            e.toSide || "",
-            e.label || ""
+            edge.id,
+            edge.fromNode,
+            edge.fromSide || "",
+            edge.toNode,
+            edge.toSide || "",
+            edge.label || ""
           ].join(" | ")
         )
       );
-      const fm = [
+      const frontmatter = [
         "---",
         "context:",
-        ...contexts.map((c) => `  - ${c}`),
+        ...contexts.map((context) => `  - ${context}`),
         `archived-from: "[[${board}]]"`,
         `archived: ${date}`,
-        `card-id: ${yamlStr(n.id)}`,
-        `card-type: ${n.type}`,
-        ...n.type === "file" ? [`card-file: ${yamlStr(n.file)}`] : [],
-        ...n.type === "link" ? [`card-url: ${yamlStr(n.url)}`] : [],
-        `x: ${n.x}`,
-        `y: ${n.y}`,
-        `width: ${n.width}`,
-        `height: ${n.height}`,
-        `color: ${yamlStr(n.color || "")}`,
+        `card-id: ${yamlStr(node.id)}`,
+        `card-type: ${node.type}`,
+        ...node.type === "file" ? [`card-file: ${yamlStr(node.file)}`] : [],
+        ...node.type === "link" ? [`card-url: ${yamlStr(node.url)}`] : [],
+        `x: ${node.x}`,
+        `y: ${node.y}`,
+        `width: ${node.width}`,
+        `height: ${node.height}`,
+        `color: ${yamlStr(node.color || "")}`,
         edges.length ? "edges:" : "edges: []",
-        ...edges.map((e) => `  - ${e}`),
+        ...edges.map((edge) => `  - ${edge}`),
         "---",
         ""
       ].join("\n");
-      const body = n.type === "text" ? n.text : n.type === "file" ? `[[${n.file}]]` : n.type === "link" ? n.url : n.label || "";
+      const body = node.type === "text" ? node.text : node.type === "file" ? `[[${node.file}]]` : node.type === "link" ? node.url : node.label || "";
       return {
-        name: noteName(n.type === "text" ? n.text : n.file || n.url || n.label),
-        content: fm + body + "\n",
-        ops: [{ op: "remove", id }]
+        name: noteName(
+          node.type === "text" ? node.text : node.file || node.url || node.label
+        ),
+        content: frontmatter + body + "\n",
+        operations: [{ op: "remove", id }]
       };
     }
     module2.exports = archiveNote;
@@ -545,13 +572,13 @@ var require_archiveNote = __commonJS({
 // src/board/bounds.js
 var require_bounds = __commonJS({
   "src/board/bounds.js"(exports2, module2) {
-    var bounds = (ns) => {
-      const x = Math.min(...ns.map((n) => n.x)), y = Math.min(...ns.map((n) => n.y));
+    var bounds = (nodes) => {
+      const x = Math.min(...nodes.map((node) => node.x)), y = Math.min(...nodes.map((node) => node.y));
       return {
         x,
         y,
-        w: Math.max(...ns.map((n) => n.x + n.width)) - x,
-        h: Math.max(...ns.map((n) => n.y + n.height)) - y
+        w: Math.max(...nodes.map((node) => node.x + node.width)) - x,
+        h: Math.max(...nodes.map((node) => node.y + node.height)) - y
       };
     };
     module2.exports = bounds;
@@ -569,12 +596,14 @@ var require_newId = __commonJS({
 // src/board/withGroupMembers.js
 var require_withGroupMembers = __commonJS({
   "src/board/withGroupMembers.js"(exports2, module2) {
-    function withGroupMembers(d, ids) {
+    function withGroupMembers(canvasData, ids) {
       const pick = new Set(ids);
-      for (const g of d.nodes.filter((n) => n.type === "group" && pick.has(n.id))) {
-        for (const n of d.nodes) {
-          if (n.x >= g.x && n.y >= g.y && n.x + n.width <= g.x + g.width && n.y + n.height <= g.y + g.height) {
-            pick.add(n.id);
+      for (const group of canvasData.nodes.filter(
+        (node) => node.type === "group" && pick.has(node.id)
+      )) {
+        for (const node of canvasData.nodes) {
+          if (node.x >= group.x && node.y >= group.y && node.x + node.width <= group.x + group.width && node.y + node.height <= group.y + group.height) {
+            pick.add(node.id);
           }
         }
       }
@@ -590,39 +619,45 @@ var require_collapseOps = __commonJS({
     var bounds = require_bounds();
     var newId = require_newId();
     var withGroupMembers = require_withGroupMembers();
-    function collapseOps(d, ids, file, label) {
-      const pick = withGroupMembers(d, ids);
-      const moving = d.nodes.filter((n) => pick.has(n.id));
+    function collapseOps(canvasData, ids, file, label) {
+      const pick = withGroupMembers(canvasData, ids);
+      const moving = canvasData.nodes.filter((node) => pick.has(node.id));
       if (!moving.length) throw new Error("nothing to collapse");
-      const b = bounds(moving);
+      const box = bounds(moving);
       const sub = {
-        nodes: moving.map((n) => ({ ...n, x: n.x - b.x, y: n.y - b.y })),
-        edges: d.edges.filter((e) => pick.has(e.fromNode) && pick.has(e.toNode))
+        nodes: moving.map((node) => ({
+          ...node,
+          x: node.x - box.x,
+          y: node.y - box.y
+        })),
+        edges: canvasData.edges.filter(
+          (edge) => pick.has(edge.fromNode) && pick.has(edge.toNode)
+        )
       };
-      const W = 320, H = 60;
+      const cardWidth = 320, cardHeight = 60;
       const card = {
         id: newId(),
         type: "text",
         text: `[[${file}|${label}]]`,
-        x: Math.round(b.x + (b.w - W) / 2),
-        y: Math.round(b.y + (b.h - H) / 2),
-        width: W,
-        height: H
+        x: Math.round(box.x + (box.w - cardWidth) / 2),
+        y: Math.round(box.y + (box.h - cardHeight) / 2),
+        width: cardWidth,
+        height: cardHeight
       };
-      const ops = [{ op: "add", node: card }];
-      for (const e of d.edges) {
-        const from = pick.has(e.fromNode), to = pick.has(e.toNode);
-        if (from !== to) {
-          ops.push({
+      const operations = [{ op: "add", node: card }];
+      for (const edge of canvasData.edges) {
+        const from = pick.has(edge.fromNode), isToInside = pick.has(edge.toNode);
+        if (from !== isToInside) {
+          operations.push({
             op: "retarget",
-            id: e.id,
-            fromNode: from ? card.id : e.fromNode,
-            toNode: to ? card.id : e.toNode
+            id: edge.id,
+            fromNode: from ? card.id : edge.fromNode,
+            toNode: isToInside ? card.id : edge.toNode
           });
         }
       }
-      for (const n of moving) ops.push({ op: "remove", id: n.id });
-      return { ops, sub, id: card.id };
+      for (const node of moving) operations.push({ op: "remove", id: node.id });
+      return { operations, sub, id: card.id };
     }
     module2.exports = collapseOps;
   }
@@ -631,7 +666,7 @@ var require_collapseOps = __commonJS({
 // src/board/byReading.js
 var require_byReading = __commonJS({
   "src/board/byReading.js"(exports2, module2) {
-    var byReading = (a, b) => a.y - b.y || a.x - b.x;
+    var byReading = (first, second) => first.y - second.y || first.x - second.x;
     module2.exports = byReading;
   }
 });
@@ -642,72 +677,72 @@ var require_expandOps = __commonJS({
     var bounds = require_bounds();
     var byReading = require_byReading();
     var newId = require_newId();
-    function expandOps(d, id, sub, { group } = {}) {
-      const card = d.nodes.find((n) => n.id === id);
+    function expandOps(canvasData, id, sub, { group } = {}) {
+      const card = canvasData.nodes.find((node) => node.id === id);
       if (!card) throw new Error("no node " + id);
       if (!sub.nodes.length) throw new Error("empty subcanvas");
       const taken = new Set(
-        d.nodes.map((n) => n.id).concat(d.edges.map((e) => e.id))
+        canvasData.nodes.map((node) => node.id).concat(canvasData.edges.map((edge) => edge.id))
       );
       const ids = new Map(
-        sub.nodes.map((n) => [n.id, taken.has(n.id) ? newId() : n.id])
+        sub.nodes.map((node) => [node.id, taken.has(node.id) ? newId() : node.id])
       );
-      const b = bounds(sub.nodes);
-      const others = d.nodes.filter((n) => n.id !== id);
-      let ox = Math.round(card.x + (card.width - b.w) / 2) - b.x;
-      const oy = Math.round(card.y + (card.height - b.h) / 2) - b.y;
+      const box = bounds(sub.nodes);
+      const others = canvasData.nodes.filter((node) => node.id !== id);
+      let offsetX = Math.round(card.x + (card.width - box.w) / 2) - box.x;
+      const offsetY = Math.round(card.y + (card.height - box.h) / 2) - box.y;
       const hits = () => sub.nodes.some(
-        (p) => others.some(
-          (n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y
+        (subNode) => others.some(
+          (node) => subNode.x + offsetX < node.x + node.width + 40 && subNode.x + offsetX + subNode.width + 40 > node.x && subNode.y + offsetY < node.y + node.height + 40 && subNode.y + offsetY + subNode.height + 40 > node.y
         )
       );
-      for (let k = 0; k < 200 && hits(); k++) ox += 40;
-      const nodes = sub.nodes.map((n) => ({
-        ...n,
-        id: ids.get(n.id),
-        x: n.x + ox,
-        y: n.y + oy
+      for (let attempt = 0; attempt < 200 && hits(); attempt++) offsetX += 40;
+      const nodes = sub.nodes.map((node) => ({
+        ...node,
+        id: ids.get(node.id),
+        x: node.x + offsetX,
+        y: node.y + offsetY
       }));
-      let first = nodes.filter((n) => n.type !== "group").sort(byReading)[0] || nodes[0];
-      const ops = [];
+      let first = nodes.filter((node) => node.type !== "group").sort(byReading)[0] || nodes[0];
+      const operations = [];
       if (group) {
-        const P = 30;
-        const gx = Math.min(...nodes.map((n) => n.x)) - P, gy = Math.min(...nodes.map((n) => n.y)) - P;
+        const padding = 30;
+        const groupX = Math.min(...nodes.map((node) => node.x)) - padding, groupY = Math.min(...nodes.map((node) => node.y)) - padding;
         first = {
           id: newId(),
           type: "group",
           label: group,
-          x: gx,
-          y: gy,
-          width: Math.max(...nodes.map((n) => n.x + n.width)) + P - gx,
-          height: Math.max(...nodes.map((n) => n.y + n.height)) + P - gy
+          x: groupX,
+          y: groupY,
+          width: Math.max(...nodes.map((node) => node.x + node.width)) + padding - groupX,
+          height: Math.max(...nodes.map((node) => node.y + node.height)) + padding - groupY
         };
-        ops.push({ op: "add", node: first });
+        operations.push({ op: "add", node: first });
       }
-      ops.push(...nodes.map((node) => ({ op: "add", node })));
-      for (const e of sub.edges) {
-        ops.push({
+      operations.push(...nodes.map((node) => ({ op: "add", node })));
+      for (const edge of sub.edges) {
+        operations.push({
           op: "edge",
           edge: {
-            ...e,
-            id: taken.has(e.id) ? newId() : e.id,
-            fromNode: ids.get(e.fromNode),
-            toNode: ids.get(e.toNode)
+            ...edge,
+            id: taken.has(edge.id) ? newId() : edge.id,
+            fromNode: ids.get(edge.fromNode),
+            toNode: ids.get(edge.toNode)
           }
         });
       }
-      for (const e of d.edges) {
-        if (e.fromNode === id || e.toNode === id) {
-          ops.push({
+      for (const edge of canvasData.edges) {
+        if (edge.fromNode === id || edge.toNode === id) {
+          operations.push({
             op: "retarget",
-            id: e.id,
-            fromNode: e.fromNode === id ? first.id : e.fromNode,
-            toNode: e.toNode === id ? first.id : e.toNode
+            id: edge.id,
+            fromNode: edge.fromNode === id ? first.id : edge.fromNode,
+            toNode: edge.toNode === id ? first.id : edge.toNode
           });
         }
       }
-      ops.push({ op: "remove", id });
-      return group ? Object.assign(ops, { group: first.id }) : ops;
+      operations.push({ op: "remove", id });
+      return group ? Object.assign(operations, { group: first.id }) : operations;
     }
     module2.exports = expandOps;
   }
@@ -716,13 +751,13 @@ var require_expandOps = __commonJS({
 // src/board/fitHeight.js
 var require_fitHeight = __commonJS({
   "src/board/fitHeight.js"(exports2, module2) {
-    function fitHeight(text, w) {
-      const perLine = Math.max(10, Math.floor((w - 40) / 8));
+    function fitHeight(text, width) {
+      const perLine = Math.max(10, Math.floor((width - 40) / 8));
       const lines = String(text || "").split("\n").reduce(
-        (s, l) => s + Math.max(
+        (lines2, line) => lines2 + Math.max(
           1,
           Math.ceil(
-            l.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").length / perLine
+            line.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").length / perLine
           )
         ),
         0
@@ -738,18 +773,20 @@ var require_extractOps = __commonJS({
   "src/board/extractOps.js"(exports2, module2) {
     var fitHeight = require_fitHeight();
     var newId = require_newId();
-    function extractOps(d, id, part, from) {
-      const card = d.nodes.find((n) => n.id === id);
+    function extractOps(canvasData, id, part, from) {
+      const card = canvasData.nodes.find((node2) => node2.id === id);
       if (!card || card.type !== "text") {
         throw new Error("extract takes one text card");
       }
-      const at = from !== void 0 && card.text.slice(from, from + part.length) === part ? from : card.text.indexOf(part);
-      if (!part.trim() || at < 0) throw new Error("text not found in the card");
-      const left = (card.text.slice(0, at) + card.text.slice(at + part.length)).replace(/\n{3,}/g, "\n\n").trim();
+      const offset = from !== void 0 && card.text.slice(from, from + part.length) === part ? from : card.text.indexOf(part);
+      if (!part.trim() || offset < 0) throw new Error("text not found in the card");
+      const left = (card.text.slice(0, offset) + card.text.slice(offset + part.length)).replace(/\n{3,}/g, "\n\n").trim();
       const text = part.trim();
       const height = fitHeight(text, card.width);
       let y = card.y;
-      while (d.nodes.some((n) => n.x === card.x + card.width + 40 && n.y === y)) {
+      while (canvasData.nodes.some(
+        (node2) => node2.x === card.x + card.width + 40 && node2.y === y
+      )) {
         y += 40;
       }
       const node = {
@@ -776,81 +813,83 @@ var require_layoutOps = __commonJS({
   "src/board/layoutOps.js"(exports2, module2) {
     var { SIDES } = require_constants3();
     var fitHeight = require_fitHeight();
-    function layoutOps(d, { ids, dir = "TB", fit = false, dagre, flow = "out" }) {
-      const cards = d.nodes.filter((n) => n.type !== "group");
-      const pick = new Set(ids && ids.length ? ids : cards.map((n) => n.id));
-      const moving = cards.filter((n) => pick.has(n.id));
-      const fixed = cards.filter((n) => !pick.has(n.id));
+    function layoutOps(canvasData, { ids, direction = "TB", fit = false, dagre, flow = "out" }) {
+      const cards = canvasData.nodes.filter((node) => node.type !== "group");
+      const pick = new Set(ids && ids.length ? ids : cards.map((node) => node.id));
+      const moving = cards.filter((node) => pick.has(node.id));
+      const fixed = cards.filter((node) => !pick.has(node.id));
       if (!moving.length) return [];
-      const g = new dagre.graphlib.Graph();
-      g.setGraph({
-        rankdir: dir,
+      const graph = new dagre.graphlib.Graph();
+      graph.setGraph({
+        rankdir: direction,
         nodesep: 40,
         ranksep: 80,
         marginx: 0,
         marginy: 0
       });
-      g.setDefaultEdgeLabel(() => ({}));
-      const size = (n) => ({
-        width: n.width,
-        height: fit && n.type === "text" ? fitHeight(n.text, n.width) : n.height
+      graph.setDefaultEdgeLabel(() => ({}));
+      const size = (node) => ({
+        width: node.width,
+        height: fit && node.type === "text" ? fitHeight(node.text, node.width) : node.height
       });
-      for (const n of moving) g.setNode(n.id, size(n));
-      const inner = d.edges.filter(
-        (e) => pick.has(e.fromNode) && pick.has(e.toNode)
+      for (const node of moving) graph.setNode(node.id, size(node));
+      const inner = canvasData.edges.filter(
+        (edge) => pick.has(edge.fromNode) && pick.has(edge.toNode)
       );
-      const back = (e) => flow === "in" || /depends on/i.test(e.label || "");
-      for (const e of inner) {
-        back(e) ? g.setEdge(e.toNode, e.fromNode) : g.setEdge(e.fromNode, e.toNode);
+      const back = (edge) => flow === "in" || /depends on/i.test(edge.label || "");
+      for (const edge of inner) {
+        back(edge) ? graph.setEdge(edge.toNode, edge.fromNode) : graph.setEdge(edge.fromNode, edge.toNode);
       }
-      dagre.layout(g);
-      const box = (ns) => ns.reduce(
-        (b2, n) => ({
-          x0: Math.min(b2.x0, n.x),
-          y0: Math.min(b2.y0, n.y),
-          x1: Math.max(b2.x1, n.x + n.width),
-          y1: Math.max(b2.y1, n.y + n.height)
+      dagre.layout(graph);
+      const box = (nodes) => nodes.reduce(
+        (box2, node) => ({
+          x0: Math.min(box2.x0, node.x),
+          y0: Math.min(box2.y0, node.y),
+          x1: Math.max(box2.x1, node.x + node.width),
+          y1: Math.max(box2.y1, node.y + node.height)
         }),
         { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
       );
-      const placed = moving.map((n) => {
-        const p = g.node(n.id);
+      const placed = moving.map((node) => {
+        const position = graph.node(node.id);
         return {
-          id: n.id,
-          x: Math.round(p.x - p.width / 2),
-          y: Math.round(p.y - p.height / 2),
-          width: p.width,
-          height: p.height
+          id: node.id,
+          x: Math.round(position.x - position.width / 2),
+          y: Math.round(position.y - position.height / 2),
+          width: position.width,
+          height: position.height
         };
       });
-      const b = box(placed), was = box(moving);
-      const cx = Math.round((was.x0 + was.x1 - b.x0 - b.x1) / 2), cy = Math.round((was.y0 + was.y1 - b.y0 - b.y1) / 2);
-      let ox = cx, oy = cy;
+      const placedBox = box(placed), was = box(moving);
+      const shiftX = Math.round(
+        (was.x0 + was.x1 - placedBox.x0 - placedBox.x1) / 2
+      ), shiftY = Math.round((was.y0 + was.y1 - placedBox.y0 - placedBox.y1) / 2);
+      let offsetX = shiftX, offsetY = shiftY;
       const hits = () => placed.some(
-        (p) => fixed.some(
-          (n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y
+        (placedNode) => fixed.some(
+          (node) => placedNode.x + offsetX < node.x + node.width + 40 && placedNode.x + offsetX + placedNode.width + 40 > node.x && placedNode.y + offsetY < node.y + node.height + 40 && placedNode.y + offsetY + placedNode.height + 40 > node.y
         )
       );
-      for (let k = 1; k <= 400 && hits(); k++) {
-        const step = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 40;
-        if (dir === "LR" || dir === "RL") oy = cy + step;
-        else ox = cx + step;
+      for (let attempt = 1; attempt <= 400 && hits(); attempt++) {
+        const step = (attempt % 2 ? 1 : -1) * Math.ceil(attempt / 2) * 40;
+        if (direction === "LR" || direction === "RL") offsetY = shiftY + step;
+        else offsetX = shiftX + step;
       }
-      const ops = placed.map((p) => ({
+      const operations = placed.map((placedNode) => ({
         op: "set",
-        id: p.id,
-        x: p.x + ox,
-        y: p.y + oy,
-        width: p.width,
-        height: p.height
+        id: placedNode.id,
+        x: placedNode.x + offsetX,
+        y: placedNode.y + offsetY,
+        width: placedNode.width,
+        height: placedNode.height
       }));
-      const [fromSide, toSide] = SIDES[dir];
-      for (const e of inner) {
-        ops.push(
-          back(e) ? { op: "sides", id: e.id, fromSide: toSide, toSide: fromSide } : { op: "sides", id: e.id, fromSide, toSide }
+      const [fromSide, toSide] = SIDES[direction];
+      for (const edge of inner) {
+        operations.push(
+          back(edge) ? { op: "sides", id: edge.id, fromSide: toSide, toSide: fromSide } : { op: "sides", id: edge.id, fromSide, toSide }
         );
       }
-      return ops;
+      return operations;
     }
     module2.exports = layoutOps;
   }
@@ -860,7 +899,7 @@ var require_layoutOps = __commonJS({
 var require_mostUrgent = __commonJS({
   "src/board/mostUrgent.js"(exports2, module2) {
     var { URGENCY } = require_constants3();
-    var mostUrgent = (colors) => URGENCY.find((c) => colors.includes(c)) || "";
+    var mostUrgent = (colors) => URGENCY.find((color) => colors.includes(color)) || "";
     module2.exports = mostUrgent;
   }
 });
@@ -871,69 +910,79 @@ var require_mergeOps = __commonJS({
     var byReading = require_byReading();
     var fitHeight = require_fitHeight();
     var mostUrgent = require_mostUrgent();
-    function mergeOps(d, ids) {
-      const cards = d.nodes.filter((n) => ids.includes(n.id)).sort(byReading);
+    function mergeOps(canvasData, ids) {
+      const cards = canvasData.nodes.filter((node) => ids.includes(node.id)).sort(byReading);
       if (cards.length < 2) throw new Error("merge needs 2+ cards");
-      if (cards.some((n) => n.type !== "text")) {
+      if (cards.some((node) => node.type !== "text")) {
         throw new Error("merge takes text cards only");
       }
       const [keep, ...rest] = cards;
-      const gone = new Set(rest.map((n) => n.id));
-      const all = new Set(cards.map((n) => n.id));
-      const text = cards.map((n) => n.text.trim()).join("\n\n");
-      const width = Math.max(...cards.map((n) => n.width));
-      const ops = [
+      const gone = new Set(rest.map((node) => node.id));
+      const all = new Set(cards.map((node) => node.id));
+      const text = cards.map((node) => node.text.trim()).join("\n\n");
+      const width = Math.max(...cards.map((node) => node.width));
+      const operations = [
         {
           op: "set",
           id: keep.id,
           text,
-          color: mostUrgent(cards.map((n) => n.color || "")),
+          color: mostUrgent(cards.map((node) => node.color || "")),
           width,
           height: fitHeight(text, width)
         }
       ];
-      const center = (n) => [n.x + n.width / 2, n.y + n.height / 2];
-      const dist = (a, b) => Math.hypot(center(a)[0] - center(b)[0], center(a)[1] - center(b)[1]);
-      const twoWay = (e) => e.fromEnd === "arrow" && e.toEnd !== "none";
+      const center = (node) => [node.x + node.width / 2, node.y + node.height / 2];
+      const dist = (first, second) => Math.hypot(
+        center(first)[0] - center(second)[0],
+        center(first)[1] - center(second)[1]
+      );
+      const twoWay = (edge) => edge.fromEnd === "arrow" && edge.toEnd !== "none";
       const byOther = /* @__PURE__ */ new Map();
-      for (const e of d.edges) {
-        if (!all.has(e.fromNode) && !all.has(e.toNode)) continue;
-        if (all.has(e.fromNode) && all.has(e.toNode)) {
-          if (gone.has(e.fromNode) || gone.has(e.toNode)) {
-            ops.push({ op: "unedge", id: e.id });
+      for (const edge of canvasData.edges) {
+        if (!all.has(edge.fromNode) && !all.has(edge.toNode)) continue;
+        if (all.has(edge.fromNode) && all.has(edge.toNode)) {
+          if (gone.has(edge.fromNode) || gone.has(edge.toNode)) {
+            operations.push({ op: "unedge", id: edge.id });
           }
           continue;
         }
-        const out = all.has(e.fromNode), other = out ? e.toNode : e.fromNode;
-        const len = dist(
-          d.nodes.find((n) => n.id === (out ? e.fromNode : e.toNode)),
-          d.nodes.find((n) => n.id === other) || keep
+        const out = all.has(edge.fromNode), other = out ? edge.toNode : edge.fromNode;
+        const length = dist(
+          canvasData.nodes.find(
+            (node) => node.id === (out ? edge.fromNode : edge.toNode)
+          ),
+          canvasData.nodes.find((node) => node.id === other) || keep
         );
         if (!byOther.has(other)) byOther.set(other, []);
-        byOther.get(other).push({ e, out, len });
+        byOther.get(other).push({ edge, out, length });
       }
       for (const list of byOther.values()) {
-        list.sort((a, b) => a.len - b.len);
-        const best = list.find((x) => twoWay(x.e)) || list[0];
+        list.sort((first, second) => first.length - second.length);
+        const best = list.find((x) => twoWay(x.edge)) || list[0];
         const both = list.some((x) => x.out) && list.some((x) => !x.out);
         for (const x of list) {
-          if (x !== best) ops.push({ op: "unedge", id: x.e.id });
+          if (x !== best) operations.push({ op: "unedge", id: x.edge.id });
         }
-        const e = best.e;
-        if (gone.has(e.fromNode) || gone.has(e.toNode)) {
-          ops.push({
+        const edge = best.edge;
+        if (gone.has(edge.fromNode) || gone.has(edge.toNode)) {
+          operations.push({
             op: "retarget",
-            id: e.id,
-            fromNode: gone.has(e.fromNode) ? keep.id : e.fromNode,
-            toNode: gone.has(e.toNode) ? keep.id : e.toNode
+            id: edge.id,
+            fromNode: gone.has(edge.fromNode) ? keep.id : edge.fromNode,
+            toNode: gone.has(edge.toNode) ? keep.id : edge.toNode
           });
         }
-        if (both && !twoWay(e)) {
-          ops.push({ op: "ends", id: e.id, fromEnd: "arrow", toEnd: "arrow" });
+        if (both && !twoWay(edge)) {
+          operations.push({
+            op: "ends",
+            id: edge.id,
+            fromEnd: "arrow",
+            toEnd: "arrow"
+          });
         }
       }
-      for (const n of rest) ops.push({ op: "remove", id: n.id });
-      return ops;
+      for (const node of rest) operations.push({ op: "remove", id: node.id });
+      return operations;
     }
     module2.exports = mergeOps;
   }
@@ -943,12 +992,12 @@ var require_mergeOps = __commonJS({
 var require_plainLines = __commonJS({
   "src/board/plainLines.js"(exports2, module2) {
     function plainLines(text) {
-      const name = (n) => n.replace(/\.(md|canvas)$/, "").split("/").pop();
+      const name = (node) => node.replace(/\.(md|canvas)$/, "").split("/").pop();
       return String(text || "").split("\n").map(
-        (l) => l.replace(/!?\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(
+        (line) => line.replace(/!?\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(
           /!?\[\[([^\]#]*)#\^?([^\]]+)\]\]/g,
-          (_, n, h) => n ? `${name(n)} \u203A ${h}` : h
-        ).replace(/!?\[\[([^\]]+)\]\]/g, (_, n) => name(n)).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/, "").replace(/\*\*|__|~~|==|`/g, "").replace(/(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g, "$1$2").replace(/\s+/g, " ").trim()
+          (match, node, heading) => node ? `${name(node)} \u203A ${heading}` : heading
+        ).replace(/!?\[\[([^\]]+)\]\]/g, (match, node) => name(node)).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/, "").replace(/\*\*|__|~~|==|`/g, "").replace(/(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g, "$1$2").replace(/\s+/g, " ").trim()
       ).filter(Boolean);
     }
     module2.exports = plainLines;
@@ -959,12 +1008,12 @@ var require_plainLines = __commonJS({
 var require_relinkText = __commonJS({
   "src/board/relinkText.js"(exports2, module2) {
     var path = require("path");
-    function relinkText(text, hits, to) {
+    function relinkText(text, hits, replace) {
       return (text || "").replace(
         /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
-        (m, target, sub, alias) => hits(target.trim()) ? to(
+        (link, target, sub, alias) => hits(target.trim()) ? replace(
           alias || path.posix.basename(target.trim()).replace(/\.canvas$/, "")
-        ) : m
+        ) : link
       );
     }
     module2.exports = relinkText;
@@ -975,21 +1024,21 @@ var require_relinkText = __commonJS({
 var require_restoreOps = __commonJS({
   "src/board/restoreOps.js"(exports2, module2) {
     var newId = require_newId();
-    function restoreOps(d, src) {
-      const fm = (src.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) || [])[1];
-      if (!fm || !/^archived-from:/m.test(fm)) {
+    function restoreOps(canvasData, source) {
+      const frontmatter = (source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) || [])[1];
+      if (!frontmatter || !/^archived-from:/m.test(frontmatter)) {
         throw new Error("not an archived card note");
       }
-      const get = (k) => {
-        const m = new RegExp(`^${k}: (.*)$`, "m").exec(fm);
-        if (!m) return void 0;
-        const v = m[1].trim();
-        return v.startsWith('"') ? JSON.parse(v) : v;
+      const get = (field) => {
+        const match = new RegExp(`^${field}: (.*)$`, "m").exec(frontmatter);
+        if (!match) return void 0;
+        const value = match[1].trim();
+        return value.startsWith('"') ? JSON.parse(value) : value;
       };
       const board = get("archived-from").replace(/^\[\[|\]\]$/g, "");
-      const body = src.slice(src.indexOf("---", 3) + 3).replace(/^\r?\n/, "").replace(/\s+$/, "");
+      const body = source.slice(source.indexOf("---", 3) + 3).replace(/^\r?\n/, "").replace(/\s+$/, "");
       const type = get("card-type") || "text";
-      const ids = new Set(d.nodes.map((n) => n.id));
+      const ids = new Set(canvasData.nodes.map((node2) => node2.id));
       const id = ids.has(get("card-id")) ? newId() : get("card-id");
       const node = {
         id,
@@ -1003,14 +1052,14 @@ var require_restoreOps = __commonJS({
       if (type === "file") node.file = get("card-file");
       if (type === "link") node.url = get("card-url");
       if (get("color")) node.color = get("color");
-      const ops = [{ op: "add", node }];
+      const operations = [{ op: "add", node }];
       const old = get("card-id");
-      const edgeIds = new Set(d.edges.map((e) => e.id));
-      for (const m of fm.matchAll(/^ {2}- (".*")$/gm)) {
-        const [eid, from, fromSide, to, toSide, label] = JSON.parse(m[1]).split(
-          " | "
-        );
-        const fromNode = from === old ? id : from, toNode = to === old ? id : to;
+      const edgeIds = new Set(canvasData.edges.map((edge) => edge.id));
+      for (const edgeLine of frontmatter.matchAll(/^ {2}- (".*")$/gm)) {
+        const [eid, from, fromSide, toId, toSide, label] = JSON.parse(
+          edgeLine[1]
+        ).split(" | ");
+        const fromNode = from === old ? id : from, toNode = toId === old ? id : toId;
         if (edgeIds.has(eid) || !(fromNode === id || ids.has(fromNode)) || !(toNode === id || ids.has(toNode))) {
           continue;
         }
@@ -1018,9 +1067,9 @@ var require_restoreOps = __commonJS({
         if (fromSide) edge.fromSide = fromSide;
         if (toSide) edge.toSide = toSide;
         if (label) edge.label = label;
-        ops.push({ op: "edge", edge });
+        operations.push({ op: "edge", edge });
       }
-      return { board, ops };
+      return { board, operations };
     }
     module2.exports = restoreOps;
   }
@@ -1029,15 +1078,15 @@ var require_restoreOps = __commonJS({
 // src/board/splitText.js
 var require_splitText = __commonJS({
   "src/board/splitText.js"(exports2, module2) {
-    function splitText(text, by) {
-      const h = /^h([1-6])$/.exec(by);
-      const starts = h ? new RegExp(`^#{${h[1]}} `) : by === "bullet" ? /^([-*+]|\d+[.)]) / : null;
-      const pieces = starts ? text.split("\n").reduce((acc, line) => {
-        if (starts.test(line) || !acc.length) acc.push([]);
-        acc[acc.length - 1].push(line);
-        return acc;
-      }, []).map((l) => l.join("\n")) : text.split(/\n\s*\n/);
-      return pieces.map((p) => p.trim()).filter(Boolean);
+    function splitText(text, separator) {
+      const headingMatch = /^h([1-6])$/.exec(separator);
+      const starts = headingMatch ? new RegExp(`^#{${headingMatch[1]}} `) : separator === "bullet" ? /^([-*+]|\d+[.)]) / : null;
+      const pieces = starts ? text.split("\n").reduce((pieces2, line) => {
+        if (starts.test(line) || !pieces2.length) pieces2.push([]);
+        pieces2[pieces2.length - 1].push(line);
+        return pieces2;
+      }, []).map((pieceLines) => pieceLines.join("\n")) : text.split(/\n\s*\n/);
+      return pieces.map((piece) => piece.trim()).filter(Boolean);
     }
     module2.exports = splitText;
   }
@@ -1049,19 +1098,19 @@ var require_splitOps = __commonJS({
     var fitHeight = require_fitHeight();
     var newId = require_newId();
     var splitText = require_splitText();
-    function splitOps(d, id, by = "paragraph") {
-      const card = d.nodes.find((n) => n.id === id);
+    function splitOps(canvasData, id, separator = "paragraph") {
+      const card = canvasData.nodes.find((node) => node.id === id);
       if (!card || card.type !== "text") {
         throw new Error("split takes one text card");
       }
-      const pieces = splitText(card.text || "", by);
-      if (pieces.length < 2) throw new Error(`nothing to split by ${by}`);
+      const pieces = splitText(card.text || "", separator);
+      if (pieces.length < 2) throw new Error(`nothing to split by ${separator}`);
       let y = card.y;
-      return pieces.map((text, i) => {
+      return pieces.map((text, index) => {
         const height = fitHeight(text, card.width);
-        const node = { ...card, id: i ? newId() : card.id, text, y, height };
+        const node = { ...card, id: index ? newId() : card.id, text, y, height };
         y += height + 20;
-        return i ? { op: "add", node } : { op: "set", id, text, height };
+        return index ? { op: "add", node } : { op: "set", id, text, height };
       });
     }
     module2.exports = splitOps;
@@ -1072,29 +1121,34 @@ var require_splitOps = __commonJS({
 var require_templateOps = __commonJS({
   "src/board/templateOps.js"(exports2, module2) {
     var newId = require_newId();
-    function templateOps(tpl, at) {
+    function templateOps(tpl, origin) {
       const nodes = tpl.nodes || [];
       if (!nodes.length) throw new Error("empty template");
-      const x0 = Math.min(...nodes.map((n) => n.x)), y0 = Math.min(...nodes.map((n) => n.y));
-      const ids = new Map(nodes.map((n) => [n.id, newId()]));
-      const ops = nodes.map((n) => ({
+      const minX = Math.min(...nodes.map((node) => node.x)), minY = Math.min(...nodes.map((node) => node.y));
+      const ids = new Map(nodes.map((node) => [node.id, newId()]));
+      const operations = nodes.map((node) => ({
         op: "add",
-        node: { ...n, id: ids.get(n.id), x: n.x - x0 + at.x, y: n.y - y0 + at.y }
+        node: {
+          ...node,
+          id: ids.get(node.id),
+          x: node.x - minX + origin.x,
+          y: node.y - minY + origin.y
+        }
       }));
-      for (const e of tpl.edges || []) {
-        if (ids.has(e.fromNode) && ids.has(e.toNode)) {
-          ops.push({
+      for (const edge of tpl.edges || []) {
+        if (ids.has(edge.fromNode) && ids.has(edge.toNode)) {
+          operations.push({
             op: "edge",
             edge: {
-              ...e,
+              ...edge,
               id: newId(),
-              fromNode: ids.get(e.fromNode),
-              toNode: ids.get(e.toNode)
+              fromNode: ids.get(edge.fromNode),
+              toNode: ids.get(edge.toNode)
             }
           });
         }
       }
-      return ops;
+      return operations;
     }
     module2.exports = templateOps;
   }
@@ -1128,8 +1182,8 @@ var require_boardLibrary = __commonJS({
 var require_parseColors = __commonJS({
   "src/plugin/parseColors.js"(exports2, module2) {
     var { COLOR_NUM } = require_constants();
-    var parseColors = (s) => new Set(
-      String(s || "").split(/[\s,]+/).filter(Boolean).map((c) => COLOR_NUM[c.toLowerCase()] || c).filter((c) => /^[1-6]$/.test(c))
+    var parseColors = (value) => new Set(
+      String(value || "").split(/[\s,]+/).filter(Boolean).map((color) => COLOR_NUM[color.toLowerCase()] || color).filter((color) => /^[1-6]$/.test(color))
     );
     module2.exports = parseColors;
   }
@@ -1140,7 +1194,7 @@ var require_CanvasBoardSettings = __commonJS({
   "src/plugin/CanvasBoardSettings.js"(exports2, module2) {
     var { COLORS, COLOR_NUM, DEFAULTS, WORKFLOW } = require_constants();
     var { Notice, PluginSettingTab, Setting } = require("obsidian");
-    var fs = require("fs");
+    var fileSystem = require("fs");
     var parseColors = require_parseColors();
     var path = require("path");
     var CanvasBoardSettings = class extends PluginSettingTab {
@@ -1152,8 +1206,8 @@ var require_CanvasBoardSettings = __commonJS({
         const { containerEl } = this;
         containerEl.empty();
         const text = (name, desc, key) => new Setting(containerEl).setName(name).setDesc(desc).addText(
-          (t) => t.setPlaceholder(DEFAULTS[key]).setValue(this.plugin.settings[key]).onChange(async (v) => {
-            this.plugin.settings[key] = v.trim() || DEFAULTS[key];
+          (component) => component.setPlaceholder(DEFAULTS[key]).setValue(this.plugin.settings[key]).onChange(async (value) => {
+            this.plugin.settings[key] = value.trim() || DEFAULTS[key];
             await this.plugin.saveData(this.plugin.settings);
           })
         );
@@ -1161,7 +1215,7 @@ var require_CanvasBoardSettings = __commonJS({
         new Setting(containerEl).setName("Hotkeys").setDesc(
           "Every canvas board command can have a key; buttons and menu items show it."
         ).addButton(
-          (b) => b.setButtonText("Open hotkeys").onClick(() => {
+          (button) => button.setButtonText("Open hotkeys").onClick(() => {
             this.app.setting.openTabById("hotkeys");
             const tab = this.app.setting.activeTab;
             if (tab && tab.searchComponent) {
@@ -1174,7 +1228,7 @@ var require_CanvasBoardSettings = __commonJS({
         new Setting(containerEl).setName("Starter board").setDesc(
           'A board with the color legend and first steps: the default board if it does not exist yet, else "Starter board.canvas".'
         ).addButton(
-          (b) => b.setButtonText("Create").onClick(() => this.plugin.createStarterBoard())
+          (button) => button.setButtonText("Create").onClick(() => this.plugin.createStarterBoard())
         );
         text(
           "Default board",
@@ -1199,8 +1253,8 @@ var require_CanvasBoardSettings = __commonJS({
         new Setting(containerEl).setName("Archive").setDesc(
           'Where "Archive selected cards" puts the notes: a "<board> archive" folder next to each board, or one folder for all boards. Changing it does not move notes already archived; restore works from any folder.'
         ).addDropdown(
-          (dd) => dd.addOption("board", "Next to each board").addOption("global", "One folder for all boards").setValue(this.plugin.settings.archiveMode).onChange(async (v) => {
-            this.plugin.settings.archiveMode = v;
+          (dropdown) => dropdown.addOption("board", "Next to each board").addOption("global", "One folder for all boards").setValue(this.plugin.settings.archiveMode).onChange(async (value) => {
+            this.plugin.settings.archiveMode = value;
             await this.plugin.saveData(this.plugin.settings);
             this.display();
           })
@@ -1215,29 +1269,29 @@ var require_CanvasBoardSettings = __commonJS({
         heading("Workflow").setDesc(
           'What each color does and its label, shown in tooltips, the filter pane and the color commands. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.'
         );
-        const go = parseColors(this.plugin.settings.passColors);
+        const goColors = parseColors(this.plugin.settings.passColors);
         for (const [name, meaning] of WORKFLOW) {
-          const num = COLOR_NUM[name];
-          const row = new Setting(containerEl).setName(num ? name : "uncolored").setDesc(meaning);
+          const colorNumber = COLOR_NUM[name];
+          const row = new Setting(containerEl).setName(colorNumber ? name : "uncolored").setDesc(meaning);
           row.nameEl.prepend(
             createSpan({
               cls: "canvas-board-dot canvas-board-workflow-dot",
-              attr: { style: this.plugin.dotStyle(num) }
+              attr: { style: this.plugin.dotStyle(colorNumber) }
             })
           );
           row.addText(
-            (t) => t.setPlaceholder(COLORS.find((c) => c[0] === name)[3]).setValue((this.plugin.settings.colorLabels || {})[name] || "").onChange((v) => this.plugin.setColorLabel(name, v.trim()))
+            (component) => component.setPlaceholder(COLORS.find((color) => color[0] === name)[3]).setValue((this.plugin.settings.colorLabels || {})[name] || "").onChange((value) => this.plugin.setColorLabel(name, value.trim()))
           );
-          if (!num) {
+          if (!colorNumber) {
             row.addToggle(
-              (t) => t.setTooltip("Never triggers the agent").setValue(false).setDisabled(true)
+              (component) => component.setTooltip("Never triggers the agent").setValue(false).setDisabled(true)
             );
           } else {
             row.addToggle(
-              (t) => t.setTooltip("Triggers the agent").setValue(go.has(num)).onChange(async (on) => {
-                if (on) go.add(num);
-                else go.delete(num);
-                this.plugin.settings.passColors = WORKFLOW.map(([n]) => n).filter((n) => go.has(COLOR_NUM[n])).join(" ");
+              (component) => component.setTooltip("Triggers the agent").setValue(goColors.has(colorNumber)).onChange(async (isOn) => {
+                if (isOn) goColors.add(colorNumber);
+                else goColors.delete(colorNumber);
+                this.plugin.settings.passColors = WORKFLOW.map(([node]) => node).filter((node) => goColors.has(COLOR_NUM[node])).join(" ");
                 await this.plugin.saveData(this.plugin.settings);
               })
             );
@@ -1258,7 +1312,7 @@ var require_CanvasBoardSettings = __commonJS({
         new Setting(containerEl).setName("Agent instructions").setDesc(
           "What the agent does on a pass. Saved when the field loses focus, to .claude/skills/canvas-board/SKILL.md (where Claude Code reads it; any agent can be pointed at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin's version."
         ).addButton(
-          (b) => b.setButtonText("Reset").setWarning().onClick(() => {
+          (button) => button.setButtonText("Reset").setWarning().onClick(() => {
             this.plugin.syncSkill(
               path.join(
                 this.app.vault.adapter.basePath,
@@ -1274,18 +1328,18 @@ var require_CanvasBoardSettings = __commonJS({
           attr: { spellcheck: "false", rows: "24" }
         });
         try {
-          editor.value = fs.readFileSync(skillFile, "utf8");
-        } catch (e) {
+          editor.value = fileSystem.readFileSync(skillFile, "utf8");
+        } catch (error) {
           editor.placeholder = "No instructions file yet: Reset writes the plugin's version.";
         }
         editor.addEventListener("change", () => {
           try {
-            fs.mkdirSync(path.dirname(skillFile), { recursive: true });
-            fs.writeFileSync(skillFile, editor.value);
+            fileSystem.mkdirSync(path.dirname(skillFile), { recursive: true });
+            fileSystem.writeFileSync(skillFile, editor.value);
             new Notice("Kanvas board: agent instructions saved");
-          } catch (e) {
+          } catch (error) {
             new Notice(
-              `Kanvas board: could not save the agent instructions (${e.message})`
+              `Kanvas board: could not save the agent instructions (${error.message})`
             );
           }
         });
@@ -1293,31 +1347,31 @@ var require_CanvasBoardSettings = __commonJS({
           "Canvas cards touched in a rolling window, in the status bar while a canvas is the active tab."
         );
         const apm = this.plugin.apm;
-        const a = apm.settings;
+        const apmSettings = apm.settings;
         new Setting(containerEl).setName("Personal best").setDesc(
-          a.pb ? `${a.pb} cards in ${a.windowMinutes} min${a.pbDate ? `, set ${a.pbDate}` : ""}.` : "None yet."
+          apmSettings.pb ? `${apmSettings.pb} cards in ${apmSettings.windowMinutes} min${apmSettings.pbDate ? `, set ${apmSettings.pbDate}` : ""}.` : "None yet."
         ).addButton(
-          (b) => b.setButtonText("Reset").setWarning().onClick(async () => {
+          (button) => button.setButtonText("Reset").setWarning().onClick(async () => {
             await apm.resetPb();
             this.display();
           })
         );
         new Setting(containerEl).setName("Window (minutes)").setDesc(
           "Cards are counted over this rolling window. Changing it resets the personal best: the numbers are not comparable."
-        ).addText((t) => {
-          t.setValue(String(a.windowMinutes));
-          t.inputEl.addEventListener("change", async () => {
-            const n = Number(t.getValue());
-            if (!(n > 0) || n === a.windowMinutes) return;
-            await apm.setWindow(n);
+        ).addText((component) => {
+          component.setValue(String(apmSettings.windowMinutes));
+          component.inputEl.addEventListener("change", async () => {
+            const node = Number(component.getValue());
+            if (!(node > 0) || node === apmSettings.windowMinutes) return;
+            await apm.setWindow(node);
             this.display();
           });
         });
         new Setting(containerEl).setName("Alert below").setDesc(
           "Percent of the personal best under which the counter turns red and pulses. Not in the first window of a session."
         ).addSlider(
-          (sl) => sl.setLimits(5, 50, 5).setValue(a.lowPercent).setDynamicTooltip().onChange(async (v) => {
-            a.lowPercent = v;
+          (slider) => slider.setLimits(5, 50, 5).setValue(apmSettings.lowPercent).setDynamicTooltip().onChange(async (value) => {
+            apmSettings.lowPercent = value;
             await this.plugin.saveData(this.plugin.settings);
             apm.refresh();
           })
@@ -1325,10 +1379,10 @@ var require_CanvasBoardSettings = __commonJS({
         new Setting(containerEl).setName("Idle after (minutes)").setDesc(
           "Without an action for this long, the alert stops and the counter dims. It also dims while Obsidian is not focused."
         ).addText(
-          (t) => t.setValue(String(a.idleMinutes)).onChange(async (v) => {
-            const n = Number(v);
-            if (!(n > 0)) return;
-            a.idleMinutes = n;
+          (component) => component.setValue(String(apmSettings.idleMinutes)).onChange(async (value) => {
+            const node = Number(value);
+            if (!(node > 0)) return;
+            apmSettings.idleMinutes = node;
             await this.plugin.saveData(this.plugin.settings);
             apm.refresh();
           })
@@ -1337,27 +1391,27 @@ var require_CanvasBoardSettings = __commonJS({
         new Setting(containerEl).setName("Layout direction").setDesc(
           'Tidy layout and agent-made plan canvases: the card a branch starts from comes first, following arrows in the fold direction ("depends on" prerequisites too). Shift-click the Tidy layout button, or commands "Tidy layout direction: \u2026", switch it on the fly.'
         ).addDropdown(
-          (dd) => dd.addOptions({
+          (dropdown) => dropdown.addOptions({
             TB: "Top to bottom",
             LR: "Left to right",
             BT: "Bottom to top",
             RL: "Right to left"
-          }).setValue(this.plugin.settings.layoutDirection).onChange((v) => this.plugin.setLayoutDirection(v))
+          }).setValue(this.plugin.settings.layoutDirection).onChange((value) => this.plugin.setLayoutDirection(value))
         );
         heading("View");
         new Setting(containerEl).setName("Fold direction").setDesc(
           'Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Tidy layout reads branches the same way. Commands "Fold direction: \u2026" switch it on the fly.'
         ).addDropdown(
-          (dd) => dd.addOptions({ out: "Outgoing", in: "Incoming" }).setValue(this.plugin.settings.foldDirection).onChange(async (v) => {
-            this.plugin.settings.foldDirection = v;
+          (dropdown) => dropdown.addOptions({ out: "Outgoing", in: "Incoming" }).setValue(this.plugin.settings.foldDirection).onChange(async (value) => {
+            this.plugin.settings.foldDirection = value;
             await this.plugin.saveData(this.plugin.settings);
           })
         );
         new Setting(containerEl).setName("Hide cards under hidden tags").setDesc(
           "Hiding a tag in the filter pane also hides the branch of each card that has it, in the fold direction."
         ).addToggle(
-          (t) => t.setValue(this.plugin.settings.hideTagBranches).onChange(async (v) => {
-            this.plugin.settings.hideTagBranches = v;
+          (component) => component.setValue(this.plugin.settings.hideTagBranches).onChange(async (value) => {
+            this.plugin.settings.hideTagBranches = value;
             await this.plugin.saveData(this.plugin.settings);
             for (const canvas of this.plugin.panes.keys()) {
               this.plugin.refreshView(canvas);
@@ -4481,11 +4535,15 @@ var require_loadSettings = __commonJS({
     var { DEFAULTS } = require_constants2();
     var unitOf = require_unitOf();
     function loadSettings(stored, legacy) {
-      const s = Object.assign({}, DEFAULTS, stored || legacy || {});
-      if (s.unit !== unitOf(s.windowMinutes)) {
-        Object.assign(s, { pb: 0, pbDate: "", unit: unitOf(s.windowMinutes) });
+      const settings = Object.assign({}, DEFAULTS, stored || legacy || {});
+      if (settings.unit !== unitOf(settings.windowMinutes)) {
+        Object.assign(settings, {
+          pb: 0,
+          pbDate: "",
+          unit: unitOf(settings.windowMinutes)
+        });
       }
-      return s;
+      return settings;
     }
     module2.exports = loadSettings;
   }
@@ -4494,18 +4552,18 @@ var require_loadSettings = __commonJS({
 // src/plugin/claudeBin.js
 var require_claudeBin = __commonJS({
   "src/plugin/claudeBin.js"(exports2, module2) {
-    var fs = require("fs");
-    var os = require("os");
+    var fileSystem = require("fs");
+    var operatingSystem = require("os");
     var path = require("path");
     function claudeBin(setting) {
       if (setting) return setting;
       const local = path.join(
-        os.homedir(),
+        operatingSystem.homedir(),
         ".local",
         "bin",
         process.platform === "win32" ? "claude.exe" : "claude"
       );
-      return fs.existsSync(local) ? local : "claude";
+      return fileSystem.existsSync(local) ? local : "claude";
     }
     module2.exports = claudeBin;
   }
@@ -4514,9 +4572,9 @@ var require_claudeBin = __commonJS({
 // src/plugin/onPath.js
 var require_onPath = __commonJS({
   "src/plugin/onPath.js"(exports2, module2) {
-    var fs = require("fs");
+    var fileSystem = require("fs");
     var path = require("path");
-    var onPath = (bin) => String(process.env.PATH || "").split(path.delimiter).some((d) => d && fs.existsSync(path.join(d, bin)));
+    var onPath = (bin) => String(process.env.PATH || "").split(path.delimiter).some((folder) => folder && fileSystem.existsSync(path.join(folder, bin)));
     module2.exports = onPath;
   }
 });
@@ -4584,53 +4642,60 @@ var require_FilterPane = __commonJS({
         this.canvas = canvas;
         this.isOpen = false;
         this.key = "";
-        const el = this.el = canvas.wrapperEl.createDiv({
+        const element = this.element = canvas.wrapperEl.createDiv({
           cls: "canvas-board-pane"
         });
-        for (const ev of [
+        for (const eventName of [
           "pointerdown",
           "mousedown",
           "wheel",
           "dblclick",
           "contextmenu"
         ]) {
-          el.addEventListener(ev, (e) => e.stopPropagation());
+          element.addEventListener(eventName, (event) => event.stopPropagation());
         }
-        const head = el.createDiv({ cls: "canvas-board-pane-head" });
-        const btn = head.createDiv({
+        const head = element.createDiv({ cls: "canvas-board-pane-head" });
+        const button = head.createDiv({
           cls: "clickable-icon",
           attr: {
             "aria-label": plugin.keyedLabel("Filter cards", "filter"),
             "data-tooltip-position": "right"
           }
         });
-        setIcon(btn, "filter");
-        btn.addEventListener("click", () => this.toggle());
+        setIcon(button, "filter");
+        button.addEventListener("click", () => this.toggle());
         this.badge = head.createSpan({ cls: "canvas-board-pane-badge" });
-        this.body = el.createDiv({ cls: "canvas-board-pane-body" });
-        const v = () => plugin.viewState(canvas);
+        this.body = element.createDiv({ cls: "canvas-board-pane-body" });
+        const viewState = () => plugin.viewState(canvas);
         const apply = () => plugin.refreshView(canvas);
         const section = (title, reset) => {
-          const s = this.body.createDiv({ cls: "canvas-board-pane-section" });
-          const h = s.createDiv({ cls: "canvas-board-pane-heading" });
-          h.createSpan({ text: title });
+          const sectionEl = this.body.createDiv({
+            cls: "canvas-board-pane-section"
+          });
+          const headingEl = sectionEl.createDiv({
+            cls: "canvas-board-pane-heading"
+          });
+          headingEl.createSpan({ text: title });
           if (reset) {
-            const r = h.createSpan({
+            const resetEl = headingEl.createSpan({
               cls: "clickable-icon canvas-board-pane-reset",
               attr: { "aria-label": "Reset" }
             });
-            setIcon(r, "rotate-ccw");
-            r.addEventListener("click", () => {
+            setIcon(resetEl, "rotate-ccw");
+            resetEl.addEventListener("click", () => {
               reset();
               apply();
             });
           }
-          return s;
+          return sectionEl;
         };
-        this.colorsEl = section("Colors", () => v().xcolors.clear()).createDiv({
+        this.colorsEl = section(
+          "Colors",
+          () => viewState().xcolors.clear()
+        ).createDiv({
           cls: "canvas-board-chips"
         });
-        this.tagsSection = section("Tags", () => v().xtags.clear());
+        this.tagsSection = section("Tags", () => viewState().xtags.clear());
         this.tagsEl = this.tagsSection.createDiv({ cls: "canvas-board-chips" });
         this.foldedSection = section(
           "Folded",
@@ -4654,35 +4719,35 @@ var require_FilterPane = __commonJS({
       tags() {
         const tags = /* @__PURE__ */ new Set();
         for (const node of this.canvas.nodes.values()) {
-          for (const t of this.plugin.cardTagSet(node)) tags.add(t);
+          for (const tag of this.plugin.cardTagSet(node)) tags.add(tag);
         }
         return tags;
       }
       toggle(open = !this.isOpen) {
         this.isOpen = open;
-        this.el.toggleClass("is-open", open);
+        this.element.toggleClass("is-open", open);
         this.key = "";
         this.update();
       }
       // Redraws the chips and lists only when something changed (called every 2 s), never the text fields.
       update() {
         const { plugin, canvas } = this;
-        const v = plugin.viewState(canvas, false);
+        const viewSnapshot = plugin.viewState(canvas, false);
         const counts = {};
-        for (const n of canvas.nodes.values()) {
-          const d = n.getData();
-          if (d.type !== "group") {
-            counts[d.color || ""] = (counts[d.color || ""] || 0) + 1;
+        for (const node of canvas.nodes.values()) {
+          const data = node.getData();
+          if (data.type !== "group") {
+            counts[data.color || ""] = (counts[data.color || ""] || 0) + 1;
           }
         }
         const folds = plugin.folds(canvas);
-        const active = plugin.filtering(v) || folds.size > 0;
+        const active = plugin.filtering(viewSnapshot) || folds.size > 0;
         this.badge.setText(active ? plugin.viewLabel(canvas) : "");
         this.badge.toggle(!this.isOpen && active);
         if (!this.isOpen) return;
         const state = plugin.viewState(canvas);
         const tags = [.../* @__PURE__ */ new Set([...this.tags(), ...state.xtags])].sort();
-        const foldedCards = [...folds.keys()].map((id) => canvas.nodes.get(id)).filter(Boolean).map((n) => [n.getData().color, plugin.cardText(n)]);
+        const foldedCards = [...folds.keys()].map((id) => canvas.nodes.get(id)).filter(Boolean).map((node) => [node.getData().color, plugin.cardText(node)]);
         const key = JSON.stringify([
           counts,
           [...state.xcolors],
@@ -4723,16 +4788,16 @@ var require_FilterPane = __commonJS({
           });
           chip.addEventListener(
             "click",
-            (e) => e.shiftKey ? select((n) => (n.getData().color || "") === color) : toggle(state.xcolors, color)
+            (event) => event.shiftKey ? select((node) => (node.getData().color || "") === color) : toggle(state.xcolors, color)
           );
         }
         this.tagsEl.empty();
         this.tagsSection.toggle(tags.length > 0);
-        for (const t of tags) {
-          const out = state.xtags.has(t);
+        for (const tag of tags) {
+          const out = state.xtags.has(tag);
           const chip = this.tagsEl.createDiv({
             cls: "canvas-board-chip",
-            text: "#" + t,
+            text: "#" + tag,
             attr: {
               "aria-label": `click to ${out ? "show" : "hide"} \xB7 shift-click to select`
             }
@@ -4740,12 +4805,12 @@ var require_FilterPane = __commonJS({
           chip.toggleClass("is-out", out);
           chip.addEventListener(
             "click",
-            (e) => e.shiftKey ? select((n) => plugin.cardTagSet(n).has(t)) : toggle(state.xtags, t)
+            (event) => event.shiftKey ? select((node) => plugin.cardTagSet(node).has(tag)) : toggle(state.xtags, tag)
           );
         }
         this.foldedEl.empty();
         this.foldedSection.toggle(folds.size > 0);
-        for (const [id, dir] of folds) {
+        for (const [id, direction] of folds) {
           const node = canvas.nodes.get(id);
           if (!node) continue;
           const row = this.foldedEl.createDiv({
@@ -4759,7 +4824,9 @@ var require_FilterPane = __commonJS({
             attr: { style: plugin.dotStyle(node.getData().color) }
           });
           const text = row.createDiv({ cls: "canvas-board-pane-card-text" });
-          const [title, ...rest] = plugin.cb.plainLines(plugin.cardText(node));
+          const [title, ...rest] = plugin.boardLibrary.plainLines(
+            plugin.cardText(node)
+          );
           text.createDiv({
             cls: "canvas-board-pane-card-title",
             text: title || "(empty)"
@@ -4772,16 +4839,16 @@ var require_FilterPane = __commonJS({
           }
           row.createSpan({
             cls: "canvas-board-pane-card-count",
-            text: `\xB7 ${plugin.branchLevels(canvas, id, dir).flat().length} folded`
+            text: `\xB7 ${plugin.branchLevels(canvas, id, direction).flat().length} folded`
           });
           row.addEventListener(
             "click",
-            (e) => e.shiftKey ? select((n) => n.id === id) : plugin.unfold(canvas, [id], Infinity)
+            (event) => event.shiftKey ? select((node2) => node2.id === id) : plugin.unfold(canvas, [id], Infinity)
           );
         }
       }
       destroy() {
-        this.el.remove();
+        this.element.remove();
       }
     };
     module2.exports = FilterPane;
@@ -4806,8 +4873,11 @@ var require_clearFrames = __commonJS({
 var require_matchOffsets = __commonJS({
   "src/plugin/matchOffsets.js"(exports2, module2) {
     function matchOffsets(text, query) {
-      const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
-      return Array.from(text.matchAll(re), (m) => m.index);
+      const pattern = new RegExp(
+        query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        "gi"
+      );
+      return Array.from(text.matchAll(pattern), (match) => match.index);
     }
     module2.exports = matchOffsets;
   }
@@ -4818,18 +4888,18 @@ var require_frameText = __commonJS({
   "src/plugin/frameText.js"(exports2, module2) {
     var matchOffsets = require_matchOffsets();
     function frameText(root, query) {
-      const doc = root.ownerDocument;
-      const walker = doc.createTreeWalker(root, 4);
+      const ownerDocument = root.ownerDocument;
+      const walker = ownerDocument.createTreeWalker(root, 4);
       const texts = [];
       while (walker.nextNode()) texts.push(walker.currentNode);
       const frames = [];
       for (const node of texts) {
         if (node.parentElement.closest(".cm-editor, input, textarea")) continue;
         const here = [];
-        for (const at of matchOffsets(node.data, query).reverse()) {
-          const hit = node.splitText(at);
+        for (const offset of matchOffsets(node.data, query).reverse()) {
+          const hit = node.splitText(offset);
           hit.splitText(query.length);
-          const frame = doc.createElement("span");
+          const frame = ownerDocument.createElement("span");
           frame.className = "canvas-board-find-text";
           hit.replaceWith(frame);
           frame.append(hit);
@@ -4860,19 +4930,19 @@ var require_FindBar = __commonJS({
           window.clearTimeout(this.frameTimer);
           this.frameTimer = window.setTimeout(() => this.frame(), 100);
         });
-        const el = this.el = canvas.wrapperEl.createDiv({
+        const element = this.element = canvas.wrapperEl.createDiv({
           cls: "document-search-container canvas-board-find"
         });
-        for (const ev of [
+        for (const eventName of [
           "pointerdown",
           "mousedown",
           "wheel",
           "dblclick",
           "contextmenu"
         ]) {
-          el.addEventListener(ev, (e) => e.stopPropagation());
+          element.addEventListener(eventName, (event) => event.stopPropagation());
         }
-        const box = el.createDiv({ cls: "document-search" });
+        const box = element.createDiv({ cls: "document-search" });
         const field = this.field = box.createDiv({
           cls: "search-input-container document-search-input"
         });
@@ -4882,13 +4952,13 @@ var require_FindBar = __commonJS({
         });
         this.countEl = field.createDiv({ cls: "document-search-count" });
         const buttons = box.createDiv({ cls: "document-search-buttons" });
-        const button = (icon, label, fn) => {
-          const b = buttons.createEl("button", {
+        const button = (icon, label, onClick) => {
+          const buttonEl = buttons.createEl("button", {
             cls: "document-search-button clickable-icon",
             attr: { "aria-label": label }
           });
-          setIcon(b, icon);
-          b.addEventListener("click", fn);
+          setIcon(buttonEl, icon);
+          buttonEl.addEventListener("click", onClick);
         };
         button("arrow-up", "Previous (Shift+Enter)", () => this.step(-1));
         button("arrow-down", "Next (Enter)", () => this.step(1));
@@ -4905,15 +4975,15 @@ var require_FindBar = __commonJS({
         setIcon(close, "x");
         close.addEventListener("click", () => this.close());
         this.scope = new Scope(plugin.app.scope);
-        this.input.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" && e.altKey) {
-            e.preventDefault();
+        this.input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" && event.altKey) {
+            event.preventDefault();
             this.selectAll();
-          } else if (e.key === "Enter") {
-            e.preventDefault();
-            this.step(e.shiftKey ? -1 : 1);
-          } else if (e.key === "Escape") {
-            e.preventDefault();
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            this.step(event.shiftKey ? -1 : 1);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
             this.close();
           }
         });
@@ -4926,66 +4996,66 @@ var require_FindBar = __commonJS({
           () => plugin.app.keymap.popScope(this.scope)
         );
         this.input.addEventListener("input", () => this.search());
-        el.hide();
+        element.hide();
       }
       open() {
-        this.el.show();
+        this.element.show();
         this.input.focus();
         this.input.select();
         if (this.input.value) this.search();
       }
       close() {
         this.mark([]);
-        this.el.hide();
+        this.element.hide();
         this.input.blur();
       }
       search() {
-        const q = this.input.value.trim().toLowerCase();
-        const p = this.plugin;
-        this.matches = !q ? [] : [...this.canvas.nodes.values()].filter((n) => p.cardText(n).toLowerCase().includes(q)).sort((a, b) => a.y - b.y || a.x - b.x);
+        const query = this.input.value.trim().toLowerCase();
+        const plugin = this.plugin;
+        this.matches = !query ? [] : [...this.canvas.nodes.values()].filter((node) => plugin.cardText(node).toLowerCase().includes(query)).sort((first, second) => first.y - second.y || first.x - second.x);
         this.index = this.matches.length ? 0 : -1;
         this.mark(this.matches);
         this.show();
       }
-      step(d) {
+      step(step) {
         if (!this.matches.length) return;
-        this.index = (this.index + d + this.matches.length) % this.matches.length;
+        this.index = (this.index + step + this.matches.length) % this.matches.length;
         this.show();
       }
       // Every match selected (so it can be moved, colored...) and in view; Enter goes back to one at a time.
       selectAll() {
         const { canvas, plugin, matches } = this;
         if (!matches.length) return;
-        if (matches.some((n) => plugin.isHidden(canvas, n))) {
+        if (matches.some((node) => plugin.isHidden(canvas, node))) {
           plugin.showAll(canvas);
           new Notice("Kanvas board: filter and folds cleared to show the cards");
         }
-        for (const n of matches) n.nodeEl.addClass("is-current");
+        for (const node of matches) node.nodeEl.addClass("is-current");
         canvas.updateSelection(() => {
           canvas.selection.clear();
-          for (const n of matches) canvas.selection.add(n);
+          for (const node of matches) canvas.selection.add(node);
         });
         canvas.zoomToSelection();
         this.countEl.setText(`all ${matches.length}`);
         this.input.focus();
       }
       mark(nodes) {
-        for (const n of this.canvas.nodes.values()) {
-          n.nodeEl.removeClass("canvas-board-find-match", "is-current");
+        for (const node of this.canvas.nodes.values()) {
+          node.nodeEl.removeClass("canvas-board-find-match", "is-current");
         }
-        for (const n of nodes) n.nodeEl.addClass("canvas-board-find-match");
+        for (const node of nodes) node.nodeEl.addClass("canvas-board-find-match");
         this.frame(nodes);
       }
       // Frames the query in the given cards (default: the same ones again) and watches for cards rendering.
       frame(nodes = this.framed) {
-        const root = (n) => n.contentEl || n.nodeEl;
+        const root = (node) => node.contentEl || node.nodeEl;
         this.observer.disconnect();
-        for (const n of this.framed) clearFrames(root(n));
+        for (const node of this.framed) clearFrames(root(node));
         this.framed = nodes;
-        const q = this.input.value.trim();
-        for (const n of nodes) {
-          const frames = frameText(root(n), q);
-          if (n === this.revealing && frames[0]) {
+        const query = this.input.value.trim();
+        for (const node of nodes) {
+          const frames = frameText(root(node), query);
+          if (node === this.revealing && frames[0]) {
             this.reveal(frames[0]);
             this.revealing = null;
           }
@@ -5001,21 +5071,21 @@ var require_FindBar = __commonJS({
       reveal(frame) {
         const box = frame.closest(".markdown-preview-view");
         if (!box) return;
-        const at = frame.getBoundingClientRect(), view = box.getBoundingClientRect();
+        const frameBox = frame.getBoundingClientRect(), view = box.getBoundingClientRect();
         const zoom = view.height / box.offsetHeight || 1;
-        box.scrollTop += (at.top - view.top) / zoom - box.clientHeight / 2;
+        box.scrollTop += (frameBox.top - view.top) / zoom - box.clientHeight / 2;
       }
       show() {
         const { canvas, plugin } = this;
-        const q = this.input.value.trim();
+        const query = this.input.value.trim();
         this.countEl.setText(
-          !q ? "" : this.matches.length ? `${this.index + 1} / ${this.matches.length}` : "No results"
+          !query ? "" : this.matches.length ? `${this.index + 1} / ${this.matches.length}` : "No results"
         );
-        this.field.toggleClass("mod-no-match", !!q && !this.matches.length);
+        this.field.toggleClass("mod-no-match", !!query && !this.matches.length);
         const node = this.matches[this.index];
         if (!node) return;
-        for (const n of this.matches) {
-          n.nodeEl.toggleClass("is-current", n === node);
+        for (const matchNode of this.matches) {
+          matchNode.nodeEl.toggleClass("is-current", matchNode === node);
         }
         if (plugin.isHidden(canvas, node)) {
           plugin.showAll(canvas);
@@ -5031,7 +5101,7 @@ var require_FindBar = __commonJS({
         this.mark([]);
         window.clearTimeout(this.frameTimer);
         this.plugin.app.keymap.popScope(this.scope);
-        this.el.remove();
+        this.element.remove();
       }
     };
     module2.exports = FindBar;
@@ -5048,13 +5118,13 @@ var require_NameSuggest = __commonJS({
         this.names = names;
         this.onPick = onPick;
       }
-      getSuggestions(q) {
-        q = q.trim().toLowerCase();
-        return this.names.filter((n) => n.toLowerCase().includes(q)).sort((a, b) => a.localeCompare(b));
+      getSuggestions(query) {
+        query = query.trim().toLowerCase();
+        return this.names.filter((node) => node.toLowerCase().includes(query)).sort((first, second) => first.localeCompare(second));
       }
-      renderSuggestion(name, el) {
-        el.setText(name);
-        el.createSpan({ cls: "canvas-board-key", text: "overwrite" });
+      renderSuggestion(name, element) {
+        element.setText(name);
+        element.createSpan({ cls: "canvas-board-key", text: "overwrite" });
       }
       selectSuggestion(name) {
         this.onPick(name);
@@ -5071,19 +5141,21 @@ var require_NamePrompt = __commonJS({
     var { Modal, Notice, Setting } = require("obsidian");
     var NameSuggest = require_NameSuggest();
     var NamePrompt = class extends Modal {
-      constructor(app, title, onSubmit, opts = {}) {
+      constructor(app, title, onSubmit, options = {}) {
         super(app);
         this.title = title;
         this.onSubmit = onSubmit;
-        this.opts = opts;
+        this.options = options;
       }
       onOpen() {
         this.setTitle(this.title);
-        const { suggestions, overwrite } = this.opts;
+        const { suggestions, overwrite } = this.options;
         let value = "";
         let button, suggest, picked = false;
-        const clean = (v) => v.trim().replace(/[\\/:#^|[\]]/g, "");
-        const nameOf = (v) => suggestions && suggestions.some((s) => s.toLowerCase() === v.trim().toLowerCase()) ? v.trim() : clean(v);
+        const clean = (value2) => value2.trim().replace(/[\\/:#^|[\]]/g, "");
+        const nameOf = (value2) => suggestions && suggestions.some(
+          (suggestion) => suggestion.toLowerCase() === value2.trim().toLowerCase()
+        ) ? value2.trim() : clean(value2);
         const refresh = () => {
           if (!button) return;
           const over = !!(overwrite && value.trim() && overwrite(nameOf(value)));
@@ -5096,36 +5168,41 @@ var require_NamePrompt = __commonJS({
           if (!name) return;
           this.close();
           Promise.resolve(this.onSubmit(name)).catch(
-            (e) => new Notice(`Kanvas board: ${e.message}`)
+            (error) => new Notice(`Kanvas board: ${error.message}`)
           );
         };
-        new Setting(this.contentEl).addText((t) => {
-          t.onChange((v) => {
-            value = v;
+        new Setting(this.contentEl).addText((text) => {
+          text.onChange((typed) => {
+            value = typed;
             refresh();
           });
           if (suggestions && suggestions.length) {
-            suggest = new NameSuggest(this.app, t.inputEl, suggestions, (v) => {
-              t.setValue(v);
-              value = v;
-              refresh();
-              picked = true;
-              setTimeout(() => {
-                picked = false;
-              }, 0);
-            });
+            suggest = new NameSuggest(
+              this.app,
+              text.inputEl,
+              suggestions,
+              (suggestion) => {
+                text.setValue(suggestion);
+                value = suggestion;
+                refresh();
+                picked = true;
+                setTimeout(() => {
+                  picked = false;
+                }, 0);
+              }
+            );
           }
-          t.inputEl.addEventListener("keydown", (e) => {
-            if (e.key !== "Enter" || picked || suggest && suggest.suggestEl && suggest.suggestEl.isConnected) {
+          text.inputEl.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" || picked || suggest && suggest.suggestEl && suggest.suggestEl.isConnected) {
               return;
             }
-            e.preventDefault();
+            event.preventDefault();
             submit();
           });
-          setTimeout(() => t.inputEl.focus(), 0);
-        }).addButton((b) => {
-          button = b;
-          b.setButtonText("Create").setCta().onClick(submit);
+          setTimeout(() => text.inputEl.focus(), 0);
+        }).addButton((buttonComponent) => {
+          button = buttonComponent;
+          buttonComponent.setButtonText("Create").setCta().onClick(submit);
         });
       }
       onClose() {
@@ -5164,7 +5241,7 @@ var require_Picker = __commonJS({
       }
       onChooseItem(item) {
         Promise.resolve(this.onChoose(item)).catch(
-          (e) => new Notice(`Kanvas board: ${e.message}`)
+          (error) => new Notice(`Kanvas board: ${error.message}`)
         );
       }
     };
@@ -5184,30 +5261,34 @@ var require_UnpackChoice = __commonJS({
         this.onPick = onPick;
       }
       onOpen() {
-        const k = this.links.length;
+        const count = this.links.length;
         this.setTitle(
-          `${this.file.basename} is linked from ${k} other place${k > 1 ? "s" : ""}`
+          `${this.file.basename} is linked from ${count} other place${count > 1 ? "s" : ""}`
         );
-        const ul = this.contentEl.createEl("ul");
-        for (const l of this.links.slice(0, 8)) {
-          ul.createEl("li", { text: l.id ? `${l.label} (${l.path})` : l.path });
+        const list = this.contentEl.createEl("ul");
+        for (const link of this.links.slice(0, 8)) {
+          list.createEl("li", {
+            text: link.id ? `${link.label} (${link.path})` : link.path
+          });
         }
-        if (k > 8) ul.createEl("li", { text: `and ${k - 8} more` });
-        const s = new Setting(this.contentEl);
+        if (count > 8) list.createEl("li", { text: `and ${count - 8} more` });
+        const setting = new Setting(this.contentEl);
         const pick = (mode) => {
           this.close();
           this.onPick(mode);
         };
-        s.addButton(
-          (b) => b.setButtonText("Unpack into a group, redirect links").setCta().onClick(() => pick("group"))
+        setting.addButton(
+          (button) => button.setButtonText("Unpack into a group, redirect links").setCta().onClick(() => pick("group"))
         );
-        s.addButton(
-          (b) => b.setButtonText("Keep the file (copy)").onClick(() => pick("copy"))
+        setting.addButton(
+          (button) => button.setButtonText("Keep the file (copy)").onClick(() => pick("copy"))
         );
-        s.addButton(
-          (b) => b.setButtonText("Break links and trash").setWarning().onClick(() => pick("dissolve"))
+        setting.addButton(
+          (button) => button.setButtonText("Break links and trash").setWarning().onClick(() => pick("dissolve"))
         );
-        s.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()));
+        setting.addButton(
+          (button) => button.setButtonText("Cancel").onClick(() => this.close())
+        );
       }
       onClose() {
         this.contentEl.empty();
@@ -5238,7 +5319,7 @@ var require_CanvasBoardPlugin = __commonJS({
     var defaultLaunch = require_defaultLaunch();
     var FilterPane = require_FilterPane();
     var FindBar = require_FindBar();
-    var fs = require("fs");
+    var fileSystem = require("fs");
     var NamePrompt = require_NamePrompt();
     var nextTurn = require_nextTurn();
     var parseColors = require_parseColors();
@@ -5249,20 +5330,23 @@ var require_CanvasBoardPlugin = __commonJS({
       async onload() {
         this.settings = Object.assign({}, DEFAULTS, await this.loadData());
         this.addSettingTab(new CanvasBoardSettings(this.app, this));
-        const dir = path.join(this.app.vault.adapter.basePath, this.manifest.dir);
-        const cb = boardLibrary;
-        const { applyOps, layoutOps } = cb;
-        this.cb = cb;
+        const pluginDir = path.join(
+          this.app.vault.adapter.basePath,
+          this.manifest.dir
+        );
+        const library = boardLibrary;
+        const { applyOps, layoutOps } = library;
+        this.boardLibrary = library;
         let legacyApm;
         if (!this.settings.apm) {
           try {
             legacyApm = JSON.parse(
-              fs.readFileSync(
-                path.join(dir, "..", "apm-counter", "data.json"),
+              fileSystem.readFileSync(
+                path.join(pluginDir, "..", "apm-counter", "data.json"),
                 "utf8"
               )
             );
-          } catch (e) {
+          } catch (error) {
           }
         }
         this.settings.apm = loadSettings(this.settings.apm, legacyApm);
@@ -5279,28 +5363,30 @@ var require_CanvasBoardPlugin = __commonJS({
             return canvas ? JSON.stringify(canvas.getData()) : null;
           },
           // Changing a card's type needs setData() without the card, then with it, to keep its id.
-          apply: async (board, ops) => {
+          apply: async (board, operations) => {
             const canvas = this.openCanvas(board);
             if (!canvas) return null;
-            const d = canvas.getData();
-            const retyped = applyOps(d, ops);
+            const canvasData = canvas.getData();
+            const retyped = applyOps(canvasData, operations);
             if (retyped.length) {
               canvas.setData({
-                ...d,
-                nodes: d.nodes.filter((n) => !retyped.includes(n.id))
+                ...canvasData,
+                nodes: canvasData.nodes.filter(
+                  (node) => !retyped.includes(node.id)
+                )
               });
             }
-            canvas.setData(d);
+            canvas.setData(canvasData);
             canvas.requestSave();
-            await new Promise((r) => setTimeout(r, 2500));
+            await new Promise((resolve) => setTimeout(resolve, 2500));
             return "obsidian";
           }
         };
-        this.syncSkill(dir);
+        this.syncSkill(pluginDir);
         this.addCommand({
           id: "reset-skill",
           name: "Reset agent skill to the plugin's version (overwrites your edits)",
-          callback: () => this.syncSkill(dir, true)
+          callback: () => this.syncSkill(pluginDir, true)
         });
         for (const [name, color, key] of COLORS) {
           this.addCommand({
@@ -5330,17 +5416,17 @@ var require_CanvasBoardPlugin = __commonJS({
                 );
                 return true;
               }
-              const ids = [...canvas.selection].map((n) => n.id);
-              const d = canvas.getData();
+              const ids = [...canvas.selection].map((node) => node.id);
+              const canvasData = canvas.getData();
               this.edit(
                 canvas,
-                layoutOps(d, {
+                layoutOps(canvasData, {
                   ids,
-                  dir: this.settings.layoutDirection,
+                  direction: this.settings.layoutDirection,
                   dagre,
                   flow: this.settings.foldDirection
                 }),
-                d
+                canvasData
               );
             }
             return true;
@@ -5351,20 +5437,20 @@ var require_CanvasBoardPlugin = __commonJS({
           name: "Tidy layout direction: next",
           callback: () => this.cycleLayoutDirection()
         });
-        for (const [dir2, { name }] of Object.entries(LAYOUT_DIRS)) {
+        for (const [direction, { name }] of Object.entries(LAYOUT_DIRS)) {
           this.addCommand({
-            id: `tidy-direction-${dir2.toLowerCase()}`,
+            id: `tidy-direction-${direction.toLowerCase()}`,
             name: `Tidy layout direction: ${name}`,
             checkCallback: (checking) => {
-              if (this.settings.layoutDirection === dir2) return false;
-              if (!checking) this.setLayoutDirection(dir2);
+              if (this.settings.layoutDirection === direction) return false;
+              if (!checking) this.setLayoutDirection(direction);
               return true;
             }
           });
         }
         const actions = this.actions = [];
         const runAction = this.runAction = (run, canvas, sel) => Promise.resolve(run(canvas, sel)).catch(
-          (e) => new Notice(`Kanvas board: ${e.message}`)
+          (error) => new Notice(`Kanvas board: ${error.message}`)
         );
         const canvasCommand = (id, name, menu, test, run) => {
           actions.push({ id, menu, test, run });
@@ -5379,24 +5465,24 @@ var require_CanvasBoardPlugin = __commonJS({
             }
           });
         };
-        const isText = (n) => n.getData().type === "text";
+        const isText = (node) => node.getData().type === "text";
         canvasCommand(
           "collapse",
           "Pack into subcanvas",
           ["Pack into subcanvas", "package"],
-          (c, sel) => sel.length > 0,
+          (canvas, sel) => sel.length > 0,
           (canvas, sel) => new NamePrompt(this.app, "Subcanvas name", async (name) => {
             const board = this.activeFile();
-            const dir2 = board.parent && board.parent.path !== "/" ? board.parent.path + "/" : "";
-            const file = this.freePath(dir2, name, ".canvas");
-            const { ops, sub } = cb.collapseOps(
+            const folder = board.parent && board.parent.path !== "/" ? board.parent.path + "/" : "";
+            const file = this.freePath(folder, name, ".canvas");
+            const { operations, sub } = library.collapseOps(
               canvas.getData(),
-              sel.map((n) => n.id),
+              sel.map((node) => node.id),
               file,
               name
             );
             await this.app.vault.create(file, JSON.stringify(sub, null, "	"));
-            this.edit(canvas, ops);
+            this.edit(canvas, operations);
             this.undoNotice(
               canvas,
               `packed ${sel.length} card${sel.length > 1 ? "s" : ""} into ${file}`,
@@ -5404,7 +5490,7 @@ var require_CanvasBoardPlugin = __commonJS({
             );
           }).open()
         );
-        const linked = (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]);
+        const linked = (canvas, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]);
         canvasCommand(
           "expand",
           "Unpack subcanvas (dissolve)",
@@ -5419,7 +5505,7 @@ var require_CanvasBoardPlugin = __commonJS({
               file,
               links,
               (mode) => this.unpack(canvas, node, file, mode, links).catch(
-                (e) => new Notice(`Kanvas board: ${e.message}`)
+                (error) => new Notice(`Kanvas board: ${error.message}`)
               )
             ).open();
           }
@@ -5435,16 +5521,16 @@ var require_CanvasBoardPlugin = __commonJS({
           "merge",
           "Merge selected cards",
           ["Merge cards", "merge"],
-          (c, sel) => sel.length > 1 && sel.every(isText),
+          (canvas, sel) => sel.length > 1 && sel.every(isText),
           (canvas, sel) => this.edit(
             canvas,
-            cb.mergeOps(
+            library.mergeOps(
               canvas.getData(),
-              sel.map((n) => n.id)
+              sel.map((node) => node.id)
             )
           )
         );
-        for (const [by, label] of [
+        for (const [separator, label] of [
           ["paragraph", "paragraph"],
           ["bullet", "top-level bullet"],
           ["h1", "heading 1"],
@@ -5452,18 +5538,21 @@ var require_CanvasBoardPlugin = __commonJS({
           ["h3", "heading 3"]
         ]) {
           canvasCommand(
-            `split-${by}`,
+            `split-${separator}`,
             `Split card by ${label}`,
-            by === "bullet" ? ["Split by top-level bullet", "split"] : null,
-            (c, sel) => sel.length === 1 && isText(sel[0]) && !sel[0].isEditing,
-            (canvas, [node]) => this.edit(canvas, cb.splitOps(canvas.getData(), node.id, by))
+            separator === "bullet" ? ["Split by top-level bullet", "split"] : null,
+            (canvas, sel) => sel.length === 1 && isText(sel[0]) && !sel[0].isEditing,
+            (canvas, [node]) => this.edit(
+              canvas,
+              library.splitOps(canvas.getData(), node.id, separator)
+            )
           );
         }
         canvasCommand(
           "extract",
           "Extract current selection to a new card",
           ["Extract current selection to a new card", "text-select"],
-          (c, sel) => sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]),
+          (canvas, sel) => sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]),
           (canvas, [node]) => {
             const editor = this.cardEditor(node);
             const part = editor.getSelection();
@@ -5472,39 +5561,46 @@ var require_CanvasBoardPlugin = __commonJS({
             const before = editor.getValue();
             editor.replaceSelection("");
             node.blur();
-            const d = canvas.getData();
-            const n = d.nodes.find((x) => x.id === node.id);
-            if (n) n.text = before;
-            this.edit(canvas, cb.extractOps(d, node.id, part, from), d);
+            const canvasData = canvas.getData();
+            const savedNode = canvasData.nodes.find((x) => x.id === node.id);
+            if (savedNode) savedNode.text = before;
+            this.edit(
+              canvas,
+              library.extractOps(canvasData, node.id, part, from),
+              canvasData
+            );
           }
         );
         canvasCommand(
           "archive",
           "Archive selected cards",
           ["Archive", "archive"],
-          (c, sel) => sel.length > 0,
+          (canvas, sel) => sel.length > 0,
           async (canvas, sel) => {
             const board = this.activeFile().path;
-            const d = canvas.getData();
-            const dir2 = cb.archiveDir(board, this.settings);
-            if (!this.app.vault.getAbstractFileByPath(dir2)) {
-              await this.app.vault.createFolder(dir2);
+            const canvasData = canvas.getData();
+            const folder = library.archiveDir(board, this.settings);
+            if (!this.app.vault.getAbstractFileByPath(folder)) {
+              await this.app.vault.createFolder(folder);
             }
             const notes = [];
             for (const node of sel) {
-              const a = cb.archiveNote(
-                d,
+              const archived = library.archiveNote(
+                canvasData,
                 node.id,
                 board,
                 window.moment().format("YYYY-MM-DD"),
                 this.cardContexts(node, board)
               );
-              notes.push(this.freePath(dir2 + "/", a.name, ".md"));
-              await this.app.vault.create(notes[notes.length - 1], a.content);
+              notes.push(this.freePath(folder + "/", archived.name, ".md"));
+              await this.app.vault.create(
+                notes[notes.length - 1],
+                archived.content
+              );
             }
             this.edit(
               canvas,
-              sel.map((n) => ({ op: "remove", id: n.id }))
+              sel.map((node) => ({ op: "remove", id: node.id }))
             );
             this.undoNotice(
               canvas,
@@ -5513,16 +5609,16 @@ var require_CanvasBoardPlugin = __commonJS({
             );
           }
         );
-        const canFold = (c, n) => !this.foldOf(n) && this.branchLinks(c, this.settings.foldDirection).has(n.id);
+        const canFold = (canvas, node) => !this.foldOf(node) && this.branchLinks(canvas, this.settings.foldDirection).has(node.id);
         canvasCommand(
           "fold",
           "Fold branch",
           ["Fold branch", "chevrons-down-up"],
-          (c, sel) => sel.some((n) => canFold(c, n)),
+          (canvas, sel) => sel.some((node) => canFold(canvas, node)),
           (canvas, sel) => this.setFolds(
             canvas,
             new Map(
-              sel.filter((n) => canFold(canvas, n)).map((n) => [n.id, this.settings.foldDirection])
+              sel.filter((node) => canFold(canvas, node)).map((node) => [node.id, this.settings.foldDirection])
             )
           )
         );
@@ -5546,25 +5642,29 @@ var require_CanvasBoardPlugin = __commonJS({
             id,
             name,
             menu,
-            (c, sel) => sel.some((n) => this.unfoldTargets(c, n.id).length),
+            (canvas, sel) => sel.some((node) => this.unfoldTargets(canvas, node.id).length),
             (canvas, sel) => this.unfold(
               canvas,
-              [...new Set(sel.flatMap((n) => this.unfoldTargets(canvas, n.id)))],
+              [
+                ...new Set(
+                  sel.flatMap((node) => this.unfoldTargets(canvas, node.id))
+                )
+              ],
               levels
             )
           );
         }
-        for (const [dir2, label] of [
+        for (const [direction, label] of [
           ["out", "outgoing (cards it points to)"],
           ["in", "incoming (cards pointing to it)"]
         ]) {
           this.addCommand({
-            id: `fold-direction-${dir2}`,
+            id: `fold-direction-${direction}`,
             name: `Fold direction: ${label}`,
             checkCallback: (checking) => {
-              if (this.settings.foldDirection === dir2) return false;
+              if (this.settings.foldDirection === direction) return false;
               if (!checking) {
-                this.settings.foldDirection = dir2;
+                this.settings.foldDirection = direction;
                 this.saveData(this.settings);
                 new Notice(`Kanvas board: fold direction ${label}`);
               }
@@ -5573,17 +5673,17 @@ var require_CanvasBoardPlugin = __commonJS({
           });
         }
         const templates = () => this.app.vault.getFiles().filter(
-          (f) => f.extension === "canvas" && f.path.startsWith(cb.TEMPLATE_DIR + "/")
+          (file) => file.extension === "canvas" && file.path.startsWith(library.TEMPLATE_DIR + "/")
         );
-        const templateName = (f) => f.path.slice(cb.TEMPLATE_DIR.length + 1, -".canvas".length);
+        const templateName = (file) => file.path.slice(library.TEMPLATE_DIR.length + 1, -".canvas".length);
         canvasCommand(
           "template-save",
           "Save selected cards as a template",
           ["Save as template", "layout-template"],
-          (c, sel) => sel.length > 0,
+          (canvas, sel) => sel.length > 0,
           (canvas) => {
             const existing = new Map(
-              templates().map((f) => [templateName(f).toLowerCase(), f])
+              templates().map((file) => [templateName(file).toLowerCase(), file])
             );
             new NamePrompt(
               this.app,
@@ -5602,60 +5702,68 @@ var require_CanvasBoardPlugin = __commonJS({
                   new Notice(`Kanvas board: template ${old.path} overwritten`);
                   return;
                 }
-                if (!this.app.vault.getAbstractFileByPath(cb.TEMPLATE_DIR)) {
-                  await this.app.vault.createFolder(cb.TEMPLATE_DIR);
+                if (!this.app.vault.getAbstractFileByPath(library.TEMPLATE_DIR)) {
+                  await this.app.vault.createFolder(library.TEMPLATE_DIR);
                 }
-                const file = this.freePath(cb.TEMPLATE_DIR + "/", name, ".canvas");
+                const file = this.freePath(
+                  library.TEMPLATE_DIR + "/",
+                  name,
+                  ".canvas"
+                );
                 await this.app.vault.create(file, content);
                 new Notice(`Kanvas board: template saved to ${file}`);
               },
               {
                 suggestions: [...existing.values()].map(templateName),
-                overwrite: (v) => existing.has(v.toLowerCase())
+                overwrite: (name) => existing.has(name.toLowerCase())
               }
             ).open();
           }
         );
-        const cards = (sel) => sel.filter((n) => !n.from && n.getData().type !== "group");
+        const cards = (sel) => sel.filter((node) => !node.from && node.getData().type !== "group");
         const selectMore = this.selectMore = (canvas, sel, keep) => {
           const add = [...canvas.nodes.values()].filter(
-            (n) => n.getData().type !== "group" && !this.isHidden(canvas, n) && keep(n)
+            (node) => node.getData().type !== "group" && !this.isHidden(canvas, node) && keep(node)
           );
           canvas.updateSelection(() => {
             canvas.selection.clear();
-            for (const n of [...sel, ...add]) canvas.selection.add(n);
+            for (const node of [...sel, ...add]) canvas.selection.add(node);
           });
           return add.length;
         };
-        const childIds = (c, sel) => new Set(
+        const childIds = (canvas, sel) => new Set(
           cards(sel).flatMap(
-            (n) => this.branchLevels(c, n.id, this.settings.foldDirection).flat()
+            (node) => this.branchLevels(
+              canvas,
+              node.id,
+              this.settings.foldDirection
+            ).flat()
           )
         );
         canvasCommand(
           "select-children",
           "Select children (all levels down, in the fold direction)",
           ["Select children", "list-tree"],
-          (c, sel) => [...childIds(c, sel)].some(
-            (id) => c.nodes.get(id) && !this.isHidden(c, c.nodes.get(id)) && !c.selection.has(c.nodes.get(id))
+          (canvas, sel) => [...childIds(canvas, sel)].some(
+            (id) => canvas.nodes.get(id) && !this.isHidden(canvas, canvas.nodes.get(id)) && !canvas.selection.has(canvas.nodes.get(id))
           ),
           (canvas, sel) => {
             const ids = childIds(canvas, sel);
-            selectMore(canvas, sel, (n) => ids.has(n.id));
+            selectMore(canvas, sel, (node) => ids.has(node.id));
           }
         );
-        const tagsOf = (sel) => new Set(cards(sel).flatMap((n) => [...this.cardTagSet(n)]));
+        const tagsOf = (sel) => new Set(cards(sel).flatMap((node) => [...this.cardTagSet(node)]));
         canvasCommand(
           "select-same-tag",
           "Select cards with the same tag",
           ["Select same tag", "tag"],
-          (c, sel) => tagsOf(sel).size > 0,
+          (canvas, sel) => tagsOf(sel).size > 0,
           (canvas, sel) => {
             const tags = tagsOf(sel);
             selectMore(
               canvas,
               sel,
-              (n) => [...this.cardTagSet(n)].some((t) => tags.has(t))
+              (node) => [...this.cardTagSet(node)].some((tag) => tags.has(tag))
             );
           }
         );
@@ -5663,10 +5771,16 @@ var require_CanvasBoardPlugin = __commonJS({
           "select-same-color",
           "Select cards with the same color",
           ["Select same color", "palette"],
-          (c, sel) => cards(sel).length > 0,
+          (canvas, sel) => cards(sel).length > 0,
           (canvas, sel) => {
-            const colors = new Set(cards(sel).map((n) => n.getData().color || ""));
-            selectMore(canvas, sel, (n) => colors.has(n.getData().color || ""));
+            const colors = new Set(
+              cards(sel).map((node) => node.getData().color || "")
+            );
+            selectMore(
+              canvas,
+              sel,
+              (node) => colors.has(node.getData().color || "")
+            );
           }
         );
         this.addCommand({
@@ -5677,19 +5791,19 @@ var require_CanvasBoardPlugin = __commonJS({
             if (!canvas) return false;
             if (!checking) {
               const files = this.app.vault.getFiles().filter(
-                (f) => f.extension === "canvas" && f.path.startsWith(cb.TEMPLATE_DIR + "/")
+                (file) => file.extension === "canvas" && file.path.startsWith(library.TEMPLATE_DIR + "/")
               );
               if (!files.length) {
                 new Notice(
-                  `Kanvas board: no template in ${cb.TEMPLATE_DIR} (Save selected cards as a template)`
+                  `Kanvas board: no template in ${library.TEMPLATE_DIR} (Save selected cards as a template)`
                 );
               } else {
                 new Picker(
                   this.app,
                   "Template",
                   files,
-                  (f) => f.basename,
-                  (f) => this.insertTemplate(canvas, f)
+                  (file) => file.basename,
+                  (file) => this.insertTemplate(canvas, file)
                 ).open();
               }
             }
@@ -5706,12 +5820,12 @@ var require_CanvasBoardPlugin = __commonJS({
             const canvas = this.activeCanvas();
             if (!canvas) return false;
             if (!checking) {
-              let f = this.finds.get(canvas);
-              if (!f) {
-                f = new FindBar(this, canvas);
-                this.finds.set(canvas, f);
+              let findBar = this.finds.get(canvas);
+              if (!findBar) {
+                findBar = new FindBar(this, canvas);
+                this.finds.set(canvas, findBar);
               }
-              f.open();
+              findBar.open();
             }
             return true;
           }
@@ -5737,10 +5851,10 @@ var require_CanvasBoardPlugin = __commonJS({
           }
         });
         const addActions = (menu, canvas, sel) => {
-          for (const a of actions) {
-            if (a.menu && a.test(canvas, sel)) {
+          for (const action of actions) {
+            if (action.menu && action.test(canvas, sel)) {
               menu.addItem(
-                (item) => item.setTitle(this.keyedTitle(a.menu[0], a.id)).setIcon(a.menu[1]).setSection("canvas-board").onClick(() => runAction(a.run, canvas, sel))
+                (item) => item.setTitle(this.keyedTitle(action.menu[0], action.id)).setIcon(action.menu[1]).setSection("canvas-board").onClick(() => runAction(action.run, canvas, sel))
               );
             }
           }
@@ -5765,14 +5879,14 @@ var require_CanvasBoardPlugin = __commonJS({
           this.app.workspace.on("editor-menu", (menu, editor) => {
             const canvas = this.activeCanvas();
             const node = canvas && [...canvas.selection].find(
-              (n) => n.isEditing && this.cardEditor(n) === editor
+              (node2) => node2.isEditing && this.cardEditor(node2) === editor
             );
             if (node) addActions(menu, canvas, [node]);
           })
         );
         const isArchived = (file) => {
-          const fm = file && file.extension === "md" && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
-          return !!(fm && fm["archived-from"]);
+          const frontmatter = file && file.extension === "md" && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
+          return !!(frontmatter && frontmatter["archived-from"]);
         };
         this.addCommand({
           id: "restore",
@@ -5782,7 +5896,7 @@ var require_CanvasBoardPlugin = __commonJS({
             if (!isArchived(file)) return false;
             if (!checking) {
               this.restore(file).catch(
-                (e) => new Notice(`Kanvas board: ${e.message}`)
+                (error) => new Notice(`Kanvas board: ${error.message}`)
               );
             }
             return true;
@@ -5794,7 +5908,7 @@ var require_CanvasBoardPlugin = __commonJS({
               menu.addItem(
                 (item) => item.setTitle("Restore archived card").setIcon("archive-restore").setSection("canvas-board").onClick(
                   () => this.restore(file).catch(
-                    (e) => new Notice(`Kanvas board: ${e.message}`)
+                    (error) => new Notice(`Kanvas board: ${error.message}`)
                   )
                 )
               );
@@ -5825,17 +5939,17 @@ var require_CanvasBoardPlugin = __commonJS({
         this.viewEl = this.addStatusBarItem();
         this.viewEl.addClass("mod-clickable");
         this.viewEl.onClickEvent(() => {
-          const c = this.activeCanvas();
-          if (c) this.pane(c).toggle(true);
+          const canvas = this.activeCanvas();
+          if (canvas) this.pane(canvas).toggle(true);
         });
         const tick = () => {
           this.updateCount();
           const open = /* @__PURE__ */ new Set();
-          for (const l of this.app.workspace.getLeavesOfType("canvas")) {
-            const canvas = l.view.canvas;
+          for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
+            const canvas = leaf.view.canvas;
             if (!canvas || !canvas.wrapperEl) continue;
             open.add(canvas);
-            this.decorate(l.view);
+            this.decorate(leaf.view);
             this.refreshView(canvas);
             this.pane(canvas).update();
           }
@@ -5845,9 +5959,9 @@ var require_CanvasBoardPlugin = __commonJS({
               this.panes.delete(canvas);
             }
           }
-          for (const [canvas, f] of this.finds) {
+          for (const [canvas, findBar] of this.finds) {
             if (!open.has(canvas)) {
-              f.destroy();
+              findBar.destroy();
               this.finds.delete(canvas);
             }
           }
@@ -5858,11 +5972,11 @@ var require_CanvasBoardPlugin = __commonJS({
         this.register(() => {
           for (const pane of this.panes.values()) pane.destroy();
           this.panes.clear();
-          for (const f of this.finds.values()) f.destroy();
+          for (const findBar of this.finds.values()) findBar.destroy();
           this.finds.clear();
-          for (const l of this.app.workspace.getLeavesOfType("canvas")) {
-            const canvas = l.view.canvas;
-            this.undecorate(l.view);
+          for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
+            const canvas = leaf.view.canvas;
+            this.undecorate(leaf.view);
             if (!this.views.has(canvas)) continue;
             delete canvas.updateSelection;
             delete canvas.applyHistory;
@@ -5876,7 +5990,7 @@ var require_CanvasBoardPlugin = __commonJS({
       // ribbon icon are documented API. See "Obsidian internals" in README.md.
       // Label of a color: the one edited in Settings > Workflow, else the default.
       colorLabel(name) {
-        return (this.settings.colorLabels || {})[name] || COLORS.find((c) => c[0] === name)[3];
+        return (this.settings.colorLabels || {})[name] || COLORS.find((colorRow) => colorRow[0] === name)[3];
       }
       colorCommandName(name) {
         return `Color selected cards: ${name} (${this.colorLabel(name)})`;
@@ -5889,55 +6003,55 @@ var require_CanvasBoardPlugin = __commonJS({
         if (label) labels[name] = label;
         else delete labels[name];
         await this.saveData(this.settings);
-        const row = COLORS.find((c) => c[0] === name);
+        const row = COLORS.find((colorRow) => colorRow[0] === name);
         const cmd = this.app.commands && this.app.commands.commands[`${this.manifest.id}:color-${row[2]}`];
         if (cmd) cmd.name = `${this.manifest.name}: ${this.colorCommandName(name)}`;
         for (const canvas of this.panes.keys()) this.refreshView(canvas);
       }
       // Hotkey of a plugin command as Obsidian prints it ("Alt + ↑"), or ''.
       hotkey(id) {
-        const hm = this.app.hotkeyManager;
+        const hotkeyManager = this.app.hotkeyManager;
         try {
-          return hm && hm.printHotkeyForCommand && hm.printHotkeyForCommand(`${this.manifest.id}:${id}`) || "";
-        } catch (e) {
+          return hotkeyManager && hotkeyManager.printHotkeyForCommand && hotkeyManager.printHotkeyForCommand(`${this.manifest.id}:${id}`) || "";
+        } catch (error) {
           return "";
         }
       }
       // Tooltip with its key, the way the canvas's own buttons show it ("Zoom to selection\n(Shift + 2)").
       keyedLabel(label, id) {
-        const k = this.hotkey(id);
-        return k ? `${label}
-(${k})` : label;
+        const hotkey = this.hotkey(id);
+        return hotkey ? `${label}
+(${hotkey})` : label;
       }
       // Menu item title with its key, muted, after the label.
       keyedTitle(label, id) {
-        const k = this.hotkey(id);
-        if (!k) return label;
-        return createFragment((f) => {
-          f.appendText(label);
-          f.createSpan({ cls: "canvas-board-key", text: k });
+        const hotkey = this.hotkey(id);
+        if (!hotkey) return label;
+        return createFragment((fragment) => {
+          fragment.appendText(label);
+          fragment.createSpan({ cls: "canvas-board-key", text: hotkey });
         });
       }
       // A notice with an Undo button: one canvas undo step and the files the action made go to the trash. Only while
       // the board has not changed since (else the undo would take back something else).
       // `restore` ({ path, content }) brings a trashed file back on undo (unpack). Redirected links are not undone.
-      undoNotice(canvas, msg, files = [], restore = null) {
-        const h = canvas.history;
-        const at = h ? h.current : null;
-        const frag = createFragment((f) => {
-          f.appendText(`Kanvas board: ${msg} `);
-          const b = f.createEl("button", {
+      undoNotice(canvas, message, files = [], restore = null) {
+        const history = canvas.history;
+        const historyIndex = history ? history.current : null;
+        const frag = createFragment((fragment) => {
+          fragment.appendText(`Kanvas board: ${message} `);
+          const button = fragment.createEl("button", {
             cls: "canvas-board-notice-undo",
             text: "Undo"
           });
-          b.addEventListener("click", async () => {
-            if (!h || h.current !== at) {
+          button.addEventListener("click", async () => {
+            if (!history || history.current !== historyIndex) {
               new Notice("Kanvas board: the board changed since, use Ctrl+Z");
               return;
             }
             canvas.undo();
-            for (const p of files) {
-              const file = this.app.vault.getAbstractFileByPath(p);
+            for (const filePath of files) {
+              const file = this.app.vault.getAbstractFileByPath(filePath);
               if (file) await this.app.fileManager.trashFile(file);
             }
             if (restore && !this.app.vault.getAbstractFileByPath(restore.path)) {
@@ -5949,7 +6063,7 @@ var require_CanvasBoardPlugin = __commonJS({
       }
       async openBoard() {
         const board = this.settings.defaultBoard;
-        const leaf = this.app.workspace.getLeavesOfType("canvas").find((l) => l.view.file && l.view.file.path === board);
+        const leaf = this.app.workspace.getLeavesOfType("canvas").find((leaf2) => leaf2.view.file && leaf2.view.file.path === board);
         if (leaf) {
           this.app.workspace.setActiveLeaf(leaf, { focus: true });
           return;
@@ -5957,15 +6071,15 @@ var require_CanvasBoardPlugin = __commonJS({
         const file = this.app.vault.getAbstractFileByPath(board);
         if (!file) {
           new Notice(
-            createFragment((f) => {
-              f.appendText(
+            createFragment((fragment) => {
+              fragment.appendText(
                 `Kanvas board: ${board} not found (setting "Default board"). `
               );
-              const b = f.createEl("button", {
+              const button = fragment.createEl("button", {
                 cls: "canvas-board-notice-undo",
                 text: "Create a starter board"
               });
-              b.addEventListener("click", () => this.createStarterBoard());
+              button.addEventListener("click", () => this.createStarterBoard());
             }),
             1e4
           );
@@ -5980,11 +6094,11 @@ var require_CanvasBoardPlugin = __commonJS({
         const vault = this.app.vault;
         let board = this.settings.defaultBoard;
         if (vault.getAbstractFileByPath(board)) {
-          const dir = path.posix.dirname(board) === "." ? "" : `${path.posix.dirname(board)}/`;
-          let n = 1;
+          const folder = path.posix.dirname(board) === "." ? "" : `${path.posix.dirname(board)}/`;
+          let node = 1;
           do
-            board = `${dir}Starter board${n > 1 ? ` ${n}` : ""}.canvas`;
-          while (vault.getAbstractFileByPath(board) && ++n);
+            board = `${folder}Starter board${node > 1 ? ` ${node}` : ""}.canvas`;
+          while (vault.getAbstractFileByPath(board) && ++node);
         }
         const id = () => Array.from(
           { length: 16 },
@@ -5992,14 +6106,14 @@ var require_CanvasBoardPlugin = __commonJS({
         ).join("");
         const nodes = [];
         const edges = [];
-        const W = 400;
+        const columnWidth = 400;
         nodes.push({
           id: id(),
           type: "group",
           label: "How the colors work",
           x: -40,
           y: -80,
-          width: W + 80,
+          width: columnWidth + 80,
           height: WORKFLOW.length * 100 + 100
         });
         const DOT = {
@@ -6011,15 +6125,15 @@ var require_CanvasBoardPlugin = __commonJS({
           green: "\u{1F7E2}",
           none: "\u26AA"
         };
-        WORKFLOW.forEach(([name, meaning], i) => {
+        WORKFLOW.forEach(([name, meaning], index) => {
           nodes.push({
             id: id(),
             type: "text",
             text: `${DOT[name]} **${this.colorLabel(name)}** (${COLOR_NUM[name] ? name : "uncolored"})
 ${meaning}`,
             x: 0,
-            y: i * 100,
-            width: W,
+            y: index * 100,
+            width: columnWidth,
             height: 80
           });
         });
@@ -6029,52 +6143,52 @@ ${meaning}`,
           '**3. Run a pass**\nCommand "Kanvas board: Run pass". A terminal opens with the agent on this board; it turns the cards it takes orange.',
           "**4. Answer**\nYellow: a question or a review for you, in the card's note. Answer there, color the card cyan or purple again, run the next pass."
         ];
-        const x0 = W + 160;
+        const stepsX = columnWidth + 160;
         nodes.push({
           id: id(),
           type: "group",
           label: "First steps",
-          x: x0 - 40,
+          x: stepsX - 40,
           y: -80,
-          width: W + 80,
+          width: columnWidth + 80,
           height: steps.length * 160 + 280
         });
-        let prev;
-        steps.forEach((text, i) => {
+        let previous;
+        steps.forEach((text, index) => {
           const card = {
             id: id(),
             type: "text",
             text,
-            x: x0,
-            y: i * 160,
-            width: W,
+            x: stepsX,
+            y: index * 160,
+            width: columnWidth,
             height: 130
           };
           nodes.push(card);
-          if (prev) {
+          if (previous) {
             edges.push({
               id: id(),
-              fromNode: prev,
+              fromNode: previous,
               fromSide: "bottom",
               toNode: card.id,
               toSide: "top"
             });
           }
-          prev = card.id;
+          previous = card.id;
         });
         nodes.push({
           id: id(),
           type: "text",
           text: "Try it: color this card cyan, then run a pass.\n\nWrite a short note that explains this board in my own words.",
-          x: x0,
+          x: stepsX,
           y: steps.length * 160 + 20,
-          width: W,
+          width: columnWidth,
           height: 130
         });
         try {
-          const dir = path.posix.dirname(board);
-          if (dir !== "." && !vault.getAbstractFileByPath(dir)) {
-            await vault.createFolder(dir);
+          const folder = path.posix.dirname(board);
+          if (folder !== "." && !vault.getAbstractFileByPath(folder)) {
+            await vault.createFolder(folder);
           }
           const file = await vault.create(
             board,
@@ -6082,19 +6196,19 @@ ${meaning}`,
           );
           await this.app.workspace.getLeaf(false).openFile(file);
           new Notice(`Kanvas board: starter board created (${board})`);
-        } catch (e) {
+        } catch (error) {
           new Notice(
-            `Kanvas board: could not create the starter board (${e.message})`
+            `Kanvas board: could not create the starter board (${error.message})`
           );
         }
       }
-      async setLayoutDirection(dir) {
-        this.settings.layoutDirection = dir;
+      async setLayoutDirection(direction) {
+        this.settings.layoutDirection = direction;
         await this.saveData(this.settings);
         for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
           this.decorate(leaf.view);
         }
-        new Notice(`Kanvas board: tidy layout ${LAYOUT_DIRS[dir].name}`);
+        new Notice(`Kanvas board: tidy layout ${LAYOUT_DIRS[direction].name}`);
       }
       cycleLayoutDirection() {
         const dirs = Object.keys(LAYOUT_DIRS);
@@ -6104,7 +6218,7 @@ ${meaning}`,
       }
       // Runs a plugin command on this canvas view (made active first: a click on its buttons may not focus it).
       runOn(view, id) {
-        const leaf = this.app.workspace.getLeavesOfType("canvas").find((l) => l.view === view);
+        const leaf = this.app.workspace.getLeavesOfType("canvas").find((leaf2) => leaf2.view === view);
         if (leaf && this.app.workspace.activeLeaf !== leaf) {
           this.app.workspace.setActiveLeaf(leaf, { focus: true });
         }
@@ -6140,7 +6254,7 @@ ${meaning}`,
               ["filter", "Filter cards", "filter"],
               ["tidy-layout", "Tidy layout", "network"]
             ]) {
-              const b = group.createDiv({
+              const button = group.createDiv({
                 cls: "canvas-control-item",
                 attr: {
                   "data-command": id,
@@ -6148,23 +6262,27 @@ ${meaning}`,
                   "data-tooltip-position": "left"
                 }
               });
-              setIcon(b, icon);
-              b.addEventListener("click", (e) => {
-                if (id === "tidy-layout" && e.shiftKey) this.cycleLayoutDirection();
-                else this.runOn(view, id);
+              setIcon(button, icon);
+              button.addEventListener("click", (event) => {
+                if (id === "tidy-layout" && event.shiftKey) {
+                  this.cycleLayoutDirection();
+                } else this.runOn(view, id);
               });
             }
           }
-          for (const b of group.children) {
-            b.setAttr(
+          for (const button of group.children) {
+            button.setAttr(
               "aria-label",
-              this.keyedLabel(b.dataset.label, b.dataset.command)
+              this.keyedLabel(button.dataset.label, button.dataset.command)
             );
           }
           const tidy = group.querySelector('[data-command="tidy-layout"]');
-          const dir = LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
+          const direction = LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
           if (tidy) {
-            this.tidyTurn = nextTurn(this.tidyTurn ?? dir.turn, dir.turn);
+            this.tidyTurn = nextTurn(
+              this.tidyTurn ?? direction.turn,
+              direction.turn
+            );
             tidy.style.setProperty(
               "--canvas-board-tidy-turn",
               `${this.tidyTurn}deg`
@@ -6172,7 +6290,7 @@ ${meaning}`,
             tidy.setAttr(
               "aria-label",
               this.keyedLabel(
-                `Tidy layout: ${dir.name}
+                `Tidy layout: ${direction.name}
 Shift-click: next direction`,
                 "tidy-layout"
               )
@@ -6183,21 +6301,21 @@ Shift-click: next direction`,
         if (menu && menu.render && !menu.canvasBoardRender) {
           const orig = menu.canvasBoardRender = menu.render;
           const plugin = this;
-          menu.render = function(...a) {
-            const r = orig.apply(this, a);
+          menu.render = function(...values) {
+            const result = orig.apply(this, values);
             try {
               plugin.menuButtons(canvas);
-            } catch (e) {
-              console.error("canvas-board: selection toolbar", e);
+            } catch (error) {
+              console.error("canvas-board: selection toolbar", error);
             }
-            return r;
+            return result;
           };
           menu.canvasBoardObserver = new MutationObserver(() => {
             for (const item of menu.menuEl.querySelectorAll(
               ".canvas-color-picker-item:not(.canvas-color-picker-custom)"
             )) {
-              const c = (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || "";
-              const row = COLORS.find((x) => x[1] === c);
+              const color = (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || "";
+              const row = COLORS.find((x) => x[1] === color);
               if (row) {
                 item.setAttrs({
                   "aria-label": this.keyedLabel(
@@ -6216,25 +6334,25 @@ Shift-click: next direction`,
         }
       }
       menuButtons(canvas) {
-        const el = canvas.menu.menuEl;
+        const element = canvas.menu.menuEl;
         const sel = [...canvas.selection];
-        if (!sel.length || !el.childElementCount || el.querySelector(".canvas-board-menu-btn")) {
+        if (!sel.length || !element.childElementCount || element.querySelector(".canvas-board-menu-btn")) {
           return;
         }
         for (const id of ["fold", "unfold", "archive"]) {
-          const a = this.actions.find((x) => x.id === id);
-          if (!a || !a.test(canvas, sel)) continue;
-          const b = el.createEl("button", {
+          const action = this.actions.find((x) => x.id === id);
+          if (!action || !action.test(canvas, sel)) continue;
+          const button = element.createEl("button", {
             cls: "clickable-icon canvas-board-menu-btn",
             attr: {
-              "aria-label": this.keyedLabel(a.menu[0], id),
+              "aria-label": this.keyedLabel(action.menu[0], id),
               "data-tooltip-position": "top"
             }
           });
-          setIcon(b, a.menu[1]);
-          b.addEventListener(
+          setIcon(button, action.menu[1]);
+          button.addEventListener(
             "click",
-            () => this.runAction(a.run, canvas, [...canvas.selection])
+            () => this.runAction(action.run, canvas, [...canvas.selection])
           );
         }
       }
@@ -6245,10 +6363,10 @@ Shift-click: next direction`,
           delete view.canvasBoardAction;
         }
         if (canvas.wrapperEl) {
-          for (const el of canvas.wrapperEl.querySelectorAll(
+          for (const element of canvas.wrapperEl.querySelectorAll(
             ".canvas-board-controls, .canvas-board-menu-btn"
           )) {
-            el.remove();
+            element.remove();
           }
         }
         const menu = canvas.menu;
@@ -6266,42 +6384,42 @@ Shift-click: next direction`,
           xtags: /* @__PURE__ */ new Set(),
           hidden: /* @__PURE__ */ new Set()
         });
-        let v = this.views.get(canvas);
-        if (v || !create) return v || empty();
-        v = empty();
-        this.views.set(canvas, v);
+        let state = this.views.get(canvas);
+        if (state || !create) return state || empty();
+        state = empty();
+        this.views.set(canvas, state);
         const plugin = this;
         const orig = canvas.updateSelection;
-        canvas.updateSelection = function(fn) {
-          const r = orig.call(this, () => {
-            fn();
+        canvas.updateSelection = function(callback) {
+          const result = orig.call(this, () => {
+            callback();
             for (const x of [...this.selection]) {
-              if (v.hidden.has(x.id) || x.from && (v.hidden.has(x.from.node.id) || v.hidden.has(x.to.node.id))) {
+              if (state.hidden.has(x.id) || x.from && (state.hidden.has(x.from.node.id) || state.hidden.has(x.to.node.id))) {
                 this.selection.delete(x);
               }
             }
           });
           plugin.updateCount();
-          return r;
+          return result;
         };
         const history = canvas.applyHistory;
         if (history) {
-          canvas.applyHistory = function(...a) {
-            const r = history.apply(this, a);
+          canvas.applyHistory = function(...values) {
+            const result = history.apply(this, values);
             plugin.refreshView(this);
-            return r;
+            return result;
           };
         }
-        return v;
+        return state;
       }
       isHidden(canvas, node) {
         return this.viewState(canvas, false).hidden.has(node.id);
       }
       // Clears the filter and unfolds every card (one undo step for the folds).
       showAll(canvas) {
-        const v = this.viewState(canvas, false);
-        v.xcolors.clear();
-        v.xtags.clear();
+        const state = this.viewState(canvas, false);
+        state.xcolors.clear();
+        state.xtags.clear();
         const folds = this.folds(canvas);
         if (folds.size) {
           this.setFolds(canvas, new Map([...folds.keys()].map((id) => [id, null])));
@@ -6310,53 +6428,55 @@ Shift-click: next direction`,
       // A fold is stored on the card as "canvasBoard": {"folded": "in" | "out"} (the fold direction). JSON Canvas
       // 1.0 has no such field; other readers ignore it and show every card. Obsidian keeps it (node.unknownData).
       foldOf(node) {
-        const cb = node.getData().canvasBoard;
-        return cb && cb.folded || null;
+        const boardData = node.getData().canvasBoard;
+        return boardData && boardData.folded || null;
       }
       folds(canvas) {
-        const m = /* @__PURE__ */ new Map();
-        for (const n of canvas.nodes.values()) {
-          const dir = this.foldOf(n);
-          if (dir) m.set(n.id, dir);
+        const folds = /* @__PURE__ */ new Map();
+        for (const node of canvas.nodes.values()) {
+          const direction = this.foldOf(node);
+          if (direction) folds.set(node.id, direction);
         }
-        return m;
+        return folds;
       }
       // `changes`: card id → direction to fold, or null to unfold. One canvas edit, one undo step.
       setFolds(canvas, changes) {
         if (!changes.size) return;
-        const d = canvas.getData();
-        for (const n of d.nodes) {
-          if (!changes.has(n.id)) continue;
-          const cb = { ...n.canvasBoard || {} };
-          const dir = changes.get(n.id);
-          if (dir) cb.folded = dir;
-          else delete cb.folded;
-          if (Object.keys(cb).length) n.canvasBoard = cb;
-          else delete n.canvasBoard;
+        const canvasData = canvas.getData();
+        for (const node of canvasData.nodes) {
+          if (!changes.has(node.id)) continue;
+          const boardData = { ...node.canvasBoard || {} };
+          const direction = changes.get(node.id);
+          if (direction) boardData.folded = direction;
+          else delete boardData.folded;
+          if (Object.keys(boardData).length) node.canvasBoard = boardData;
+          else delete node.canvasBoard;
         }
-        this.edit(canvas, [], d);
+        this.edit(canvas, [], canvasData);
         this.refreshView(canvas);
       }
       pane(canvas) {
-        let p = this.panes.get(canvas);
-        if (!p) {
-          p = new FilterPane(this, canvas);
-          this.panes.set(canvas, p);
+        let pane = this.panes.get(canvas);
+        if (!pane) {
+          pane = new FilterPane(this, canvas);
+          this.panes.set(canvas, pane);
         }
-        return p;
+        return pane;
       }
       // Card id → ids one edge away, following edges out (from → to) or in (to → from).
-      branchLinks(canvas, dir) {
+      branchLinks(canvas, direction) {
         const links = /* @__PURE__ */ new Map();
-        for (const e of canvas.edges.values()) {
-          const [a, b] = dir === "in" ? [e.to.node.id, e.from.node.id] : [e.from.node.id, e.to.node.id];
-          if (a !== b) links.set(a, (links.get(a) || []).concat(b));
+        for (const edge of canvas.edges.values()) {
+          const [source, target] = direction === "in" ? [edge.to.node.id, edge.from.node.id] : [edge.from.node.id, edge.to.node.id];
+          if (source !== target) {
+            links.set(source, (links.get(source) || []).concat(target));
+          }
         }
         return links;
       }
       // Ids below a folded card, level by level (level 1 first).
-      branchLevels(canvas, root, dir) {
-        const links = this.branchLinks(canvas, dir);
+      branchLevels(canvas, root, direction) {
+        const links = this.branchLinks(canvas, direction);
         const seen = /* @__PURE__ */ new Set([root]);
         const levels = [];
         let level = [root];
@@ -6391,8 +6511,8 @@ Shift-click: next direction`,
             for (const y of links.get(x) || []) {
               if (seen.has(y)) continue;
               seen.add(y);
-              const n = canvas.nodes.get(y);
-              if (n && this.foldOf(n)) found.push(y);
+              const node2 = canvas.nodes.get(y);
+              if (node2 && this.foldOf(node2)) found.push(y);
               else next.push(y);
             }
           }
@@ -6405,14 +6525,14 @@ Shift-click: next direction`,
         const changes = /* @__PURE__ */ new Map();
         for (const id of ids) {
           const node = canvas.nodes.get(id);
-          const dir = node && this.foldOf(node);
-          if (!dir) continue;
+          const direction = node && this.foldOf(node);
+          if (!direction) continue;
           changes.set(id, null);
-          const below = this.branchLevels(canvas, id, dir);
-          const links = this.branchLinks(canvas, dir);
+          const below = this.branchLevels(canvas, id, direction);
+          const links = this.branchLinks(canvas, direction);
           if (levels < below.length) {
             for (const x of below[levels - 1]) {
-              if ((links.get(x) || []).length) changes.set(x, dir);
+              if ((links.get(x) || []).length) changes.set(x, direction);
             }
           }
         }
@@ -6422,39 +6542,39 @@ Shift-click: next direction`,
       // #tag1 is not #tag10.
       cardTagSet(node) {
         const tags = /* @__PURE__ */ new Set();
-        for (const m of (node.getData().text || "").matchAll(
+        for (const match of (node.getData().text || "").matchAll(
           /(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g
         )) {
-          if (!/^\d+$/.test(m[1])) tags.add(m[1]);
+          if (!/^\d+$/.test(match[1])) tags.add(match[1]);
         }
         return tags;
       }
       // Every color and tag shows by default; a hidden color, or any hidden tag, hides the card.
-      matches(node, v) {
-        if (v.xcolors.has(node.getData().color || "")) return false;
-        if (!v.xtags.size) return true;
+      matches(node, state) {
+        if (state.xcolors.has(node.getData().color || "")) return false;
+        if (!state.xtags.size) return true;
         const tags = this.cardTagSet(node);
-        return ![...v.xtags].some((t) => tags.has(t));
+        return ![...state.xtags].some((tag) => tags.has(tag));
       }
-      filtering(v) {
-        return !!(v.xcolors.size || v.xtags.size);
+      filtering(state) {
+        return !!(state.xcolors.size || state.xtags.size);
       }
       // Hidden = not matching the filter (groups always show), or below a folded card. With the setting "Hide cards
       // under hidden tags", a card hidden by a tag also hides its branch, as a fold in the fold direction would.
       refreshView(canvas) {
-        const v = this.viewState(canvas);
+        const state = this.viewState(canvas);
         const hidden = /* @__PURE__ */ new Set();
-        if (this.filtering(v)) {
+        if (this.filtering(state)) {
           for (const node of canvas.nodes.values()) {
-            if (node.getData().type !== "group" && !this.matches(node, v)) {
+            if (node.getData().type !== "group" && !this.matches(node, state)) {
               hidden.add(node.id);
             }
           }
         }
-        if (v.xtags.size && this.settings.hideTagBranches) {
+        if (state.xtags.size && this.settings.hideTagBranches) {
           for (const node of canvas.nodes.values()) {
             const tags = this.cardTagSet(node);
-            if (![...v.xtags].some((t) => tags.has(t))) continue;
+            if (![...state.xtags].some((tag) => tags.has(tag))) continue;
             for (const id of this.branchLevels(
               canvas,
               node.id,
@@ -6467,12 +6587,12 @@ Shift-click: next direction`,
           }
         }
         const folded = /* @__PURE__ */ new Map();
-        for (const [root, dir] of this.folds(canvas)) {
-          const below = this.branchLevels(canvas, root, dir).flat();
+        for (const [root, direction] of this.folds(canvas)) {
+          const below = this.branchLevels(canvas, root, direction).flat();
           folded.set(root, below.length);
           for (const id of below) hidden.add(id);
         }
-        v.hidden = hidden;
+        state.hidden = hidden;
         this.paint(canvas, hidden, folded);
         if ([...canvas.selection].some((x) => hidden.has(x.id))) {
           canvas.updateSelection(() => {
@@ -6497,11 +6617,11 @@ Shift-click: next direction`,
               cls: "canvas-board-folded",
               attr: { "data-tooltip-position": "bottom" }
             });
-            for (const ev of ["pointerdown", "mousedown", "dblclick"]) {
-              badge.addEventListener(ev, (e) => e.stopPropagation());
+            for (const eventName of ["pointerdown", "mousedown", "dblclick"]) {
+              badge.addEventListener(eventName, (event) => event.stopPropagation());
             }
-            badge.addEventListener("click", (e) => {
-              e.stopPropagation();
+            badge.addEventListener("click", (event) => {
+              event.stopPropagation();
               this.unfold(canvas, [node.id], 1);
             });
           }
@@ -6509,14 +6629,14 @@ Shift-click: next direction`,
           badge.setAttr("aria-label", this.keyedLabel("Unfold 1 level", "unfold"));
         }
         this.paintStale(canvas);
-        for (const e of canvas.edges.values()) {
-          const off = hidden.has(e.from.node.id) || hidden.has(e.to.node.id);
-          for (const el of [
-            e.lineGroupEl,
-            e.lineEndGroupEl,
-            e.labelElement && e.labelElement.wrapperEl
+        for (const edge of canvas.edges.values()) {
+          const off = hidden.has(edge.from.node.id) || hidden.has(edge.to.node.id);
+          for (const element of [
+            edge.lineGroupEl,
+            edge.lineEndGroupEl,
+            edge.labelElement && edge.labelElement.wrapperEl
           ]) {
-            if (el) el.classList.toggle("canvas-board-hidden", off);
+            if (element) element.classList.toggle("canvas-board-hidden", off);
           }
         }
       }
@@ -6526,17 +6646,17 @@ Shift-click: next direction`,
         const days = Number(this.settings.staleDays) || 0;
         const board = canvas.view && canvas.view.file ? canvas.view.file.path : "";
         for (const node of canvas.nodes.values()) {
-          const d = node.getData();
+          const canvasData = node.getData();
           let age = -1;
-          if (days > 0 && d.color === "3") {
+          if (days > 0 && canvasData.color === "3") {
             let file = null;
-            if (d.type === "file") {
-              file = this.app.vault.getAbstractFileByPath(d.file);
-            } else if (d.type === "text") {
-              const m = /\[\[([^\]|#]+)/.exec(d.text || "");
-              if (m) {
+            if (canvasData.type === "file") {
+              file = this.app.vault.getAbstractFileByPath(canvasData.file);
+            } else if (canvasData.type === "text") {
+              const match = /\[\[([^\]|#]+)/.exec(canvasData.text || "");
+              if (match) {
                 file = this.app.metadataCache.getFirstLinkpathDest(
-                  m[1].trim(),
+                  match[1].trim(),
                   board
                 );
               }
@@ -6574,8 +6694,8 @@ Shift-click: next direction`,
       }
       // Status bar and closed pane: only how many cards are hidden (filter and folds); the pane says by what.
       viewLabel(canvas) {
-        const n = this.viewState(canvas, false).hidden.size;
-        return n ? `${n} card${n > 1 ? "s" : ""} hidden` : "";
+        const node = this.viewState(canvas, false).hidden.size;
+        return node ? `${node} card${node > 1 ? "s" : ""} hidden` : "";
       }
       updateViewLabel(canvas) {
         const label = canvas ? this.viewLabel(canvas) : "";
@@ -6583,9 +6703,9 @@ Shift-click: next direction`,
         this.viewEl.toggle(!!label);
       }
       cardText(node) {
-        const d = node.getData();
+        const canvasData = node.getData();
         return String(
-          (d.type === "text" ? d.text : d.type === "file" ? d.file : d.type === "link" ? d.url : d.label) || ""
+          (canvasData.type === "text" ? canvasData.text : canvasData.type === "file" ? canvasData.file : canvasData.type === "link" ? canvasData.url : canvasData.label) || ""
         );
       }
       // Background of a color dot: a preset canvas color ('1'…'6'), a custom hex, or none.
@@ -6596,19 +6716,19 @@ Shift-click: next direction`,
       async insertTemplate(canvas, file) {
         const tpl = JSON.parse(await this.app.vault.read(file));
         const nodes = tpl.nodes || [];
-        const b = canvas.getViewportBBox();
-        const w = nodes.length ? Math.max(...nodes.map((n) => n.x + n.width)) - Math.min(...nodes.map((n) => n.x)) : 0;
-        const h = nodes.length ? Math.max(...nodes.map((n) => n.y + n.height)) - Math.min(...nodes.map((n) => n.y)) : 0;
-        const at = {
-          x: Math.round((b.minX + b.maxX - w) / 2),
-          y: Math.round((b.minY + b.maxY - h) / 2)
+        const viewport = canvas.getViewportBBox();
+        const width = nodes.length ? Math.max(...nodes.map((node) => node.x + node.width)) - Math.min(...nodes.map((node) => node.x)) : 0;
+        const height = nodes.length ? Math.max(...nodes.map((node) => node.y + node.height)) - Math.min(...nodes.map((node) => node.y)) : 0;
+        const origin = {
+          x: Math.round((viewport.minX + viewport.maxX - width) / 2),
+          y: Math.round((viewport.minY + viewport.maxY - height) / 2)
         };
-        const ops = this.cb.templateOps(tpl, at);
-        this.edit(canvas, ops);
-        const added = ops.filter((o) => o.op === "add").map((o) => canvas.nodes.get(o.node.id)).filter(Boolean);
+        const operations = this.boardLibrary.templateOps(tpl, origin);
+        this.edit(canvas, operations);
+        const added = operations.filter((operation) => operation.op === "add").map((operation) => canvas.nodes.get(operation.node.id)).filter(Boolean);
         canvas.updateSelection(() => {
           canvas.selection.clear();
-          for (const n of added) canvas.selection.add(n);
+          for (const node of added) canvas.selection.add(node);
         });
       }
       updateCount() {
@@ -6619,7 +6739,7 @@ Shift-click: next direction`,
           this.countEl.hide();
           return;
         }
-        const cards = [...canvas.nodes.values()].map((n) => n.getData()).filter((n) => n.type !== "group");
+        const cards = [...canvas.nodes.values()].map((node) => node.getData()).filter((node) => node.type !== "group");
         const names = {
           "": "none",
           1: "red",
@@ -6630,9 +6750,9 @@ Shift-click: next direction`,
           6: "purple"
         };
         const byColor = {};
-        for (const n of cards) {
-          const c = names[n.color || ""] || "custom";
-          byColor[c] = (byColor[c] || 0) + 1;
+        for (const node of cards) {
+          const colorName = names[node.color || ""] || "custom";
+          byColor[colorName] = (byColor[colorName] || 0) + 1;
         }
         const max = Number(this.settings.cardWarning) || 0;
         const over = max > 0 && cards.length > max;
@@ -6645,7 +6765,7 @@ Shift-click: next direction`,
         if (sel) this.countEl.appendText(` \xB7 ${sel} selected`);
         this.countEl.setAttr(
           "aria-label",
-          (over ? `over ${max} \xB7 ` : "") + Object.entries(byColor).map(([c, k]) => `${c} ${k}`).join(" \xB7 ")
+          (over ? `over ${max} \xB7 ` : "") + Object.entries(byColor).map(([colorName, count]) => `${colorName} ${count}`).join(" \xB7 ")
         );
         this.countEl.setAttr("data-tooltip-position", "top");
         this.countEl.show();
@@ -6661,52 +6781,54 @@ Shift-click: next direction`,
           "SKILL.md"
         );
       }
-      syncSkill(dir, force = false) {
-        const src = path.join(dir, "skill", "SKILL.md");
+      syncSkill(pluginDir, force = false) {
+        const source = path.join(pluginDir, "skill", "SKILL.md");
         const dest = this.skillPath();
         try {
-          if (!force && fs.existsSync(dest)) return;
-          fs.mkdirSync(path.dirname(dest), { recursive: true });
-          fs.copyFileSync(src, dest);
+          if (!force && fileSystem.existsSync(dest)) return;
+          fileSystem.mkdirSync(path.dirname(dest), { recursive: true });
+          fileSystem.copyFileSync(source, dest);
           if (force) {
             new Notice("Kanvas board: agent skill reset to the plugin's version");
           }
-        } catch (e) {
-          console.error("canvas-board: skill sync failed", e);
-          if (force) new Notice(`Kanvas board: skill reset failed (${e.message})`);
+        } catch (error) {
+          console.error("canvas-board: skill sync failed", error);
+          if (force) {
+            new Notice(`Kanvas board: skill reset failed (${error.message})`);
+          }
         }
       }
       // One undo step: the state before is pushed (unless the history already ends with it), then the edited data
       // is set, which pushes it, so Ctrl+Z and Ctrl+Y each take one step. `d` is passed when the caller already changed it (extract).
-      edit(canvas, ops, d = canvas.getData()) {
+      edit(canvas, operations, canvasData = canvas.getData()) {
         const before = canvas.getData();
-        const retyped = this.cb.applyOps(d, ops);
-        const h = canvas.history;
-        const last = h && h.data && h.data[h.current];
+        const retyped = this.boardLibrary.applyOps(canvasData, operations);
+        const history = canvas.history;
+        const last = history && history.data && history.data[history.current];
         const same = (x) => JSON.stringify(
           x,
-          (k, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort()) : v
+          (key, value) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort()) : value
         );
         if (canvas.pushHistory && (!last || same(last) !== same(before))) {
           canvas.pushHistory(before);
         }
         if (retyped.length) {
           canvas.setData({
-            ...d,
-            nodes: d.nodes.filter((n) => !retyped.includes(n.id))
+            ...canvasData,
+            nodes: canvasData.nodes.filter((node) => !retyped.includes(node.id))
           });
         }
-        canvas.setData(d);
+        canvas.setData(canvasData);
         canvas.requestSave(false);
       }
       activeFile() {
         const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
         return view && view.file;
       }
-      freePath(dir, name, ext) {
-        for (let k = 1; ; k++) {
-          const p = `${dir}${name}${k > 1 ? " " + k : ""}${ext}`;
-          if (!this.app.vault.getAbstractFileByPath(p)) return p;
+      freePath(folder, name, ext) {
+        for (let attempt = 1; ; attempt++) {
+          const candidate = `${folder}${name}${attempt > 1 ? " " + attempt : ""}${ext}`;
+          if (!this.app.vault.getAbstractFileByPath(candidate)) return candidate;
         }
       }
       // Cards (on any canvas) and notes that link `file`, except card `skipId` on `canvas`: [{ path, id?, label }].
@@ -6714,39 +6836,48 @@ Shift-click: next direction`,
         const out = [];
         const here = this.canvasFile(canvas);
         const hits = (from) => (target) => {
-          const f = this.app.metadataCache.getFirstLinkpathDest(target, from);
-          return !!f && f.path === file.path;
+          const destination = this.app.metadataCache.getFirstLinkpathDest(
+            target,
+            from
+          );
+          return !!destination && destination.path === file.path;
         };
-        for (const f of this.app.vault.getFiles().filter((f2) => f2.extension === "canvas" && f2.path !== file.path)) {
-          const open = f.path === here ? canvas : this.openCanvas(f.path);
-          let d;
+        for (const canvasFile of this.app.vault.getFiles().filter(
+          (candidateFile) => candidateFile.extension === "canvas" && candidateFile.path !== file.path
+        )) {
+          const open = canvasFile.path === here ? canvas : this.openCanvas(canvasFile.path);
+          let canvasData;
           try {
-            d = open ? open.getData() : JSON.parse(await this.app.vault.cachedRead(f) || "{}");
-          } catch (e) {
+            canvasData = open ? open.getData() : JSON.parse(await this.app.vault.cachedRead(canvasFile) || "{}");
+          } catch (error) {
             continue;
           }
-          for (const n of d.nodes || []) {
-            if (f.path === here && n.id === skipId) continue;
-            const hit = n.type === "file" ? n.file === file.path : n.type === "text" && this.cb.relinkText(n.text, hits(f.path), () => "\0") !== n.text;
+          for (const node of canvasData.nodes || []) {
+            if (canvasFile.path === here && node.id === skipId) continue;
+            const hit = node.type === "file" ? node.file === file.path : node.type === "text" && this.boardLibrary.relinkText(
+              node.text,
+              hits(canvasFile.path),
+              () => "\0"
+            ) !== node.text;
             if (hit) {
               out.push({
-                path: f.path,
-                id: n.id,
-                label: (n.text || n.file || "").split("\n")[0]
+                path: canvasFile.path,
+                id: node.id,
+                label: (node.text || node.file || "").split("\n")[0]
               });
             }
           }
         }
         const resolved = this.app.metadataCache.resolvedLinks;
-        for (const src in resolved) {
-          if (src !== file.path && !src.endsWith(".canvas") && resolved[src][file.path]) {
-            out.push({ path: src, label: src });
+        for (const source in resolved) {
+          if (source !== file.path && !source.endsWith(".canvas") && resolved[source][file.path]) {
+            out.push({ path: source, label: source });
           }
         }
         return out;
       }
       canvasFile(canvas) {
-        const leaf = this.app.workspace.getLeavesOfType("canvas").find((l) => l.view.canvas === canvas);
+        const leaf = this.app.workspace.getLeavesOfType("canvas").find((leaf2) => leaf2.view.canvas === canvas);
         return leaf && leaf.view.file ? leaf.view.file.path : null;
       }
       // mode: dissolve (file to trash, other links break), copy (file kept), group (cards in a group named after the
@@ -6759,7 +6890,7 @@ Shift-click: next direction`,
           "	"
         );
         const label = (((node.getData().text || "").match(/\|([^\]]+)\]\]/) || [])[1] || file.basename).trim();
-        const ops = this.cb.expandOps(
+        const operations = this.boardLibrary.expandOps(
           canvas.getData(),
           node.id,
           { nodes: sub.nodes || [], edges: sub.edges || [] },
@@ -6767,75 +6898,89 @@ Shift-click: next direction`,
         );
         const here = this.canvasFile(canvas);
         const isSub = (from) => (target) => {
-          const f = this.app.metadataCache.getFirstLinkpathDest(target, from);
-          return !!f && f.path === file.path;
+          const destination = this.app.metadataCache.getFirstLinkpathDest(
+            target,
+            from
+          );
+          return !!destination && destination.path === file.path;
         };
         if (mode === "group") {
-          const [a, b] = this.cb.SIDES[this.settings.layoutDirection] || this.cb.SIDES.TB;
-          for (const l of links.filter((l2) => l2.path === here)) {
-            const n2 = canvas.getData().nodes.find((x) => x.id === l.id);
-            if (!n2) continue;
-            ops.push({
+          const [fromSide, toSide] = this.boardLibrary.SIDES[this.settings.layoutDirection] || this.boardLibrary.SIDES.TB;
+          for (const link of links.filter((link2) => link2.path === here)) {
+            const node2 = canvas.getData().nodes.find((x) => x.id === link.id);
+            if (!node2) continue;
+            operations.push({
               op: "set",
-              id: n2.id,
-              text: n2.type === "text" ? this.cb.relinkText(n2.text, isSub(here), (t) => t) : label
+              id: node2.id,
+              text: node2.type === "text" ? this.boardLibrary.relinkText(
+                node2.text,
+                isSub(here),
+                (linkText) => linkText
+              ) : label
             });
-            ops.push({
+            operations.push({
               op: "edge",
               edge: {
                 id: [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join(""),
-                fromNode: n2.id,
-                fromSide: a,
-                toNode: ops.group,
-                toSide: b
+                fromNode: node2.id,
+                fromSide,
+                toNode: operations.group,
+                toSide
               }
             });
           }
         }
-        this.edit(canvas, ops);
+        this.edit(canvas, operations);
         if (mode === "group") {
-          const to = (t) => `[[${here}|${t}]]`;
-          for (const p of [
-            ...new Set(links.filter((l) => l.path !== here).map((l) => l.path))
+          const toLink = (alias) => `[[${here}|${alias}]]`;
+          for (const filePath of [
+            ...new Set(
+              links.filter((link) => link.path !== here).map((link) => link.path)
+            )
           ]) {
-            const f = this.app.vault.getAbstractFileByPath(p);
-            if (!f) continue;
-            if (p.endsWith(".canvas")) {
-              const relink = (d) => {
-                for (const n2 of d.nodes || []) {
-                  if (n2.type === "file" && n2.file === file.path) n2.file = here;
-                  else if (n2.type === "text") {
-                    n2.text = this.cb.relinkText(n2.text, isSub(p), to);
+            const linkingFile = this.app.vault.getAbstractFileByPath(filePath);
+            if (!linkingFile) continue;
+            if (filePath.endsWith(".canvas")) {
+              const relink = (canvasData) => {
+                for (const node2 of canvasData.nodes || []) {
+                  if (node2.type === "file" && node2.file === file.path) {
+                    node2.file = here;
+                  } else if (node2.type === "text") {
+                    node2.text = this.boardLibrary.relinkText(
+                      node2.text,
+                      isSub(filePath),
+                      toLink
+                    );
                   }
                 }
               };
-              const open = this.openCanvas(p);
+              const open = this.openCanvas(filePath);
               if (open) {
-                const d = open.getData();
-                relink(d);
-                open.setData(d);
+                const canvasData = open.getData();
+                relink(canvasData);
+                open.setData(canvasData);
                 open.requestSave();
               } else {
-                await this.app.vault.process(f, (t) => {
-                  const d = JSON.parse(t || "{}");
-                  relink(d);
-                  return JSON.stringify(d, null, "	");
+                await this.app.vault.process(linkingFile, (content2) => {
+                  const canvasData = JSON.parse(content2 || "{}");
+                  relink(canvasData);
+                  return JSON.stringify(canvasData, null, "	");
                 });
               }
             } else {
               await this.app.vault.process(
-                f,
-                (t) => this.cb.relinkText(t, isSub(p), to)
+                linkingFile,
+                (content2) => this.boardLibrary.relinkText(content2, isSub(filePath), toLink)
               );
             }
           }
         }
         if (mode !== "copy") await this.app.fileManager.trashFile(file);
-        const n = (sub.nodes || []).length, k = links.length, s = (x) => x > 1 ? "s" : "";
+        const cardCount = (sub.nodes || []).length, linkCount = links.length, plural = (x) => x > 1 ? "s" : "";
         const what = {
-          dissolve: `unpacked ${n} card${s(n)}, ${file.path} trashed` + (k ? ` (${k} link${s(k)} now broken)` : ""),
-          copy: `unpacked ${n} card${s(n)}, ${file.path} kept`,
-          group: `unpacked ${n} card${s(n)} into a group, ${k} link${s(k)} redirected`
+          dissolve: `unpacked ${cardCount} card${plural(cardCount)}, ${file.path} trashed` + (linkCount ? ` (${linkCount} link${plural(linkCount)} now broken)` : ""),
+          copy: `unpacked ${cardCount} card${plural(cardCount)}, ${file.path} kept`,
+          group: `unpacked ${cardCount} card${plural(cardCount)} into a group, ${linkCount} link${plural(linkCount)} redirected`
         }[mode];
         this.undoNotice(
           canvas,
@@ -6845,8 +6990,8 @@ Shift-click: next direction`,
         );
       }
       linkedCanvas(node) {
-        const d = node.getData();
-        const target = d.type === "file" ? d.file : ((d.text || "").match(/\[\[([^\]|#]+\.canvas)/) || [])[1];
+        const canvasData = node.getData();
+        const target = canvasData.type === "file" ? canvasData.file : ((canvasData.text || "").match(/\[\[([^\]|#]+\.canvas)/) || [])[1];
         if (!target || !target.endsWith(".canvas")) return null;
         return this.app.vault.getAbstractFileByPath(target) || this.app.metadataCache.getFirstLinkpathDest(target.trim(), "");
       }
@@ -6856,35 +7001,44 @@ Shift-click: next direction`,
       }
       // Context of the note a card links (its `context:` list), so its archive note keeps the same context.
       cardContexts(node, board) {
-        const d = node.getData();
-        const target = d.type === "file" ? d.file : ((d.text || "").match(/\[\[([^\]|#]+)/) || [])[1];
+        const canvasData = node.getData();
+        const target = canvasData.type === "file" ? canvasData.file : ((canvasData.text || "").match(/\[\[([^\]|#]+)/) || [])[1];
         const file = target && this.app.metadataCache.getFirstLinkpathDest(target.trim(), board);
-        const fm = file && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
-        const c = fm && fm.context ? [].concat(fm.context).map(String) : [];
-        return c.length ? c : void 0;
+        const frontmatter = file && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
+        const contexts = frontmatter && frontmatter.context ? [].concat(frontmatter.context).map(String) : [];
+        return contexts.length ? contexts : void 0;
       }
       async restore(note) {
-        const src = await this.app.vault.read(note);
-        const { board } = this.cb.restoreOps({ nodes: [], edges: [] }, src);
+        const source = await this.app.vault.read(note);
+        const { board } = this.boardLibrary.restoreOps(
+          { nodes: [], edges: [] },
+          source
+        );
         const file = this.app.vault.getAbstractFileByPath(board) || this.app.metadataCache.getFirstLinkpathDest(board, note.path);
         if (!file) throw new Error(`board ${board} not found`);
         const canvas = this.openCanvas(file.path);
         if (canvas) {
-          this.edit(canvas, this.cb.restoreOps(canvas.getData(), src).ops);
+          this.edit(
+            canvas,
+            this.boardLibrary.restoreOps(canvas.getData(), source).operations
+          );
         } else {
           await this.app.vault.process(file, (text) => {
-            const d = JSON.parse(text);
-            d.nodes = d.nodes || [];
-            d.edges = d.edges || [];
-            this.cb.applyOps(d, this.cb.restoreOps(d, src).ops);
-            return JSON.stringify(d, null, "	");
+            const canvasData = JSON.parse(text);
+            canvasData.nodes = canvasData.nodes || [];
+            canvasData.edges = canvasData.edges || [];
+            this.boardLibrary.applyOps(
+              canvasData,
+              this.boardLibrary.restoreOps(canvasData, source).operations
+            );
+            return JSON.stringify(canvasData, null, "	");
           });
         }
         await this.app.fileManager.trashFile(note);
         new Notice(`Kanvas board: card restored on ${file.path}`);
       }
       openCanvas(board) {
-        const leaf = this.app.workspace.getLeavesOfType("canvas").find((l) => l.view.file && l.view.file.path === board);
+        const leaf = this.app.workspace.getLeavesOfType("canvas").find((leaf2) => leaf2.view.file && leaf2.view.file.path === board);
         return leaf ? leaf.view.canvas : null;
       }
       activeCanvas() {
@@ -6892,24 +7046,26 @@ Shift-click: next direction`,
         return view && view.getViewType() === "canvas" ? view.canvas : null;
       }
       // True if the board, or a plan canvas linked from one of its cards, has a card in `go` (setting "Workflow").
-      async hasGoCards(board, go) {
-        const read = async (p) => {
-          const file = this.app.vault.getAbstractFileByPath(p);
+      async hasGoCards(board, goColorSet) {
+        const read = async (filePath) => {
+          const file = this.app.vault.getAbstractFileByPath(filePath);
           if (!file) return [];
           try {
             return JSON.parse(await this.app.vault.cachedRead(file)).nodes || [];
-          } catch (e) {
+          } catch (error) {
             return [];
           }
         };
-        const isGo = (n) => go.has(n.color);
+        const isGo = (node) => goColorSet.has(node.color);
         const open = this.openCanvas(board);
         const nodes = open ? open.getData().nodes : await read(board);
         if (nodes.some(isGo)) return true;
-        for (const n of nodes) {
-          for (const m of (n.text || "").matchAll(/\[\[([^\]|#]+\.canvas)/g)) {
+        for (const node of nodes) {
+          for (const match of (node.text || "").matchAll(
+            /\[\[([^\]|#]+\.canvas)/g
+          )) {
             const dest = this.app.metadataCache.getFirstLinkpathDest(
-              m[1].trim(),
+              match[1].trim(),
               board
             );
             if (dest && (await read(dest.path)).some(isGo)) return true;
@@ -6922,18 +7078,18 @@ Shift-click: next direction`,
         const claude = claudeBin(this.settings.claudePath);
         const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
         const board = view && view.getViewType() === "canvas" && view.file ? view.file.path : this.settings.defaultBoard;
-        const go = parseColors(this.settings.passColors);
-        if (!go.size) {
+        const goColorSet = parseColors(this.settings.passColors);
+        if (!goColorSet.size) {
           new Notice(
-            createFragment((f) => {
-              f.appendText(
+            createFragment((fragment) => {
+              fragment.appendText(
                 "Kanvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. "
               );
-              const b = f.createEl("button", {
+              const button = fragment.createEl("button", {
                 cls: "canvas-board-notice-undo",
                 text: "Open settings"
               });
-              b.addEventListener("click", () => {
+              button.addEventListener("click", () => {
                 this.app.setting.open();
                 this.app.setting.openTabById(this.manifest.id);
               });
@@ -6942,8 +7098,10 @@ Shift-click: next direction`,
           );
           return;
         }
-        if (!await this.hasGoCards(board, go)) {
-          const names = Object.keys(COLOR_NUM).filter((k) => go.has(COLOR_NUM[k]));
+        if (!await this.hasGoCards(board, goColorSet)) {
+          const names = Object.keys(COLOR_NUM).filter(
+            (colorName) => goColorSet.has(COLOR_NUM[colorName])
+          );
           new Notice(
             `Kanvas board: nothing to do on ${board} (no ${names.join(" or ")} card)`
           );
@@ -6951,9 +7109,12 @@ Shift-click: next direction`,
         }
         const vars = { vault, board, claude };
         const template = String(this.settings.terminal || "").trim();
-        const launch = template ? (([c, ...a]) => [c, a])(
+        const launch = template ? (([command, ...commandArguments]) => [command, commandArguments])(
           (template.match(/"[^"]*"|\S+/g) || []).map(
-            (a) => a.replace(/^"|"$/g, "").replace(/\{(vault|board|claude)\}/g, (_, k) => vars[k])
+            (argument) => argument.replace(/^"|"$/g, "").replace(
+              /\{(vault|board|claude)\}/g,
+              (match, name) => vars[name]
+            )
           )
         ) : defaultLaunch(vars);
         if (!launch) {
@@ -6972,12 +7133,14 @@ Shift-click: next direction`,
           });
           child.on(
             "error",
-            (e) => new Notice(`Kanvas board: could not start the pass (${e.message})`)
+            (error) => new Notice(
+              `Kanvas board: could not start the pass (${error.message})`
+            )
           );
           child.unref();
           new Notice(`Kanvas board: pass started on ${board}`);
-        } catch (e) {
-          new Notice(`Kanvas board: could not start the pass (${e.message})`);
+        } catch (error) {
+          new Notice(`Kanvas board: could not start the pass (${error.message})`);
         }
       }
     };

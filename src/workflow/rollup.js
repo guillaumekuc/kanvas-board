@@ -10,31 +10,33 @@ const writeOps = require('../board/writeOps.js');
 // never overwritten. The card color is the only state: a red/yellow card with a `· N inside` suffix got its
 // color from the roll-up, one without it was set by an agent or User and is kept.
 function rollup(board) {
-  const go = goColors();
-  const t = tree(board);
+  const goColorSet = goColors();
+  const boardTree = tree(board);
   const changes = [];
   const walk = (node) => {
-    const ops = [];
+    const operations = [];
     let red = 0,
       yellow = 0,
       cards = 0,
       green = 0;
-    for (const c of node.cards) {
-      let color = c.color;
-      if (c.inside) {
-        const inner = walk(c.inside);
-        const want = desiredColor(c, inner, go);
-        let text = c.text;
+    for (const card of node.cards) {
+      let color = card.color;
+      if (card.inside) {
+        const inner = walk(card.inside);
+        const want = desiredColor(card, inner, goColorSet);
+        let text = card.text;
         if (text !== undefined) {
           text = text.replace(/ · \d+ inside| · \d+d$/g, '');
-          if (inner.red + inner.yellow) {text += ` · ${inner.red + inner.yellow} inside`;}
+          if (inner.red + inner.yellow) {
+            text += ` · ${inner.red + inner.yellow} inside`;
+          }
         }
-        if (want !== color || (text !== undefined && text !== c.text)) {
-          ops.push({
+        if (want !== color || (text !== undefined && text !== card.text)) {
+          operations.push({
             op: 'set',
-            id: c.id,
+            id: card.id,
             color: want === null ? '' : want,
-            ...(text !== c.text ? { text } : {}),
+            ...(text !== card.text ? { text } : {}),
           });
           color = want;
         }
@@ -45,20 +47,33 @@ function rollup(board) {
       if (color === '4') green++;
     }
     // Age suffix on yellow cards whose note has not changed for a week.
-    for (const c of node.cards) {
-      if (c.color !== '3' || !c.note || c.text === undefined || c.inside) {continue;}
-      const base = c.text.replace(/ · \d+d$/, '');
+    for (const card of node.cards) {
+      if (
+        card.color !== '3' ||
+        !card.note ||
+        card.text === undefined ||
+        card.inside
+      ) {
+        continue;
+      }
+      const base = card.text.replace(/ · \d+d$/, '');
       const days = staleDays();
       const text =
-        days > 0 && c.note.ageDays >= days
-          ? `${base} · ${c.note.ageDays}d`
+        days > 0 && card.note.ageDays >= days
+          ? `${base} · ${card.note.ageDays}d`
           : base;
-      if (text !== c.text) ops.push({ op: 'set', id: c.id, text });
+      if (text !== card.text) operations.push({ op: 'set', id: card.id, text });
     }
-    if (ops.length) {changes.push({ board: node.board, via: writeOps(node.board, ops), ops });}
+    if (operations.length) {
+      changes.push({
+        board: node.board,
+        via: writeOps(node.board, operations),
+        operations,
+      });
+    }
     return { red, yellow, allGreen: cards > 0 && green === cards };
   };
-  walk(t);
+  walk(boardTree);
   return changes;
 }
 

@@ -53,21 +53,21 @@ assert.strictEqual(loadSettings(undefined, undefined).pb, 0);
 
 // Shown only while a canvas is the active tab; the count keeps running elsewhere.
 global.window = { document: { hasFocus: () => true } };
-const el = {
+const element = {
   shown: null,
   text: '',
   cls: new Set(),
-  toggle(v) {
-    this.shown = v;
+  toggle(isShown) {
+    this.shown = isShown;
   },
-  setText(t) {
-    this.text = t;
+  setText(text) {
+    this.text = text;
   },
-  addClass(c) {
-    this.cls.add(c);
+  addClass(className) {
+    this.cls.add(className);
   },
-  removeClass(c) {
-    this.cls.delete(c);
+  removeClass(className) {
+    this.cls.delete(className);
   },
   setAttribute() {},
 };
@@ -75,32 +75,36 @@ let canvas = null;
 const plugin = {
   app: { workspace: {} },
   activeCanvas: () => canvas,
-  addStatusBarItem: () => el,
+  addStatusBarItem: () => element,
 };
 let saves = 0;
-const a = new ApmCounter(plugin, loadSettings(undefined, legacy), async () => {
-  saves++;
-});
-a.el = el;
-a.refresh();
-assert.strictEqual(el.shown, false, 'hidden in a regular note');
-assert.strictEqual(el.text, '');
-a.record(['Board.canvas#a']);
-assert.strictEqual(a.pace(), 1);
-assert.strictEqual(el.shown, false);
+const counter = new ApmCounter(
+  plugin,
+  loadSettings(undefined, legacy),
+  async () => {
+    saves++;
+  },
+);
+counter.element = element;
+counter.refresh();
+assert.strictEqual(element.shown, false, 'hidden in a regular note');
+assert.strictEqual(element.text, '');
+counter.record(['Board.canvas#a']);
+assert.strictEqual(counter.pace(), 1);
+assert.strictEqual(element.shown, false);
 canvas = {};
-a.refresh();
-assert.strictEqual(el.shown, true, 'shown on a canvas');
-assert.strictEqual(el.text, '1 AP15M · PB 23');
+counter.refresh();
+assert.strictEqual(element.shown, true, 'shown on a canvas');
+assert.strictEqual(element.text, '1 AP15M · PB 23');
 
 // A new window resets the personal best and is saved.
 (async () => {
-  await a.setWindow(5);
-  assert.strictEqual(a.settings.pb, 0);
-  assert.strictEqual(a.settings.unit, 'cards/5');
+  await counter.setWindow(5);
+  assert.strictEqual(counter.settings.pb, 0);
+  assert.strictEqual(counter.settings.unit, 'cards/5');
   assert.strictEqual(saves, 1);
   console.log('ok');
-})().catch((e) => {
-  console.error(e);
+})().catch((error) => {
+  console.error(error);
   process.exit(1);
 });

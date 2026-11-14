@@ -1,5 +1,5 @@
 // Writes a small synthetic vault: one board, a nested board, plan notes.
-const fs = require('fs');
+const fileSystem = require('fs');
 const path = require('path');
 
 const FIXED_TIME = new Date('2026-01-14T12:00:00Z');
@@ -77,11 +77,11 @@ module.exports = function writeFixture(vaultRoot, pluginSources) {
     'plugins',
     'canvas-board',
   );
-  fs.mkdirSync(pluginDir, { recursive: true });
+  fileSystem.mkdirSync(pluginDir, { recursive: true });
   for (const [name, source] of Object.entries(pluginSources)) {
-    fs.cpSync(source, path.join(pluginDir, name), { recursive: true });
+    fileSystem.cpSync(source, path.join(pluginDir, name), { recursive: true });
   }
-  fs.writeFileSync(path.join(pluginDir, 'data.json'), '{}');
+  fileSystem.writeFileSync(path.join(pluginDir, 'data.json'), '{}');
   const files = {
     'Board.canvas': JSON.stringify(BOARD, null, '\t'),
     'Sub.canvas': JSON.stringify(SUB, null, '\t'),
@@ -89,8 +89,8 @@ module.exports = function writeFixture(vaultRoot, pluginSources) {
   };
   for (const [relativePath, content] of Object.entries(files)) {
     const filePath = path.join(vaultRoot, relativePath);
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, content);
-    fs.utimesSync(filePath, FIXED_TIME, FIXED_TIME);
+    fileSystem.mkdirSync(path.dirname(filePath), { recursive: true });
+    fileSystem.writeFileSync(filePath, content);
+    fileSystem.utimesSync(filePath, FIXED_TIME, FIXED_TIME);
   }
 };

@@ -64,7 +64,7 @@
       {
         "args": "rollup Board.canvas",
         "status": 0,
-        "stdout": "[\n  {\n    \"board\": \"Board.canvas\",\n    \"via\": \"file\",\n    \"ops\": [\n      {\n        \"op\": \"set\",\n        \"id\": \"nest0000000000a6\",\n        \"color\": \"1\",\n        \"text\": \"[[Sub.canvas|Sub]] · 1 inside\"\n      }\n    ]\n  }\n]\n",
+        "stdout": "[\n  {\n    \"board\": \"Board.canvas\",\n    \"via\": \"file\",\n    \"operations\": [\n      {\n        \"op\": \"set\",\n        \"id\": \"nest0000000000a6\",\n        \"color\": \"1\",\n        \"text\": \"[[Sub.canvas|Sub]] · 1 inside\"\n      }\n    ]\n  }\n]\n",
         "errors": []
       },
       {

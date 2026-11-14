@@ -2,20 +2,20 @@
 // [[Note|alias]] → alias, [[Note#Heading]] → Note › Heading, [[Note]] → Note, [text](url) → text; marks
 // (** __ ~~ == ` * _), heading, quote, list and checkbox markers dropped; #tags kept.
 function plainLines(text) {
-  const name = (n) =>
-    n
+  const name = (node) =>
+    node
       .replace(/\.(md|canvas)$/, '')
       .split('/')
       .pop();
   return String(text || '')
     .split('\n')
-    .map((l) =>
-      l
+    .map((line) =>
+      line
         .replace(/!?\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
-        .replace(/!?\[\[([^\]#]*)#\^?([^\]]+)\]\]/g, (_, n, h) =>
-          n ? `${name(n)} › ${h}` : h,
+        .replace(/!?\[\[([^\]#]*)#\^?([^\]]+)\]\]/g, (match, node, heading) =>
+          node ? `${name(node)} › ${heading}` : heading,
         )
-        .replace(/!?\[\[([^\]]+)\]\]/g, (_, n) => name(n))
+        .replace(/!?\[\[([^\]]+)\]\]/g, (match, node) => name(node))
         .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
         .replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/, '')
         .replace(/\*\*|__|~~|==|`/g, '')

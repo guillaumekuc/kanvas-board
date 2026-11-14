@@ -4,96 +4,108 @@ const fitHeight = require('./fitHeight.js');
 // Ops that lay out `ids` (all cards when empty) with dagre; the other cards never move. The laid-out block
 // keeps the center of the cards it lays out, then steps until it overlaps nothing.
 // Shared with the plugin, which passes its own dagre.
-function layoutOps(d, { ids, dir = 'TB', fit = false, dagre, flow = 'out' }) {
-  const cards = d.nodes.filter((n) => n.type !== 'group');
-  const pick = new Set(ids && ids.length ? ids : cards.map((n) => n.id));
-  const moving = cards.filter((n) => pick.has(n.id));
-  const fixed = cards.filter((n) => !pick.has(n.id));
+function layoutOps(
+  canvasData,
+  { ids, direction = 'TB', fit = false, dagre, flow = 'out' },
+) {
+  const cards = canvasData.nodes.filter((node) => node.type !== 'group');
+  const pick = new Set(ids && ids.length ? ids : cards.map((node) => node.id));
+  const moving = cards.filter((node) => pick.has(node.id));
+  const fixed = cards.filter((node) => !pick.has(node.id));
   if (!moving.length) return [];
-  const g = new dagre.graphlib.Graph();
-  g.setGraph({
-    rankdir: dir,
+  const graph = new dagre.graphlib.Graph();
+  graph.setGraph({
+    rankdir: direction,
     nodesep: 40,
     ranksep: 80,
     marginx: 0,
     marginy: 0,
   });
-  g.setDefaultEdgeLabel(() => ({}));
-  const size = (n) => ({
-    width: n.width,
-    height: fit && n.type === 'text' ? fitHeight(n.text, n.width) : n.height,
+  graph.setDefaultEdgeLabel(() => ({}));
+  const size = (node) => ({
+    width: node.width,
+    height:
+      fit && node.type === 'text'
+        ? fitHeight(node.text, node.width)
+        : node.height,
   });
-  for (const n of moving) g.setNode(n.id, size(n));
-  const inner = d.edges.filter(
-    (e) => pick.has(e.fromNode) && pick.has(e.toNode),
+  for (const node of moving) graph.setNode(node.id, size(node));
+  const inner = canvasData.edges.filter(
+    (edge) => pick.has(edge.fromNode) && pick.has(edge.toNode),
   );
   // The direction names where a branch starts, whichever way its arrows point. With flow 'in' (the fold direction)
   // arrows point at the card they hang from, and "depends on" edges point at the prerequisite: both come first, so they rank reversed.
-  const back = (e) => flow === 'in' || /depends on/i.test(e.label || '');
-  for (const e of inner) {back(e) ? g.setEdge(e.toNode, e.fromNode) : g.setEdge(e.fromNode, e.toNode);}
-  dagre.layout(g);
+  const back = (edge) => flow === 'in' || /depends on/i.test(edge.label || '');
+  for (const edge of inner) {
+    back(edge)
+      ? graph.setEdge(edge.toNode, edge.fromNode)
+      : graph.setEdge(edge.fromNode, edge.toNode);
+  }
+  dagre.layout(graph);
 
-  const box = (ns) =>
-    ns.reduce(
-      (b, n) => ({
-        x0: Math.min(b.x0, n.x),
-        y0: Math.min(b.y0, n.y),
-        x1: Math.max(b.x1, n.x + n.width),
-        y1: Math.max(b.y1, n.y + n.height),
+  const box = (nodes) =>
+    nodes.reduce(
+      (box, node) => ({
+        x0: Math.min(box.x0, node.x),
+        y0: Math.min(box.y0, node.y),
+        x1: Math.max(box.x1, node.x + node.width),
+        y1: Math.max(box.y1, node.y + node.height),
       }),
       { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity },
     );
-  const placed = moving.map((n) => {
-    const p = g.node(n.id);
+  const placed = moving.map((node) => {
+    const position = graph.node(node.id);
     return {
-      id: n.id,
-      x: Math.round(p.x - p.width / 2),
-      y: Math.round(p.y - p.height / 2),
-      width: p.width,
-      height: p.height,
+      id: node.id,
+      x: Math.round(position.x - position.width / 2),
+      y: Math.round(position.y - position.height / 2),
+      width: position.width,
+      height: position.height,
     };
   });
   // The block keeps the center the moving cards had; if it then overlaps a fixed card, it steps across the
   // flow (down for LR and RL, right for TB and BT), alternating sides, to the nearest free spot.
-  const b = box(placed),
+  const placedBox = box(placed),
     was = box(moving);
-  const cx = Math.round((was.x0 + was.x1 - b.x0 - b.x1) / 2),
-    cy = Math.round((was.y0 + was.y1 - b.y0 - b.y1) / 2);
-  let ox = cx,
-    oy = cy;
+  const shiftX = Math.round(
+      (was.x0 + was.x1 - placedBox.x0 - placedBox.x1) / 2,
+    ),
+    shiftY = Math.round((was.y0 + was.y1 - placedBox.y0 - placedBox.y1) / 2);
+  let offsetX = shiftX,
+    offsetY = shiftY;
   const hits = () =>
-    placed.some((p) =>
+    placed.some((placedNode) =>
       fixed.some(
-        (n) =>
-          p.x + ox < n.x + n.width + 40 &&
-          p.x + ox + p.width + 40 > n.x &&
-          p.y + oy < n.y + n.height + 40 &&
-          p.y + oy + p.height + 40 > n.y,
+        (node) =>
+          placedNode.x + offsetX < node.x + node.width + 40 &&
+          placedNode.x + offsetX + placedNode.width + 40 > node.x &&
+          placedNode.y + offsetY < node.y + node.height + 40 &&
+          placedNode.y + offsetY + placedNode.height + 40 > node.y,
       ),
     );
-  for (let k = 1; k <= 400 && hits(); k++) {
-    const step = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 40;
-    if (dir === 'LR' || dir === 'RL') oy = cy + step;
-    else ox = cx + step;
+  for (let attempt = 1; attempt <= 400 && hits(); attempt++) {
+    const step = (attempt % 2 ? 1 : -1) * Math.ceil(attempt / 2) * 40;
+    if (direction === 'LR' || direction === 'RL') offsetY = shiftY + step;
+    else offsetX = shiftX + step;
   }
 
-  const ops = placed.map((p) => ({
+  const operations = placed.map((placedNode) => ({
     op: 'set',
-    id: p.id,
-    x: p.x + ox,
-    y: p.y + oy,
-    width: p.width,
-    height: p.height,
+    id: placedNode.id,
+    x: placedNode.x + offsetX,
+    y: placedNode.y + offsetY,
+    width: placedNode.width,
+    height: placedNode.height,
   }));
-  const [fromSide, toSide] = SIDES[dir];
-  for (const e of inner) {
-ops.push(
-      back(e)
-        ? { op: 'sides', id: e.id, fromSide: toSide, toSide: fromSide }
-        : { op: 'sides', id: e.id, fromSide, toSide },
+  const [fromSide, toSide] = SIDES[direction];
+  for (const edge of inner) {
+    operations.push(
+      back(edge)
+        ? { op: 'sides', id: edge.id, fromSide: toSide, toSide: fromSide }
+        : { op: 'sides', id: edge.id, fromSide, toSide },
     );
-}
-  return ops;
+  }
+  return operations;
 }
 
 module.exports = layoutOps;

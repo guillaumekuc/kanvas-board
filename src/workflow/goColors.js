@@ -3,8 +3,8 @@ const parseColors = require('./parseColors.js');
 const settings = require('./settings.js');
 
 function goColors() {
-  const s = settings().passColors;
-  return parseColors(s === undefined ? DEFAULT_PASS_COLORS : s);
+  const value = settings().passColors;
+  return parseColors(value === undefined ? DEFAULT_PASS_COLORS : value);
 }
 
 module.exports = goColors;

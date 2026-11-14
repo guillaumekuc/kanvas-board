@@ -1,29 +1,34 @@
 const newId = require('./newId.js');
 
-function templateOps(tpl, at) {
+function templateOps(tpl, origin) {
   const nodes = tpl.nodes || [];
   if (!nodes.length) throw new Error('empty template');
-  const x0 = Math.min(...nodes.map((n) => n.x)),
-    y0 = Math.min(...nodes.map((n) => n.y));
-  const ids = new Map(nodes.map((n) => [n.id, newId()]));
-  const ops = nodes.map((n) => ({
+  const minX = Math.min(...nodes.map((node) => node.x)),
+    minY = Math.min(...nodes.map((node) => node.y));
+  const ids = new Map(nodes.map((node) => [node.id, newId()]));
+  const operations = nodes.map((node) => ({
     op: 'add',
-    node: { ...n, id: ids.get(n.id), x: n.x - x0 + at.x, y: n.y - y0 + at.y },
+    node: {
+      ...node,
+      id: ids.get(node.id),
+      x: node.x - minX + origin.x,
+      y: node.y - minY + origin.y,
+    },
   }));
-  for (const e of tpl.edges || []) {
-if (ids.has(e.fromNode) && ids.has(e.toNode)) {
-ops.push({
+  for (const edge of tpl.edges || []) {
+    if (ids.has(edge.fromNode) && ids.has(edge.toNode)) {
+      operations.push({
         op: 'edge',
         edge: {
-          ...e,
+          ...edge,
           id: newId(),
-          fromNode: ids.get(e.fromNode),
-          toNode: ids.get(e.toNode),
+          fromNode: ids.get(edge.fromNode),
+          toNode: ids.get(edge.toNode),
         },
       });
-}
-}
-  return ops;
+    }
+  }
+  return operations;
 }
 
 module.exports = templateOps;

@@ -18,7 +18,7 @@ class Picker extends FuzzySuggestModal {
   }
   onChooseItem(item) {
     Promise.resolve(this.onChoose(item)).catch(
-      (e) => new Notice(`Kanvas board: ${e.message}`),
+      (error) => new Notice(`Kanvas board: ${error.message}`),
     );
   }
 }

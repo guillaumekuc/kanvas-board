@@ -1,16 +1,16 @@
 // Contexts in a note's frontmatter text: the `context:` list (or a single value).
-function noteContexts(fm) {
-  if (!fm) return [];
-  const unq = (s) => s.trim().replace(/^(["'])(.*)\1$/, '$2');
-  const m = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m.exec(fm);
-  if (!m) return [];
+function noteContexts(frontmatter) {
+  if (!frontmatter) return [];
+  const unq = (value) => value.trim().replace(/^(["'])(.*)\1$/, '$2');
+  const match = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m.exec(frontmatter);
+  if (!match) return [];
   return (
-    m[1].trim()
-      ? m[1].replace(/^\[|\]$/g, '').split(',')
-      : m[2]
+    match[1].trim()
+      ? match[1].replace(/^\[|\]$/g, '').split(',')
+      : match[2]
           .split(/\r?\n/)
-          .filter((l) => l.trim())
-          .map((l) => l.replace(/^\s+-\s*/, ''))
+          .filter((line) => line.trim())
+          .map((line) => line.replace(/^\s+-\s*/, ''))
   )
     .map(unq)
     .filter(Boolean);

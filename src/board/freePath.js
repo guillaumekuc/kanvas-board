@@ -1,12 +1,15 @@
 const abs = require('./abs.js');
-const fs = require('fs');
+const fileSystem = require('fs');
 const path = require('path');
 
 // Next free `<dir>/<name><ext>` (vault-relative), adding " 2", " 3"... when taken.
-function freePath(dir, name, ext) {
-  for (let k = 1; ; k++) {
-    const p = path.posix.join(dir, `${name}${k > 1 ? ' ' + k : ''}${ext}`);
-    if (!fs.existsSync(abs(p))) return p;
+function freePath(folder, name, ext) {
+  for (let attempt = 1; ; attempt++) {
+    const candidate = path.posix.join(
+      folder,
+      `${name}${attempt > 1 ? ' ' + attempt : ''}${ext}`,
+    );
+    if (!fileSystem.existsSync(abs(candidate))) return candidate;
   }
 }
 

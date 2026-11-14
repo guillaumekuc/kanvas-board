@@ -52,15 +52,24 @@ const LAYOUT_DIRS = {
 };
 const LINUX_TERMINALS = [
   // [binary, (vault, command) => args]
-  ['gnome-terminal', (v, c) => [`--working-directory=${v}`, '--', ...c]],
-  ['konsole', (v, c) => ['--workdir', v, '-e', ...c]],
-  ['xfce4-terminal', (v, c) => ['--working-directory', v, '-x', ...c]],
-  ['kitty', (v, c) => ['--directory', v, ...c]],
-  ['alacritty', (v, c) => ['--working-directory', v, '-e', ...c]],
-  ['wezterm', (v, c) => ['start', '--cwd', v, '--', ...c]],
-  ['foot', (v, c) => [`--working-directory=${v}`, ...c]],
-  ['x-terminal-emulator', (v, c) => ['-e', ...c]],
-  ['xterm', (v, c) => ['-e', ...c]],
+  [
+    'gnome-terminal',
+    (vault, command) => [`--working-directory=${vault}`, '--', ...command],
+  ],
+  ['konsole', (vault, command) => ['--workdir', vault, '-e', ...command]],
+  [
+    'xfce4-terminal',
+    (vault, command) => ['--working-directory', vault, '-x', ...command],
+  ],
+  ['kitty', (vault, command) => ['--directory', vault, ...command]],
+  [
+    'alacritty',
+    (vault, command) => ['--working-directory', vault, '-e', ...command],
+  ],
+  ['wezterm', (vault, command) => ['start', '--cwd', vault, '--', ...command]],
+  ['foot', (vault, command) => [`--working-directory=${vault}`, ...command]],
+  ['x-terminal-emulator', (vault, command) => ['-e', ...command]],
+  ['xterm', (vault, command) => ['-e', ...command]],
 ];
 
 module.exports = {

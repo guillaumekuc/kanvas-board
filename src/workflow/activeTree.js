@@ -4,16 +4,16 @@ const goColors = require('./goColors.js');
 
 // --active: only what a pass needs. Go/orange cards with their notes, the cards edged to them (once each,
 // text only, as context), nested boards only when they hold active cards, and the yellow/red count.
-function activeTree(t) {
+function activeTree(boardTree) {
   const active = new Set([...goColors(), WORKING]);
   const total = { waiting: 0 };
-  const a = activeNode(t, total, active);
+  const filtered = activeNode(boardTree, total, active);
   return {
-    board: a.board,
+    board: filtered.board,
     waiting: total.waiting,
-    cards: a.cards,
-    context: a.context,
-    edges: a.edges,
+    cards: filtered.cards,
+    context: filtered.context,
+    edges: filtered.edges,
   };
 }
 

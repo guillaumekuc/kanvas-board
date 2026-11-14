@@ -8,11 +8,11 @@ function obsidianEval(code) {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-      const m = out.match(/=>\s?([\s\S]*)$/);
-      if (!m) throw new Error(out.trim());
-      return m[1].trim();
-    } catch (e) {
-      if (e.code === 'ENOENT') continue;
+      const match = out.match(/=>\s?([\s\S]*)$/);
+      if (!match) throw new Error(out.trim());
+      return match[1].trim();
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
       return null; // Obsidian not running, or the CLI is off
     }
   }

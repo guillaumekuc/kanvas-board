@@ -1,12 +1,12 @@
 const { COLOR_NUM } = require('./constants.js');
 
-const parseColors = (s) =>
+const parseColors = (value) =>
   new Set(
-    String(s || '')
+    String(value || '')
       .split(/[\s,]+/)
       .filter(Boolean)
-      .map((c) => COLOR_NUM[c.toLowerCase()] || c)
-      .filter((c) => /^[1-6]$/.test(c)),
+      .map((color) => COLOR_NUM[color.toLowerCase()] || color)
+      .filter((color) => /^[1-6]$/.test(color)),
   );
 
 module.exports = parseColors;

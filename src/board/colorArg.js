@@ -2,7 +2,11 @@ const { COLORS } = require('./constants.js');
 
 // --- Commands -----------------------------------------------------------------------------------------
 
-const colorArg = (c) =>
-  c === undefined ? undefined : c === 'none' ? '' : COLORS[c] || c;
+const colorArg = (color) =>
+  color === undefined
+    ? undefined
+    : color === 'none'
+      ? ''
+      : COLORS[color] || color;
 
 module.exports = colorArg;

@@ -4,7 +4,7 @@ const onPath = require('./onPath.js');
 function defaultLaunch({ vault, board, claude }) {
   const prompt = `/canvas-board ${board}`;
   if (process.platform === 'win32') {
-return [
+    return [
       'wt.exe',
       [
         '-w',
@@ -18,9 +18,9 @@ return [
         prompt,
       ],
     ];
-}
+  }
   if (process.platform === 'darwin') {
-return [
+    return [
       'osascript',
       [
         '-e',
@@ -40,7 +40,7 @@ return [
         prompt,
       ],
     ];
-}
+  }
   const found = LINUX_TERMINALS.find(([bin]) => onPath(bin));
   return found ? [found[0], found[1](vault, [claude, prompt])] : null;
 }

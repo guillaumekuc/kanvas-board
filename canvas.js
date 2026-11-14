@@ -69,31 +69,38 @@ var require_constants2 = __commonJS({
 var require_activeNode = __commonJS({
   "src/workflow/activeNode.js"(exports2, module2) {
     var { WAITING } = require_constants2();
-    function activeNode(t, total, active) {
+    function activeNode(boardTree, total, active) {
       const ids = new Set(
-        t.cards.filter((c) => active.has(c.color)).map((c) => c.id)
+        boardTree.cards.filter((card) => active.has(card.color)).map((card) => card.id)
       );
       const near = /* @__PURE__ */ new Set();
-      for (const e of t.edges) {
-        if (ids.has(e.from) && !ids.has(e.to)) near.add(e.to);
-        if (ids.has(e.to) && !ids.has(e.from)) near.add(e.from);
+      for (const edge of boardTree.edges) {
+        if (ids.has(edge.from) && !ids.has(edge.to)) near.add(edge.to);
+        if (ids.has(edge.to) && !ids.has(edge.from)) near.add(edge.from);
       }
       const cards = [], context = [];
-      for (const c of t.cards) {
-        if (WAITING.has(c.color)) total.waiting++;
-        const inside = c.inside && activeNode(c.inside, total, active);
-        if (ids.has(c.id) || inside && inside.cards.length) {
+      for (const card of boardTree.cards) {
+        if (WAITING.has(card.color)) total.waiting++;
+        const inside = card.inside && activeNode(card.inside, total, active);
+        if (ids.has(card.id) || inside && inside.cards.length) {
           cards.push({
-            ...c,
+            ...card,
             inside: inside && inside.cards.length ? inside : void 0
           });
-        } else if (near.has(c.id)) {
-          context.push({ id: c.id, color: c.color, text: c.text, file: c.file });
+        } else if (near.has(card.id)) {
+          context.push({
+            id: card.id,
+            color: card.color,
+            text: card.text,
+            file: card.file
+          });
         }
       }
-      const kept = new Set(cards.map((c) => c.id));
-      const edges = t.edges.filter((e) => kept.has(e.from) || kept.has(e.to));
-      return { board: t.board, cards, context, edges };
+      const kept = new Set(cards.map((card) => card.id));
+      const edges = boardTree.edges.filter(
+        (edge) => kept.has(edge.from) || kept.has(edge.to)
+      );
+      return { board: boardTree.board, cards, context, edges };
     }
     module2.exports = activeNode;
   }
@@ -103,9 +110,9 @@ var require_activeNode = __commonJS({
 var require_parseColors = __commonJS({
   "src/workflow/parseColors.js"(exports2, module2) {
     var { COLORS } = require_constants();
-    function parseColors(s) {
+    function parseColors(value) {
       return new Set(
-        String(s || "").split(/[\s,]+/).filter(Boolean).map((c) => COLORS[c.toLowerCase()] || c).filter((c) => /^[1-6]$/.test(c))
+        String(value || "").split(/[\s,]+/).filter(Boolean).map((color) => COLORS[color.toLowerCase()] || color).filter((color) => /^[1-6]$/.test(color))
       );
     }
     module2.exports = parseColors;
@@ -115,14 +122,14 @@ var require_parseColors = __commonJS({
 // src/workflow/settings.js
 var require_settings = __commonJS({
   "src/workflow/settings.js"(exports2, module2) {
-    var fs2 = require("fs");
+    var fileSystem2 = require("fs");
     var path2 = require("path");
     var settings2 = () => {
       try {
         return JSON.parse(
-          fs2.readFileSync(path2.join(__dirname, "data.json"), "utf8")
+          fileSystem2.readFileSync(path2.join(__dirname, "data.json"), "utf8")
         );
-      } catch (e) {
+      } catch (error) {
         return {};
       }
     };
@@ -137,8 +144,8 @@ var require_goColors = __commonJS({
     var parseColors = require_parseColors();
     var settings2 = require_settings();
     function goColors() {
-      const s = settings2().passColors;
-      return parseColors(s === void 0 ? DEFAULT_PASS_COLORS : s);
+      const value = settings2().passColors;
+      return parseColors(value === void 0 ? DEFAULT_PASS_COLORS : value);
     }
     module2.exports = goColors;
   }
@@ -150,16 +157,16 @@ var require_activeTree = __commonJS({
     var { WORKING } = require_constants2();
     var activeNode = require_activeNode();
     var goColors = require_goColors();
-    function activeTree2(t) {
+    function activeTree2(boardTree) {
       const active = /* @__PURE__ */ new Set([...goColors(), WORKING]);
       const total = { waiting: 0 };
-      const a = activeNode(t, total, active);
+      const filtered = activeNode(boardTree, total, active);
       return {
-        board: a.board,
+        board: filtered.board,
         waiting: total.waiting,
-        cards: a.cards,
-        context: a.context,
-        edges: a.edges
+        cards: filtered.cards,
+        context: filtered.context,
+        edges: filtered.edges
       };
     }
     module2.exports = activeTree2;
@@ -171,7 +178,7 @@ var require_abs = __commonJS({
   "src/board/abs.js"(exports2, module2) {
     var { ROOT } = require_constants();
     var path2 = require("path");
-    var abs2 = (p) => path2.join(ROOT, p);
+    var abs2 = (relativePath) => path2.join(ROOT, relativePath);
     module2.exports = abs2;
   }
 });
@@ -179,14 +186,14 @@ var require_abs = __commonJS({
 // src/board/settings.js
 var require_settings2 = __commonJS({
   "src/board/settings.js"(exports2, module2) {
-    var fs2 = require("fs");
+    var fileSystem2 = require("fs");
     var path2 = require("path");
     var settings2 = () => {
       try {
         return JSON.parse(
-          fs2.readFileSync(path2.join(__dirname, "data.json"), "utf8")
+          fileSystem2.readFileSync(path2.join(__dirname, "data.json"), "utf8")
         );
-      } catch (e) {
+      } catch (error) {
         return {};
       }
     };
@@ -199,7 +206,7 @@ var require_vaultFileIndex = __commonJS({
   "src/board/vaultFileIndex.js"(exports2, module2) {
     var { SKIP_DIRS } = require_constants();
     var abs2 = require_abs();
-    var fs2 = require("fs");
+    var fileSystem2 = require("fs");
     var path2 = require("path");
     var settings2 = require_settings2();
     var VaultFileIndex = class {
@@ -216,14 +223,18 @@ var require_vaultFileIndex = __commonJS({
         if (!this.files) {
           this.files = /* @__PURE__ */ new Map();
           const skip = /* @__PURE__ */ new Set([...SKIP_DIRS, ...settings2().skipFolders || []]);
-          const walk = (dir) => {
-            for (const e of fs2.readdirSync(abs2(dir), { withFileTypes: true })) {
-              if (e.isDirectory()) {
-                if (!skip.has(e.name)) walk(path2.posix.join(dir, e.name));
+          const walk = (folder) => {
+            for (const entry of fileSystem2.readdirSync(abs2(folder), {
+              withFileTypes: true
+            })) {
+              if (entry.isDirectory()) {
+                if (!skip.has(entry.name)) {
+                  walk(path2.posix.join(folder, entry.name));
+                }
                 continue;
               }
-              const rel = path2.posix.join(dir, e.name);
-              const key = e.name.endsWith(".md") ? e.name.slice(0, -3) : e.name;
+              const rel = path2.posix.join(folder, entry.name);
+              const key = entry.name.endsWith(".md") ? entry.name.slice(0, -3) : entry.name;
               if (!this.files.has(key)) this.files.set(key, rel);
               this.files.set(rel, rel);
               this.files.set(rel.replace(/\.md$/, ""), rel);
@@ -253,14 +264,14 @@ var require_findFile = __commonJS({
 var require_cardLinks = __commonJS({
   "src/board/cardLinks.js"(exports2, module2) {
     var findFile = require_findFile();
-    function cardLinks2(n) {
-      const targets = n.type === "file" ? [n.file] : [...(n.text || "").matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map(
-        (m) => findFile(m[1].trim())
-      );
+    function cardLinks2(node) {
+      const targets = node.type === "file" ? [node.file] : [
+        ...(node.text || "").matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)
+      ].map((match) => findFile(match[1].trim()));
       const found = targets.filter(Boolean);
       return {
-        note: found.find((f) => f.endsWith(".md")) || null,
-        canvas: found.find((f) => f.endsWith(".canvas")) || null
+        note: found.find((file) => file.endsWith(".md")) || null,
+        canvas: found.find((file) => file.endsWith(".canvas")) || null
       };
     }
     module2.exports = cardLinks2;
@@ -282,12 +293,12 @@ var require_cardTextOk = __commonJS({
 // src/board/noteContexts.js
 var require_noteContexts = __commonJS({
   "src/board/noteContexts.js"(exports2, module2) {
-    function noteContexts(fm) {
-      if (!fm) return [];
-      const unq = (s) => s.trim().replace(/^(["'])(.*)\1$/, "$2");
-      const m = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m.exec(fm);
-      if (!m) return [];
-      return (m[1].trim() ? m[1].replace(/^\[|\]$/g, "").split(",") : m[2].split(/\r?\n/).filter((l) => l.trim()).map((l) => l.replace(/^\s+-\s*/, ""))).map(unq).filter(Boolean);
+    function noteContexts(frontmatter) {
+      if (!frontmatter) return [];
+      const unq = (value) => value.trim().replace(/^(["'])(.*)\1$/, "$2");
+      const match = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m.exec(frontmatter);
+      if (!match) return [];
+      return (match[1].trim() ? match[1].replace(/^\[|\]$/g, "").split(",") : match[2].split(/\r?\n/).filter((line) => line.trim()).map((line) => line.replace(/^\s+-\s*/, ""))).map(unq).filter(Boolean);
     }
     module2.exports = noteContexts;
   }
@@ -315,11 +326,11 @@ var require_obsidianEval = __commonJS({
             encoding: "utf8",
             stdio: ["ignore", "pipe", "pipe"]
           });
-          const m = out.match(/=>\s?([\s\S]*)$/);
-          if (!m) throw new Error(out.trim());
-          return m[1].trim();
-        } catch (e) {
-          if (e.code === "ENOENT") continue;
+          const match = out.match(/=>\s?([\s\S]*)$/);
+          if (!match) throw new Error(out.trim());
+          return match[1].trim();
+        } catch (error) {
+          if (error.code === "ENOENT") continue;
           return null;
         }
       }
@@ -333,8 +344,8 @@ var require_obsidianEval = __commonJS({
 var require_api = __commonJS({
   "src/board/api.js"(exports2, module2) {
     var obsidianEval = require_obsidianEval();
-    var api = (fn, ...a) => obsidianEval(
-      `(async()=>{const p=app.plugins.plugins['canvas-board'];if(!p||!p.api)return 'no plugin';const r=await p.api.${fn}(${a.map((x) => JSON.stringify(x)).join(",")});return r===null?'closed':r})()`
+    var api = (method, ...values) => obsidianEval(
+      `(async()=>{const p=app.plugins.plugins['canvas-board'];if(!p||!p.api)return 'no plugin';const r=await p.api.${method}(${values.map((x) => JSON.stringify(x)).join(",")});return r===null?'closed':r})()`
     );
     module2.exports = api;
   }
@@ -344,12 +355,14 @@ var require_api = __commonJS({
 var require_readFileBoard = __commonJS({
   "src/board/readFileBoard.js"(exports2, module2) {
     var abs2 = require_abs();
-    var fs2 = require("fs");
+    var fileSystem2 = require("fs");
     var readFileBoard = (board) => {
-      const d = JSON.parse(fs2.readFileSync(abs2(board), "utf8") || "{}");
-      d.nodes ||= [];
-      d.edges ||= [];
-      return d;
+      const canvasData = JSON.parse(
+        fileSystem2.readFileSync(abs2(board), "utf8") || "{}"
+      );
+      canvasData.nodes ||= [];
+      canvasData.edges ||= [];
+      return canvasData;
     };
     module2.exports = readFileBoard;
   }
@@ -363,8 +376,8 @@ var require_readBoard = __commonJS({
     function readBoard2(board) {
       const out = api("read", board);
       if (out && out.startsWith("{")) {
-        const d = JSON.parse(out);
-        return { nodes: d.nodes || [], edges: d.edges || [] };
+        const canvasData = JSON.parse(out);
+        return { nodes: canvasData.nodes || [], edges: canvasData.edges || [] };
       }
       return readFileBoard(board);
     }
@@ -380,62 +393,68 @@ var require_check = __commonJS({
     var cardLinks2 = require_cardLinks();
     var cardTextOk = require_cardTextOk();
     var findFile = require_findFile();
-    var fs2 = require("fs");
+    var fileSystem2 = require("fs");
     var noteContexts = require_noteContexts();
     var notesFolder = require_notesFolder();
     var readBoard2 = require_readBoard();
     function check2(board, ids) {
       const issues = [];
-      const walk = (b, depth, seen) => {
-        seen.add(b);
-        const d = readBoard2(b);
-        for (const n of d.nodes) {
-          if (n.type === "group" || !n.color) continue;
+      const walk = (board2, depth, seen) => {
+        seen.add(board2);
+        const canvasData = readBoard2(board2);
+        for (const node of canvasData.nodes) {
+          if (node.type === "group" || !node.color) continue;
           const add = (issue) => issues.push({
-            board: b,
-            id: n.id,
-            text: (n.text || n.file || "").split("\n")[0],
+            board: board2,
+            id: node.id,
+            text: (node.text || node.file || "").split("\n")[0],
             issue
           });
-          const scoped = !ids || ids.has(n.id);
-          const links = n.type === "file" ? [n.file] : [
-            ...(n.text || "").matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)
-          ].map((m) => m[1].trim());
+          const scoped = !ids || ids.has(node.id);
+          const links = node.type === "file" ? [node.file] : [
+            ...(node.text || "").matchAll(
+              /\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g
+            )
+          ].map((match) => match[1].trim());
           if (scoped) {
-            for (const l of links) if (!findFile(l)) add(`broken link [[${l}]]`);
+            for (const link of links) {
+              if (!findFile(link)) add(`broken link [[${link}]]`);
+            }
           }
-          if (scoped && n.type === "text" && depth === 0 && !cardTextOk(n.text || "")) {
+          if (scoped && node.type === "text" && depth === 0 && !cardTextOk(node.text || "")) {
             add(
               "card text is neither a wish (\u2264 3 lines), `[[Note]] \xB7 reason` nor `<recap> \xB7 done \xB7 [[Output]]`"
             );
           }
-          const { note, canvas } = cardLinks2(n);
+          const { note, canvas } = cardLinks2(node);
           if (note && note.startsWith(folder)) {
-            const src = fs2.readFileSync(abs2(note), "utf8");
+            const source = fileSystem2.readFileSync(abs2(note), "utf8");
             if (scoped) {
-              const fm = (src.match(/^---\n([\s\S]*?)\n---/) || [])[1];
-              const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map((m) => m[1]) : [];
+              const frontmatter = (source.match(/^---\n([\s\S]*?)\n---/) || [])[1];
+              const keys = frontmatter ? [...frontmatter.matchAll(/^(\w[\w-]*):/gm)].map(
+                (match) => match[1]
+              ) : [];
               if (keys.join() !== "context") {
                 add(
                   `note frontmatter is not \`context\` only (${keys.join(", ") || "none"})`
                 );
               }
-              if (noteContexts(fm).length !== 1) {
+              if (noteContexts(frontmatter).length !== 1) {
                 add("note does not have exactly one context");
               }
-              for (const s of ["Aim", "Design"]) {
-                if (!new RegExp(`^## ${s}\\s*$`, "m").test(src)) {
-                  add(`note has no ## ${s}`);
+              for (const section of ["Aim", "Design"]) {
+                if (!new RegExp(`^## ${section}\\s*$`, "m").test(source)) {
+                  add(`note has no ## ${section}`);
                 }
               }
-              if (!/^### Done when\s*$/m.test(src)) {
+              if (!/^### Done when\s*$/m.test(source)) {
                 add("note has no ### Done when (under Aim)");
               }
-              if (n.color === "4" && !/^## Output\s*$/m.test(src)) {
+              if (node.color === "4" && !/^## Output\s*$/m.test(source)) {
                 add("green card, note has no ## Output");
               }
             }
-            if (n.color === WORKING && Date.now() - fs2.statSync(abs2(note)).mtimeMs > ORANGE_STALE_MS) {
+            if (node.color === WORKING && Date.now() - fileSystem2.statSync(abs2(note)).mtimeMs > ORANGE_STALE_MS) {
               add("orange card, note untouched for 1h+ (interrupted pass?)");
             }
           }
@@ -455,8 +474,8 @@ var require_check = __commonJS({
 // src/workflow/desiredColor.js
 var require_desiredColor = __commonJS({
   "src/workflow/desiredColor.js"(exports2, module2) {
-    function desiredColor(card, inner, go) {
-      if (go.has(card.color)) return card.color;
+    function desiredColor(card, inner, goColors) {
+      if (goColors.has(card.color)) return card.color;
       const rolled = card.text !== void 0 && / · \d+ inside/.test(card.text);
       const own = rolled ? null : card.color;
       if (inner.red || own === "1") return "1";
@@ -475,8 +494,8 @@ var require_staleDays = __commonJS({
   "src/workflow/staleDays.js"(exports2, module2) {
     var settings2 = require_settings();
     var staleDays = () => {
-      const n = Number(settings2().staleDays);
-      return Number.isFinite(n) && settings2().staleDays !== void 0 ? n : 7;
+      const node = Number(settings2().staleDays);
+      return Number.isFinite(node) && settings2().staleDays !== void 0 ? node : 7;
     };
     module2.exports = staleDays;
   }
@@ -487,24 +506,24 @@ var require_tree = __commonJS({
   "src/board/tree.js"(exports2, module2) {
     var abs2 = require_abs();
     var cardLinks2 = require_cardLinks();
-    var fs2 = require("fs");
+    var fileSystem2 = require("fs");
     var readBoard2 = require_readBoard();
     function tree(board, { noteInfo } = {}, depth = 0, seen = /* @__PURE__ */ new Set()) {
       seen.add(board);
-      const d = readBoard2(board);
+      const canvasData = readBoard2(board);
       return {
         board,
-        cards: d.nodes.filter((n) => n.type !== "group").map((n) => {
-          const { note, canvas } = cardLinks2(n);
+        cards: canvasData.nodes.filter((node) => node.type !== "group").map((node) => {
+          const { note, canvas } = cardLinks2(node);
           const card = {
-            id: n.id,
-            color: n.color || null,
-            text: n.type === "text" ? n.text : void 0,
-            file: n.file
+            id: node.id,
+            color: node.color || null,
+            text: node.type === "text" ? node.text : void 0,
+            file: node.file
           };
           if (note) {
             const ageDays = Math.floor(
-              (Date.now() - fs2.statSync(abs2(note)).mtimeMs) / 864e5
+              (Date.now() - fileSystem2.statSync(abs2(note)).mtimeMs) / 864e5
             );
             card.note = {
               path: note,
@@ -517,10 +536,10 @@ var require_tree = __commonJS({
           }
           return card;
         }),
-        edges: d.edges.map((e) => ({
-          from: e.fromNode,
-          to: e.toNode,
-          label: e.label
+        edges: canvasData.edges.map((edge) => ({
+          from: edge.fromNode,
+          to: edge.toNode,
+          label: edge.label
         }))
       };
     }
@@ -532,11 +551,11 @@ var require_tree = __commonJS({
 var require_noteState = __commonJS({
   "src/workflow/noteState.js"(exports2, module2) {
     var abs2 = require_abs();
-    var fs2 = require("fs");
+    var fileSystem2 = require("fs");
     function noteState(rel) {
-      const text = fs2.readFileSync(abs2(rel), "utf8");
+      const text = fileSystem2.readFileSync(abs2(rel), "utf8");
       const parts = [...text.matchAll(/^\s*- \[([ xX])\] /gm)];
-      const done = parts.filter((m) => m[1] !== " ").length;
+      const done = parts.filter((match) => match[1] !== " ").length;
       const questions = [
         ...text.split(/^## Decisions Record/m)[0].matchAll(/^\s*- \[\?\] /gm)
       ].length;
@@ -563,56 +582,62 @@ var require_tree2 = __commonJS({
 // src/board/applyOps.js
 var require_applyOps = __commonJS({
   "src/board/applyOps.js"(exports2, module2) {
-    function applyOps(d, ops) {
+    function applyOps(canvasData, operations) {
       const retyped = [];
-      for (const o of ops) {
-        if (o.op === "set") {
-          const n = d.nodes.find((n2) => n2.id === o.id);
-          if (!n) throw new Error("no node " + o.id);
-          if (o.color !== void 0) {
-            if (o.color) n.color = o.color;
-            else delete n.color;
+      for (const operation of operations) {
+        if (operation.op === "set") {
+          const node = canvasData.nodes.find((node2) => node2.id === operation.id);
+          if (!node) throw new Error("no node " + operation.id);
+          if (operation.color !== void 0) {
+            if (operation.color) node.color = operation.color;
+            else delete node.color;
           }
-          if (o.file !== void 0) {
-            if (n.type !== "file") retyped.push(n.id);
-            n.type = "file";
-            n.file = o.file;
-            delete n.text;
+          if (operation.file !== void 0) {
+            if (node.type !== "file") retyped.push(node.id);
+            node.type = "file";
+            node.file = operation.file;
+            delete node.text;
           }
-          if (o.text !== void 0) {
-            if (n.type !== "text") retyped.push(n.id);
-            n.type = "text";
-            n.text = o.text;
-            delete n.file;
+          if (operation.text !== void 0) {
+            if (node.type !== "text") retyped.push(node.id);
+            node.type = "text";
+            node.text = operation.text;
+            delete node.file;
           }
-          for (const k of ["x", "y", "width", "height"]) {
-            if (o[k] !== void 0) n[k] = o[k];
+          for (const field of ["x", "y", "width", "height"]) {
+            if (operation[field] !== void 0) node[field] = operation[field];
           }
-        } else if (o.op === "sides") {
-          const e = d.edges.find((e2) => e2.id === o.id);
-          if (e) {
-            e.fromSide = o.fromSide;
-            e.toSide = o.toSide;
+        } else if (operation.op === "sides") {
+          const edge = canvasData.edges.find((edge2) => edge2.id === operation.id);
+          if (edge) {
+            edge.fromSide = operation.fromSide;
+            edge.toSide = operation.toSide;
           }
-        } else if (o.op === "add") d.nodes.push(o.node);
-        else if (o.op === "remove") {
-          d.nodes = d.nodes.filter((n) => n.id !== o.id);
-          d.edges = d.edges.filter((e) => e.fromNode !== o.id && e.toNode !== o.id);
-        } else if (o.op === "edge") d.edges.push(o.edge);
-        else if (o.op === "retarget") {
-          const e = d.edges.find((e2) => e2.id === o.id);
-          if (e) {
-            e.fromNode = o.fromNode;
-            e.toNode = o.toNode;
+        } else if (operation.op === "add") canvasData.nodes.push(operation.node);
+        else if (operation.op === "remove") {
+          canvasData.nodes = canvasData.nodes.filter(
+            (node) => node.id !== operation.id
+          );
+          canvasData.edges = canvasData.edges.filter(
+            (edge) => edge.fromNode !== operation.id && edge.toNode !== operation.id
+          );
+        } else if (operation.op === "edge") canvasData.edges.push(operation.edge);
+        else if (operation.op === "retarget") {
+          const edge = canvasData.edges.find((edge2) => edge2.id === operation.id);
+          if (edge) {
+            edge.fromNode = operation.fromNode;
+            edge.toNode = operation.toNode;
           }
-        } else if (o.op === "ends") {
-          const e = d.edges.find((e2) => e2.id === o.id);
-          if (e) {
-            e.fromEnd = o.fromEnd;
-            e.toEnd = o.toEnd;
+        } else if (operation.op === "ends") {
+          const edge = canvasData.edges.find((edge2) => edge2.id === operation.id);
+          if (edge) {
+            edge.fromEnd = operation.fromEnd;
+            edge.toEnd = operation.toEnd;
           }
-        } else if (o.op === "unedge") {
-          d.edges = d.edges.filter((e) => e.id !== o.id);
+        } else if (operation.op === "unedge") {
+          canvasData.edges = canvasData.edges.filter(
+            (edge) => edge.id !== operation.id
+          );
         }
       }
       return retyped;
@@ -624,14 +649,14 @@ var require_applyOps = __commonJS({
 // src/board/serialize.js
 var require_serialize = __commonJS({
   "src/board/serialize.js"(exports2, module2) {
-    function serialize2(d) {
+    function serialize2(canvasData) {
       const line = (x) => "		" + JSON.stringify(x);
       return `{
 	"nodes":[
-${d.nodes.map(line).join(",\n")}
+${canvasData.nodes.map(line).join(",\n")}
 	],
 	"edges":[
-${d.edges.map(line).join(",\n")}
+${canvasData.edges.map(line).join(",\n")}
 	]
 }
 `;
@@ -646,18 +671,18 @@ var require_writeOps = __commonJS({
     var abs2 = require_abs();
     var api = require_api();
     var applyOps = require_applyOps();
-    var fs2 = require("fs");
+    var fileSystem2 = require("fs");
     var readFileBoard = require_readFileBoard();
     var serialize2 = require_serialize();
-    function writeOps2(board, ops) {
-      const out = api("apply", board, ops);
+    function writeOps2(board, operations) {
+      const out = api("apply", board, operations);
       if (out === "obsidian") return "obsidian";
       if (out !== null && out !== "closed") {
         throw new Error(`Obsidian edit failed: ${out}`);
       }
-      const d = readFileBoard(board);
-      applyOps(d, ops);
-      fs2.writeFileSync(abs2(board), serialize2(d));
+      const canvasData = readFileBoard(board);
+      applyOps(canvasData, operations);
+      fileSystem2.writeFileSync(abs2(board), serialize2(canvasData));
       return "file";
     }
     module2.exports = writeOps2;
@@ -673,30 +698,30 @@ var require_rollup = __commonJS({
     var tree = require_tree2();
     var writeOps2 = require_writeOps();
     function rollup2(board) {
-      const go = goColors();
-      const t = tree(board);
+      const goColorSet = goColors();
+      const boardTree = tree(board);
       const changes = [];
       const walk = (node) => {
-        const ops = [];
+        const operations = [];
         let red = 0, yellow = 0, cards = 0, green = 0;
-        for (const c of node.cards) {
-          let color = c.color;
-          if (c.inside) {
-            const inner = walk(c.inside);
-            const want = desiredColor(c, inner, go);
-            let text = c.text;
+        for (const card of node.cards) {
+          let color = card.color;
+          if (card.inside) {
+            const inner = walk(card.inside);
+            const want = desiredColor(card, inner, goColorSet);
+            let text = card.text;
             if (text !== void 0) {
               text = text.replace(/ · \d+ inside| · \d+d$/g, "");
               if (inner.red + inner.yellow) {
                 text += ` \xB7 ${inner.red + inner.yellow} inside`;
               }
             }
-            if (want !== color || text !== void 0 && text !== c.text) {
-              ops.push({
+            if (want !== color || text !== void 0 && text !== card.text) {
+              operations.push({
                 op: "set",
-                id: c.id,
+                id: card.id,
                 color: want === null ? "" : want,
-                ...text !== c.text ? { text } : {}
+                ...text !== card.text ? { text } : {}
               });
               color = want;
             }
@@ -706,21 +731,25 @@ var require_rollup = __commonJS({
           cards++;
           if (color === "4") green++;
         }
-        for (const c of node.cards) {
-          if (c.color !== "3" || !c.note || c.text === void 0 || c.inside) {
+        for (const card of node.cards) {
+          if (card.color !== "3" || !card.note || card.text === void 0 || card.inside) {
             continue;
           }
-          const base = c.text.replace(/ · \d+d$/, "");
+          const base = card.text.replace(/ · \d+d$/, "");
           const days = staleDays();
-          const text = days > 0 && c.note.ageDays >= days ? `${base} \xB7 ${c.note.ageDays}d` : base;
-          if (text !== c.text) ops.push({ op: "set", id: c.id, text });
+          const text = days > 0 && card.note.ageDays >= days ? `${base} \xB7 ${card.note.ageDays}d` : base;
+          if (text !== card.text) operations.push({ op: "set", id: card.id, text });
         }
-        if (ops.length) {
-          changes.push({ board: node.board, via: writeOps2(node.board, ops), ops });
+        if (operations.length) {
+          changes.push({
+            board: node.board,
+            via: writeOps2(node.board, operations),
+            operations
+          });
         }
         return { red, yellow, allGreen: cards > 0 && green === cards };
       };
-      walk(t);
+      walk(boardTree);
       return changes;
     }
     module2.exports = rollup2;
@@ -732,12 +761,12 @@ var require_archiveDir = __commonJS({
   "src/board/archiveDir.js"(exports2, module2) {
     var { ARCHIVE_DIR } = require_constants();
     var path2 = require("path");
-    function archiveDir2(board, s = {}) {
-      if (s.archiveMode === "global") {
-        return String(s.archiveFolder || ARCHIVE_DIR).trim().replace(/[/\\]+$/, "") || ARCHIVE_DIR;
+    function archiveDir2(board, options = {}) {
+      if (options.archiveMode === "global") {
+        return String(options.archiveFolder || ARCHIVE_DIR).trim().replace(/[/\\]+$/, "") || ARCHIVE_DIR;
       }
-      const b = String(board).replace(/\\/g, "/"), dir = path2.posix.dirname(b);
-      return (dir === "." ? "" : dir + "/") + path2.posix.basename(b, ".canvas") + " archive";
+      const boardPath = String(board).replace(/\\/g, "/"), folder = path2.posix.dirname(boardPath);
+      return (folder === "." ? "" : folder + "/") + path2.posix.basename(boardPath, ".canvas") + " archive";
     }
     module2.exports = archiveDir2;
   }
@@ -746,7 +775,7 @@ var require_archiveDir = __commonJS({
 // src/board/noteName.js
 var require_noteName = __commonJS({
   "src/board/noteName.js"(exports2, module2) {
-    var noteName = (text) => (String(text).split("\n").find((l) => l.trim()) || "Card").replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, "").replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/[#^|[\]*_`>:\\/"?<]/g, "").replace(/\s+/g, " ").trim().slice(0, 60).trim() || "Card";
+    var noteName = (text) => (String(text).split("\n").find((line) => line.trim()) || "Card").replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, "").replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/[#^|[\]*_`>:\\/"?<]/g, "").replace(/\s+/g, " ").trim().slice(0, 60).trim() || "Card";
     module2.exports = noteName;
   }
 });
@@ -754,7 +783,7 @@ var require_noteName = __commonJS({
 // src/board/yamlStr.js
 var require_yamlStr = __commonJS({
   "src/board/yamlStr.js"(exports2, module2) {
-    var yamlStr = (s) => JSON.stringify(String(s));
+    var yamlStr = (value) => JSON.stringify(String(value));
     module2.exports = yamlStr;
   }
 });
@@ -764,46 +793,48 @@ var require_archiveNote = __commonJS({
   "src/board/archiveNote.js"(exports2, module2) {
     var noteName = require_noteName();
     var yamlStr = require_yamlStr();
-    function archiveNote2(d, id, board, date, contexts = ["G&A"]) {
-      const n = d.nodes.find((n2) => n2.id === id);
-      if (!n) throw new Error("no node " + id);
-      const edges = d.edges.filter((e) => e.fromNode === id || e.toNode === id).map(
-        (e) => yamlStr(
+    function archiveNote2(canvasData, id, board, date, contexts = ["G&A"]) {
+      const node = canvasData.nodes.find((node2) => node2.id === id);
+      if (!node) throw new Error("no node " + id);
+      const edges = canvasData.edges.filter((edge) => edge.fromNode === id || edge.toNode === id).map(
+        (edge) => yamlStr(
           [
-            e.id,
-            e.fromNode,
-            e.fromSide || "",
-            e.toNode,
-            e.toSide || "",
-            e.label || ""
+            edge.id,
+            edge.fromNode,
+            edge.fromSide || "",
+            edge.toNode,
+            edge.toSide || "",
+            edge.label || ""
           ].join(" | ")
         )
       );
-      const fm = [
+      const frontmatter = [
         "---",
         "context:",
-        ...contexts.map((c) => `  - ${c}`),
+        ...contexts.map((context) => `  - ${context}`),
         `archived-from: "[[${board}]]"`,
         `archived: ${date}`,
-        `card-id: ${yamlStr(n.id)}`,
-        `card-type: ${n.type}`,
-        ...n.type === "file" ? [`card-file: ${yamlStr(n.file)}`] : [],
-        ...n.type === "link" ? [`card-url: ${yamlStr(n.url)}`] : [],
-        `x: ${n.x}`,
-        `y: ${n.y}`,
-        `width: ${n.width}`,
-        `height: ${n.height}`,
-        `color: ${yamlStr(n.color || "")}`,
+        `card-id: ${yamlStr(node.id)}`,
+        `card-type: ${node.type}`,
+        ...node.type === "file" ? [`card-file: ${yamlStr(node.file)}`] : [],
+        ...node.type === "link" ? [`card-url: ${yamlStr(node.url)}`] : [],
+        `x: ${node.x}`,
+        `y: ${node.y}`,
+        `width: ${node.width}`,
+        `height: ${node.height}`,
+        `color: ${yamlStr(node.color || "")}`,
         edges.length ? "edges:" : "edges: []",
-        ...edges.map((e) => `  - ${e}`),
+        ...edges.map((edge) => `  - ${edge}`),
         "---",
         ""
       ].join("\n");
-      const body = n.type === "text" ? n.text : n.type === "file" ? `[[${n.file}]]` : n.type === "link" ? n.url : n.label || "";
+      const body = node.type === "text" ? node.text : node.type === "file" ? `[[${node.file}]]` : node.type === "link" ? node.url : node.label || "";
       return {
-        name: noteName(n.type === "text" ? n.text : n.file || n.url || n.label),
-        content: fm + body + "\n",
-        ops: [{ op: "remove", id }]
+        name: noteName(
+          node.type === "text" ? node.text : node.file || node.url || node.label
+        ),
+        content: frontmatter + body + "\n",
+        operations: [{ op: "remove", id }]
       };
     }
     module2.exports = archiveNote2;
@@ -815,13 +846,13 @@ var require_cardContexts = __commonJS({
   "src/board/cardContexts.js"(exports2, module2) {
     var abs2 = require_abs();
     var cardLinks2 = require_cardLinks();
-    var fs2 = require("fs");
+    var fileSystem2 = require("fs");
     var noteContexts = require_noteContexts();
-    function cardContexts2(n) {
-      const { note } = cardLinks2(n);
-      const fm = note && (fs2.readFileSync(abs2(note), "utf8").match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1];
-      const c = noteContexts(fm);
-      return c.length ? c : void 0;
+    function cardContexts2(node) {
+      const { note } = cardLinks2(node);
+      const frontmatter = note && (fileSystem2.readFileSync(abs2(note), "utf8").match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1];
+      const contexts = noteContexts(frontmatter);
+      return contexts.length ? contexts : void 0;
     }
     module2.exports = cardContexts2;
   }
@@ -830,13 +861,13 @@ var require_cardContexts = __commonJS({
 // src/board/bounds.js
 var require_bounds = __commonJS({
   "src/board/bounds.js"(exports2, module2) {
-    var bounds = (ns) => {
-      const x = Math.min(...ns.map((n) => n.x)), y = Math.min(...ns.map((n) => n.y));
+    var bounds = (nodes) => {
+      const x = Math.min(...nodes.map((node) => node.x)), y = Math.min(...nodes.map((node) => node.y));
       return {
         x,
         y,
-        w: Math.max(...ns.map((n) => n.x + n.width)) - x,
-        h: Math.max(...ns.map((n) => n.y + n.height)) - y
+        w: Math.max(...nodes.map((node) => node.x + node.width)) - x,
+        h: Math.max(...nodes.map((node) => node.y + node.height)) - y
       };
     };
     module2.exports = bounds;
@@ -854,12 +885,14 @@ var require_newId = __commonJS({
 // src/board/withGroupMembers.js
 var require_withGroupMembers = __commonJS({
   "src/board/withGroupMembers.js"(exports2, module2) {
-    function withGroupMembers(d, ids) {
+    function withGroupMembers(canvasData, ids) {
       const pick = new Set(ids);
-      for (const g of d.nodes.filter((n) => n.type === "group" && pick.has(n.id))) {
-        for (const n of d.nodes) {
-          if (n.x >= g.x && n.y >= g.y && n.x + n.width <= g.x + g.width && n.y + n.height <= g.y + g.height) {
-            pick.add(n.id);
+      for (const group of canvasData.nodes.filter(
+        (node) => node.type === "group" && pick.has(node.id)
+      )) {
+        for (const node of canvasData.nodes) {
+          if (node.x >= group.x && node.y >= group.y && node.x + node.width <= group.x + group.width && node.y + node.height <= group.y + group.height) {
+            pick.add(node.id);
           }
         }
       }
@@ -875,39 +908,45 @@ var require_collapseOps = __commonJS({
     var bounds = require_bounds();
     var newId2 = require_newId();
     var withGroupMembers = require_withGroupMembers();
-    function collapseOps2(d, ids, file, label) {
-      const pick = withGroupMembers(d, ids);
-      const moving = d.nodes.filter((n) => pick.has(n.id));
+    function collapseOps2(canvasData, ids, file, label) {
+      const pick = withGroupMembers(canvasData, ids);
+      const moving = canvasData.nodes.filter((node) => pick.has(node.id));
       if (!moving.length) throw new Error("nothing to collapse");
-      const b = bounds(moving);
+      const box = bounds(moving);
       const sub = {
-        nodes: moving.map((n) => ({ ...n, x: n.x - b.x, y: n.y - b.y })),
-        edges: d.edges.filter((e) => pick.has(e.fromNode) && pick.has(e.toNode))
+        nodes: moving.map((node) => ({
+          ...node,
+          x: node.x - box.x,
+          y: node.y - box.y
+        })),
+        edges: canvasData.edges.filter(
+          (edge) => pick.has(edge.fromNode) && pick.has(edge.toNode)
+        )
       };
-      const W = 320, H = 60;
+      const cardWidth = 320, cardHeight = 60;
       const card = {
         id: newId2(),
         type: "text",
         text: `[[${file}|${label}]]`,
-        x: Math.round(b.x + (b.w - W) / 2),
-        y: Math.round(b.y + (b.h - H) / 2),
-        width: W,
-        height: H
+        x: Math.round(box.x + (box.w - cardWidth) / 2),
+        y: Math.round(box.y + (box.h - cardHeight) / 2),
+        width: cardWidth,
+        height: cardHeight
       };
-      const ops = [{ op: "add", node: card }];
-      for (const e of d.edges) {
-        const from = pick.has(e.fromNode), to = pick.has(e.toNode);
-        if (from !== to) {
-          ops.push({
+      const operations = [{ op: "add", node: card }];
+      for (const edge of canvasData.edges) {
+        const from = pick.has(edge.fromNode), isToInside = pick.has(edge.toNode);
+        if (from !== isToInside) {
+          operations.push({
             op: "retarget",
-            id: e.id,
-            fromNode: from ? card.id : e.fromNode,
-            toNode: to ? card.id : e.toNode
+            id: edge.id,
+            fromNode: from ? card.id : edge.fromNode,
+            toNode: isToInside ? card.id : edge.toNode
           });
         }
       }
-      for (const n of moving) ops.push({ op: "remove", id: n.id });
-      return { ops, sub, id: card.id };
+      for (const node of moving) operations.push({ op: "remove", id: node.id });
+      return { operations, sub, id: card.id };
     }
     module2.exports = collapseOps2;
   }
@@ -917,7 +956,7 @@ var require_collapseOps = __commonJS({
 var require_colorArg = __commonJS({
   "src/board/colorArg.js"(exports2, module2) {
     var { COLORS } = require_constants();
-    var colorArg2 = (c) => c === void 0 ? void 0 : c === "none" ? "" : COLORS[c] || c;
+    var colorArg2 = (color) => color === void 0 ? void 0 : color === "none" ? "" : COLORS[color] || color;
     module2.exports = colorArg2;
   }
 });
@@ -935,7 +974,7 @@ var require_defaultDir = __commonJS({
 // src/board/byReading.js
 var require_byReading = __commonJS({
   "src/board/byReading.js"(exports2, module2) {
-    var byReading = (a, b) => a.y - b.y || a.x - b.x;
+    var byReading = (first, second) => first.y - second.y || first.x - second.x;
     module2.exports = byReading;
   }
 });
@@ -946,72 +985,72 @@ var require_expandOps = __commonJS({
     var bounds = require_bounds();
     var byReading = require_byReading();
     var newId2 = require_newId();
-    function expandOps2(d, id, sub, { group } = {}) {
-      const card = d.nodes.find((n) => n.id === id);
+    function expandOps2(canvasData, id, sub, { group } = {}) {
+      const card = canvasData.nodes.find((node) => node.id === id);
       if (!card) throw new Error("no node " + id);
       if (!sub.nodes.length) throw new Error("empty subcanvas");
       const taken = new Set(
-        d.nodes.map((n) => n.id).concat(d.edges.map((e) => e.id))
+        canvasData.nodes.map((node) => node.id).concat(canvasData.edges.map((edge) => edge.id))
       );
       const ids = new Map(
-        sub.nodes.map((n) => [n.id, taken.has(n.id) ? newId2() : n.id])
+        sub.nodes.map((node) => [node.id, taken.has(node.id) ? newId2() : node.id])
       );
-      const b = bounds(sub.nodes);
-      const others = d.nodes.filter((n) => n.id !== id);
-      let ox = Math.round(card.x + (card.width - b.w) / 2) - b.x;
-      const oy = Math.round(card.y + (card.height - b.h) / 2) - b.y;
+      const box = bounds(sub.nodes);
+      const others = canvasData.nodes.filter((node) => node.id !== id);
+      let offsetX = Math.round(card.x + (card.width - box.w) / 2) - box.x;
+      const offsetY = Math.round(card.y + (card.height - box.h) / 2) - box.y;
       const hits = () => sub.nodes.some(
-        (p) => others.some(
-          (n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y
+        (subNode) => others.some(
+          (node) => subNode.x + offsetX < node.x + node.width + 40 && subNode.x + offsetX + subNode.width + 40 > node.x && subNode.y + offsetY < node.y + node.height + 40 && subNode.y + offsetY + subNode.height + 40 > node.y
         )
       );
-      for (let k = 0; k < 200 && hits(); k++) ox += 40;
-      const nodes = sub.nodes.map((n) => ({
-        ...n,
-        id: ids.get(n.id),
-        x: n.x + ox,
-        y: n.y + oy
+      for (let attempt = 0; attempt < 200 && hits(); attempt++) offsetX += 40;
+      const nodes = sub.nodes.map((node) => ({
+        ...node,
+        id: ids.get(node.id),
+        x: node.x + offsetX,
+        y: node.y + offsetY
       }));
-      let first = nodes.filter((n) => n.type !== "group").sort(byReading)[0] || nodes[0];
-      const ops = [];
+      let first = nodes.filter((node) => node.type !== "group").sort(byReading)[0] || nodes[0];
+      const operations = [];
       if (group) {
-        const P = 30;
-        const gx = Math.min(...nodes.map((n) => n.x)) - P, gy = Math.min(...nodes.map((n) => n.y)) - P;
+        const padding = 30;
+        const groupX = Math.min(...nodes.map((node) => node.x)) - padding, groupY = Math.min(...nodes.map((node) => node.y)) - padding;
         first = {
           id: newId2(),
           type: "group",
           label: group,
-          x: gx,
-          y: gy,
-          width: Math.max(...nodes.map((n) => n.x + n.width)) + P - gx,
-          height: Math.max(...nodes.map((n) => n.y + n.height)) + P - gy
+          x: groupX,
+          y: groupY,
+          width: Math.max(...nodes.map((node) => node.x + node.width)) + padding - groupX,
+          height: Math.max(...nodes.map((node) => node.y + node.height)) + padding - groupY
         };
-        ops.push({ op: "add", node: first });
+        operations.push({ op: "add", node: first });
       }
-      ops.push(...nodes.map((node) => ({ op: "add", node })));
-      for (const e of sub.edges) {
-        ops.push({
+      operations.push(...nodes.map((node) => ({ op: "add", node })));
+      for (const edge of sub.edges) {
+        operations.push({
           op: "edge",
           edge: {
-            ...e,
-            id: taken.has(e.id) ? newId2() : e.id,
-            fromNode: ids.get(e.fromNode),
-            toNode: ids.get(e.toNode)
+            ...edge,
+            id: taken.has(edge.id) ? newId2() : edge.id,
+            fromNode: ids.get(edge.fromNode),
+            toNode: ids.get(edge.toNode)
           }
         });
       }
-      for (const e of d.edges) {
-        if (e.fromNode === id || e.toNode === id) {
-          ops.push({
+      for (const edge of canvasData.edges) {
+        if (edge.fromNode === id || edge.toNode === id) {
+          operations.push({
             op: "retarget",
-            id: e.id,
-            fromNode: e.fromNode === id ? first.id : e.fromNode,
-            toNode: e.toNode === id ? first.id : e.toNode
+            id: edge.id,
+            fromNode: edge.fromNode === id ? first.id : edge.fromNode,
+            toNode: edge.toNode === id ? first.id : edge.toNode
           });
         }
       }
-      ops.push({ op: "remove", id });
-      return group ? Object.assign(ops, { group: first.id }) : ops;
+      operations.push({ op: "remove", id });
+      return group ? Object.assign(operations, { group: first.id }) : operations;
     }
     module2.exports = expandOps2;
   }
@@ -1020,13 +1059,13 @@ var require_expandOps = __commonJS({
 // src/board/fitHeight.js
 var require_fitHeight = __commonJS({
   "src/board/fitHeight.js"(exports2, module2) {
-    function fitHeight2(text, w) {
-      const perLine = Math.max(10, Math.floor((w - 40) / 8));
+    function fitHeight2(text, width) {
+      const perLine = Math.max(10, Math.floor((width - 40) / 8));
       const lines = String(text || "").split("\n").reduce(
-        (s, l) => s + Math.max(
+        (lines2, line) => lines2 + Math.max(
           1,
           Math.ceil(
-            l.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").length / perLine
+            line.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").length / perLine
           )
         ),
         0
@@ -1042,18 +1081,20 @@ var require_extractOps = __commonJS({
   "src/board/extractOps.js"(exports2, module2) {
     var fitHeight2 = require_fitHeight();
     var newId2 = require_newId();
-    function extractOps2(d, id, part, from) {
-      const card = d.nodes.find((n) => n.id === id);
+    function extractOps2(canvasData, id, part, from) {
+      const card = canvasData.nodes.find((node2) => node2.id === id);
       if (!card || card.type !== "text") {
         throw new Error("extract takes one text card");
       }
-      const at = from !== void 0 && card.text.slice(from, from + part.length) === part ? from : card.text.indexOf(part);
-      if (!part.trim() || at < 0) throw new Error("text not found in the card");
-      const left = (card.text.slice(0, at) + card.text.slice(at + part.length)).replace(/\n{3,}/g, "\n\n").trim();
+      const offset = from !== void 0 && card.text.slice(from, from + part.length) === part ? from : card.text.indexOf(part);
+      if (!part.trim() || offset < 0) throw new Error("text not found in the card");
+      const left = (card.text.slice(0, offset) + card.text.slice(offset + part.length)).replace(/\n{3,}/g, "\n\n").trim();
       const text = part.trim();
       const height = fitHeight2(text, card.width);
       let y = card.y;
-      while (d.nodes.some((n) => n.x === card.x + card.width + 40 && n.y === y)) {
+      while (canvasData.nodes.some(
+        (node2) => node2.x === card.x + card.width + 40 && node2.y === y
+      )) {
         y += 40;
       }
       const node = {
@@ -1079,12 +1120,15 @@ var require_extractOps = __commonJS({
 var require_freePath = __commonJS({
   "src/board/freePath.js"(exports2, module2) {
     var abs2 = require_abs();
-    var fs2 = require("fs");
+    var fileSystem2 = require("fs");
     var path2 = require("path");
-    function freePath2(dir, name, ext) {
-      for (let k = 1; ; k++) {
-        const p = path2.posix.join(dir, `${name}${k > 1 ? " " + k : ""}${ext}`);
-        if (!fs2.existsSync(abs2(p))) return p;
+    function freePath2(folder, name, ext) {
+      for (let attempt = 1; ; attempt++) {
+        const candidate = path2.posix.join(
+          folder,
+          `${name}${attempt > 1 ? " " + attempt : ""}${ext}`
+        );
+        if (!fileSystem2.existsSync(abs2(candidate))) return candidate;
       }
     }
     module2.exports = freePath2;
@@ -1096,81 +1140,83 @@ var require_layoutOps = __commonJS({
   "src/board/layoutOps.js"(exports2, module2) {
     var { SIDES: SIDES2 } = require_constants();
     var fitHeight2 = require_fitHeight();
-    function layoutOps2(d, { ids, dir = "TB", fit = false, dagre, flow = "out" }) {
-      const cards = d.nodes.filter((n) => n.type !== "group");
-      const pick = new Set(ids && ids.length ? ids : cards.map((n) => n.id));
-      const moving = cards.filter((n) => pick.has(n.id));
-      const fixed = cards.filter((n) => !pick.has(n.id));
+    function layoutOps2(canvasData, { ids, direction = "TB", fit = false, dagre, flow = "out" }) {
+      const cards = canvasData.nodes.filter((node) => node.type !== "group");
+      const pick = new Set(ids && ids.length ? ids : cards.map((node) => node.id));
+      const moving = cards.filter((node) => pick.has(node.id));
+      const fixed = cards.filter((node) => !pick.has(node.id));
       if (!moving.length) return [];
-      const g = new dagre.graphlib.Graph();
-      g.setGraph({
-        rankdir: dir,
+      const graph = new dagre.graphlib.Graph();
+      graph.setGraph({
+        rankdir: direction,
         nodesep: 40,
         ranksep: 80,
         marginx: 0,
         marginy: 0
       });
-      g.setDefaultEdgeLabel(() => ({}));
-      const size = (n) => ({
-        width: n.width,
-        height: fit && n.type === "text" ? fitHeight2(n.text, n.width) : n.height
+      graph.setDefaultEdgeLabel(() => ({}));
+      const size = (node) => ({
+        width: node.width,
+        height: fit && node.type === "text" ? fitHeight2(node.text, node.width) : node.height
       });
-      for (const n of moving) g.setNode(n.id, size(n));
-      const inner = d.edges.filter(
-        (e) => pick.has(e.fromNode) && pick.has(e.toNode)
+      for (const node of moving) graph.setNode(node.id, size(node));
+      const inner = canvasData.edges.filter(
+        (edge) => pick.has(edge.fromNode) && pick.has(edge.toNode)
       );
-      const back = (e) => flow === "in" || /depends on/i.test(e.label || "");
-      for (const e of inner) {
-        back(e) ? g.setEdge(e.toNode, e.fromNode) : g.setEdge(e.fromNode, e.toNode);
+      const back = (edge) => flow === "in" || /depends on/i.test(edge.label || "");
+      for (const edge of inner) {
+        back(edge) ? graph.setEdge(edge.toNode, edge.fromNode) : graph.setEdge(edge.fromNode, edge.toNode);
       }
-      dagre.layout(g);
-      const box = (ns) => ns.reduce(
-        (b2, n) => ({
-          x0: Math.min(b2.x0, n.x),
-          y0: Math.min(b2.y0, n.y),
-          x1: Math.max(b2.x1, n.x + n.width),
-          y1: Math.max(b2.y1, n.y + n.height)
+      dagre.layout(graph);
+      const box = (nodes) => nodes.reduce(
+        (box2, node) => ({
+          x0: Math.min(box2.x0, node.x),
+          y0: Math.min(box2.y0, node.y),
+          x1: Math.max(box2.x1, node.x + node.width),
+          y1: Math.max(box2.y1, node.y + node.height)
         }),
         { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
       );
-      const placed = moving.map((n) => {
-        const p = g.node(n.id);
+      const placed = moving.map((node) => {
+        const position = graph.node(node.id);
         return {
-          id: n.id,
-          x: Math.round(p.x - p.width / 2),
-          y: Math.round(p.y - p.height / 2),
-          width: p.width,
-          height: p.height
+          id: node.id,
+          x: Math.round(position.x - position.width / 2),
+          y: Math.round(position.y - position.height / 2),
+          width: position.width,
+          height: position.height
         };
       });
-      const b = box(placed), was = box(moving);
-      const cx = Math.round((was.x0 + was.x1 - b.x0 - b.x1) / 2), cy = Math.round((was.y0 + was.y1 - b.y0 - b.y1) / 2);
-      let ox = cx, oy = cy;
+      const placedBox = box(placed), was = box(moving);
+      const shiftX = Math.round(
+        (was.x0 + was.x1 - placedBox.x0 - placedBox.x1) / 2
+      ), shiftY = Math.round((was.y0 + was.y1 - placedBox.y0 - placedBox.y1) / 2);
+      let offsetX = shiftX, offsetY = shiftY;
       const hits = () => placed.some(
-        (p) => fixed.some(
-          (n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y
+        (placedNode) => fixed.some(
+          (node) => placedNode.x + offsetX < node.x + node.width + 40 && placedNode.x + offsetX + placedNode.width + 40 > node.x && placedNode.y + offsetY < node.y + node.height + 40 && placedNode.y + offsetY + placedNode.height + 40 > node.y
         )
       );
-      for (let k = 1; k <= 400 && hits(); k++) {
-        const step = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 40;
-        if (dir === "LR" || dir === "RL") oy = cy + step;
-        else ox = cx + step;
+      for (let attempt = 1; attempt <= 400 && hits(); attempt++) {
+        const step = (attempt % 2 ? 1 : -1) * Math.ceil(attempt / 2) * 40;
+        if (direction === "LR" || direction === "RL") offsetY = shiftY + step;
+        else offsetX = shiftX + step;
       }
-      const ops = placed.map((p) => ({
+      const operations = placed.map((placedNode) => ({
         op: "set",
-        id: p.id,
-        x: p.x + ox,
-        y: p.y + oy,
-        width: p.width,
-        height: p.height
+        id: placedNode.id,
+        x: placedNode.x + offsetX,
+        y: placedNode.y + offsetY,
+        width: placedNode.width,
+        height: placedNode.height
       }));
-      const [fromSide, toSide] = SIDES2[dir];
-      for (const e of inner) {
-        ops.push(
-          back(e) ? { op: "sides", id: e.id, fromSide: toSide, toSide: fromSide } : { op: "sides", id: e.id, fromSide, toSide }
+      const [fromSide, toSide] = SIDES2[direction];
+      for (const edge of inner) {
+        operations.push(
+          back(edge) ? { op: "sides", id: edge.id, fromSide: toSide, toSide: fromSide } : { op: "sides", id: edge.id, fromSide, toSide }
         );
       }
-      return ops;
+      return operations;
     }
     module2.exports = layoutOps2;
   }
@@ -1180,12 +1226,12 @@ var require_layoutOps = __commonJS({
 var require_relinkText = __commonJS({
   "src/board/relinkText.js"(exports2, module2) {
     var path2 = require("path");
-    function relinkText(text, hits, to) {
+    function relinkText(text, hits, replace) {
       return (text || "").replace(
         /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
-        (m, target, sub, alias) => hits(target.trim()) ? to(
+        (link, target, sub, alias) => hits(target.trim()) ? replace(
           alias || path2.posix.basename(target.trim()).replace(/\.canvas$/, "")
-        ) : m
+        ) : link
       );
     }
     module2.exports = relinkText;
@@ -1197,35 +1243,35 @@ var require_linksTo = __commonJS({
   "src/board/linksTo.js"(exports2, module2) {
     var abs2 = require_abs();
     var findFile = require_findFile();
-    var fs2 = require("fs");
+    var fileSystem2 = require("fs");
     var path2 = require("path");
     var relinkText = require_relinkText();
     var vaultFileIndex = require_vaultFileIndex();
     function linksTo2(rel, board, skipId) {
       const out = [];
-      const hits = (t) => findFile(t) === rel;
-      for (const f of vaultFileIndex.paths()) {
-        if (f === rel || !/\.(md|canvas)$/.test(f)) continue;
-        let src;
+      const hits = (target) => findFile(target) === rel;
+      for (const file of vaultFileIndex.paths()) {
+        if (file === rel || !/\.(md|canvas)$/.test(file)) continue;
+        let source;
         try {
-          src = fs2.readFileSync(abs2(f), "utf8");
-        } catch (e) {
+          source = fileSystem2.readFileSync(abs2(file), "utf8");
+        } catch (error) {
           continue;
         }
-        if (!src.includes(path2.posix.basename(rel))) continue;
-        if (f.endsWith(".md")) {
-          if (relinkText(src, hits, () => "\0") !== src) out.push(f);
+        if (!source.includes(path2.posix.basename(rel))) continue;
+        if (file.endsWith(".md")) {
+          if (relinkText(source, hits, () => "\0") !== source) out.push(file);
           continue;
         }
-        let d;
+        let canvasData;
         try {
-          d = JSON.parse(src || "{}");
-        } catch (e) {
+          canvasData = JSON.parse(source || "{}");
+        } catch (error) {
           continue;
         }
-        for (const n of d.nodes || []) {
-          if (!(f === board && n.id === skipId) && (n.type === "file" ? n.file === rel : relinkText(n.text, hits, () => "\0") !== (n.text || ""))) {
-            out.push(`${f} (${n.id})`);
+        for (const node of canvasData.nodes || []) {
+          if (!(file === board && node.id === skipId) && (node.type === "file" ? node.file === rel : relinkText(node.text, hits, () => "\0") !== (node.text || ""))) {
+            out.push(`${file} (${node.id})`);
           }
         }
       }
@@ -1239,7 +1285,7 @@ var require_linksTo = __commonJS({
 var require_mostUrgent = __commonJS({
   "src/board/mostUrgent.js"(exports2, module2) {
     var { URGENCY } = require_constants();
-    var mostUrgent = (colors) => URGENCY.find((c) => colors.includes(c)) || "";
+    var mostUrgent = (colors) => URGENCY.find((color) => colors.includes(color)) || "";
     module2.exports = mostUrgent;
   }
 });
@@ -1250,69 +1296,79 @@ var require_mergeOps = __commonJS({
     var byReading = require_byReading();
     var fitHeight2 = require_fitHeight();
     var mostUrgent = require_mostUrgent();
-    function mergeOps2(d, ids) {
-      const cards = d.nodes.filter((n) => ids.includes(n.id)).sort(byReading);
+    function mergeOps2(canvasData, ids) {
+      const cards = canvasData.nodes.filter((node) => ids.includes(node.id)).sort(byReading);
       if (cards.length < 2) throw new Error("merge needs 2+ cards");
-      if (cards.some((n) => n.type !== "text")) {
+      if (cards.some((node) => node.type !== "text")) {
         throw new Error("merge takes text cards only");
       }
       const [keep, ...rest] = cards;
-      const gone = new Set(rest.map((n) => n.id));
-      const all = new Set(cards.map((n) => n.id));
-      const text = cards.map((n) => n.text.trim()).join("\n\n");
-      const width = Math.max(...cards.map((n) => n.width));
-      const ops = [
+      const gone = new Set(rest.map((node) => node.id));
+      const all = new Set(cards.map((node) => node.id));
+      const text = cards.map((node) => node.text.trim()).join("\n\n");
+      const width = Math.max(...cards.map((node) => node.width));
+      const operations = [
         {
           op: "set",
           id: keep.id,
           text,
-          color: mostUrgent(cards.map((n) => n.color || "")),
+          color: mostUrgent(cards.map((node) => node.color || "")),
           width,
           height: fitHeight2(text, width)
         }
       ];
-      const center = (n) => [n.x + n.width / 2, n.y + n.height / 2];
-      const dist = (a, b) => Math.hypot(center(a)[0] - center(b)[0], center(a)[1] - center(b)[1]);
-      const twoWay = (e) => e.fromEnd === "arrow" && e.toEnd !== "none";
+      const center = (node) => [node.x + node.width / 2, node.y + node.height / 2];
+      const dist = (first, second) => Math.hypot(
+        center(first)[0] - center(second)[0],
+        center(first)[1] - center(second)[1]
+      );
+      const twoWay = (edge) => edge.fromEnd === "arrow" && edge.toEnd !== "none";
       const byOther = /* @__PURE__ */ new Map();
-      for (const e of d.edges) {
-        if (!all.has(e.fromNode) && !all.has(e.toNode)) continue;
-        if (all.has(e.fromNode) && all.has(e.toNode)) {
-          if (gone.has(e.fromNode) || gone.has(e.toNode)) {
-            ops.push({ op: "unedge", id: e.id });
+      for (const edge of canvasData.edges) {
+        if (!all.has(edge.fromNode) && !all.has(edge.toNode)) continue;
+        if (all.has(edge.fromNode) && all.has(edge.toNode)) {
+          if (gone.has(edge.fromNode) || gone.has(edge.toNode)) {
+            operations.push({ op: "unedge", id: edge.id });
           }
           continue;
         }
-        const out = all.has(e.fromNode), other = out ? e.toNode : e.fromNode;
-        const len = dist(
-          d.nodes.find((n) => n.id === (out ? e.fromNode : e.toNode)),
-          d.nodes.find((n) => n.id === other) || keep
+        const out = all.has(edge.fromNode), other = out ? edge.toNode : edge.fromNode;
+        const length = dist(
+          canvasData.nodes.find(
+            (node) => node.id === (out ? edge.fromNode : edge.toNode)
+          ),
+          canvasData.nodes.find((node) => node.id === other) || keep
         );
         if (!byOther.has(other)) byOther.set(other, []);
-        byOther.get(other).push({ e, out, len });
+        byOther.get(other).push({ edge, out, length });
       }
       for (const list of byOther.values()) {
-        list.sort((a, b) => a.len - b.len);
-        const best = list.find((x) => twoWay(x.e)) || list[0];
+        list.sort((first, second) => first.length - second.length);
+        const best = list.find((x) => twoWay(x.edge)) || list[0];
         const both = list.some((x) => x.out) && list.some((x) => !x.out);
         for (const x of list) {
-          if (x !== best) ops.push({ op: "unedge", id: x.e.id });
+          if (x !== best) operations.push({ op: "unedge", id: x.edge.id });
         }
-        const e = best.e;
-        if (gone.has(e.fromNode) || gone.has(e.toNode)) {
-          ops.push({
+        const edge = best.edge;
+        if (gone.has(edge.fromNode) || gone.has(edge.toNode)) {
+          operations.push({
             op: "retarget",
-            id: e.id,
-            fromNode: gone.has(e.fromNode) ? keep.id : e.fromNode,
-            toNode: gone.has(e.toNode) ? keep.id : e.toNode
+            id: edge.id,
+            fromNode: gone.has(edge.fromNode) ? keep.id : edge.fromNode,
+            toNode: gone.has(edge.toNode) ? keep.id : edge.toNode
           });
         }
-        if (both && !twoWay(e)) {
-          ops.push({ op: "ends", id: e.id, fromEnd: "arrow", toEnd: "arrow" });
+        if (both && !twoWay(edge)) {
+          operations.push({
+            op: "ends",
+            id: edge.id,
+            fromEnd: "arrow",
+            toEnd: "arrow"
+          });
         }
       }
-      for (const n of rest) ops.push({ op: "remove", id: n.id });
-      return ops;
+      for (const node of rest) operations.push({ op: "remove", id: node.id });
+      return operations;
     }
     module2.exports = mergeOps2;
   }
@@ -1321,19 +1377,25 @@ var require_mergeOps = __commonJS({
 // src/board/place.js
 var require_place = __commonJS({
   "src/board/place.js"(exports2, module2) {
-    function place2(d, near, w, h) {
-      const p = d.nodes.find((n) => n.id === near);
-      if (!p) throw new Error("no node " + near);
-      const overlaps = (x, y) => d.nodes.some(
-        (n) => x < n.x + n.width + 20 && x + w + 20 > n.x && y < n.y + n.height + 20 && y + h + 20 > n.y
+    function place2(canvasData, near, width, height) {
+      const nearNode = canvasData.nodes.find((node) => node.id === near);
+      if (!nearNode) throw new Error("no node " + near);
+      const overlaps = (x, y) => canvasData.nodes.some(
+        (node) => x < node.x + node.width + 20 && x + width + 20 > node.x && y < node.y + node.height + 20 && y + height + 20 > node.y
       );
-      for (let k = 0; k < 20; k++) {
-        const right = { x: p.x + p.width + 40, y: p.y + k * (h + 40) };
+      for (let step = 0; step < 20; step++) {
+        const right = {
+          x: nearNode.x + nearNode.width + 40,
+          y: nearNode.y + step * (height + 40)
+        };
         if (!overlaps(right.x, right.y)) return right;
-        const below = { x: p.x + k * (w + 40), y: p.y + p.height + 40 };
+        const below = {
+          x: nearNode.x + step * (width + 40),
+          y: nearNode.y + nearNode.height + 40
+        };
         if (!overlaps(below.x, below.y)) return below;
       }
-      return { x: p.x + p.width + 40, y: p.y };
+      return { x: nearNode.x + nearNode.width + 40, y: nearNode.y };
     }
     module2.exports = place2;
   }
@@ -1343,21 +1405,21 @@ var require_place = __commonJS({
 var require_restoreOps = __commonJS({
   "src/board/restoreOps.js"(exports2, module2) {
     var newId2 = require_newId();
-    function restoreOps2(d, src) {
-      const fm = (src.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) || [])[1];
-      if (!fm || !/^archived-from:/m.test(fm)) {
+    function restoreOps2(canvasData, source) {
+      const frontmatter = (source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) || [])[1];
+      if (!frontmatter || !/^archived-from:/m.test(frontmatter)) {
         throw new Error("not an archived card note");
       }
-      const get = (k) => {
-        const m = new RegExp(`^${k}: (.*)$`, "m").exec(fm);
-        if (!m) return void 0;
-        const v = m[1].trim();
-        return v.startsWith('"') ? JSON.parse(v) : v;
+      const get = (field) => {
+        const match = new RegExp(`^${field}: (.*)$`, "m").exec(frontmatter);
+        if (!match) return void 0;
+        const value = match[1].trim();
+        return value.startsWith('"') ? JSON.parse(value) : value;
       };
       const board = get("archived-from").replace(/^\[\[|\]\]$/g, "");
-      const body = src.slice(src.indexOf("---", 3) + 3).replace(/^\r?\n/, "").replace(/\s+$/, "");
+      const body = source.slice(source.indexOf("---", 3) + 3).replace(/^\r?\n/, "").replace(/\s+$/, "");
       const type = get("card-type") || "text";
-      const ids = new Set(d.nodes.map((n) => n.id));
+      const ids = new Set(canvasData.nodes.map((node2) => node2.id));
       const id = ids.has(get("card-id")) ? newId2() : get("card-id");
       const node = {
         id,
@@ -1371,14 +1433,14 @@ var require_restoreOps = __commonJS({
       if (type === "file") node.file = get("card-file");
       if (type === "link") node.url = get("card-url");
       if (get("color")) node.color = get("color");
-      const ops = [{ op: "add", node }];
+      const operations = [{ op: "add", node }];
       const old = get("card-id");
-      const edgeIds = new Set(d.edges.map((e) => e.id));
-      for (const m of fm.matchAll(/^ {2}- (".*")$/gm)) {
-        const [eid, from, fromSide, to, toSide, label] = JSON.parse(m[1]).split(
-          " | "
-        );
-        const fromNode = from === old ? id : from, toNode = to === old ? id : to;
+      const edgeIds = new Set(canvasData.edges.map((edge) => edge.id));
+      for (const edgeLine of frontmatter.matchAll(/^ {2}- (".*")$/gm)) {
+        const [eid, from, fromSide, toId, toSide, label] = JSON.parse(
+          edgeLine[1]
+        ).split(" | ");
+        const fromNode = from === old ? id : from, toNode = toId === old ? id : toId;
         if (edgeIds.has(eid) || !(fromNode === id || ids.has(fromNode)) || !(toNode === id || ids.has(toNode))) {
           continue;
         }
@@ -1386,9 +1448,9 @@ var require_restoreOps = __commonJS({
         if (fromSide) edge.fromSide = fromSide;
         if (toSide) edge.toSide = toSide;
         if (label) edge.label = label;
-        ops.push({ op: "edge", edge });
+        operations.push({ op: "edge", edge });
       }
-      return { board, ops };
+      return { board, operations };
     }
     module2.exports = restoreOps2;
   }
@@ -1397,15 +1459,15 @@ var require_restoreOps = __commonJS({
 // src/board/splitText.js
 var require_splitText = __commonJS({
   "src/board/splitText.js"(exports2, module2) {
-    function splitText(text, by) {
-      const h = /^h([1-6])$/.exec(by);
-      const starts = h ? new RegExp(`^#{${h[1]}} `) : by === "bullet" ? /^([-*+]|\d+[.)]) / : null;
-      const pieces = starts ? text.split("\n").reduce((acc, line) => {
-        if (starts.test(line) || !acc.length) acc.push([]);
-        acc[acc.length - 1].push(line);
-        return acc;
-      }, []).map((l) => l.join("\n")) : text.split(/\n\s*\n/);
-      return pieces.map((p) => p.trim()).filter(Boolean);
+    function splitText(text, separator) {
+      const headingMatch = /^h([1-6])$/.exec(separator);
+      const starts = headingMatch ? new RegExp(`^#{${headingMatch[1]}} `) : separator === "bullet" ? /^([-*+]|\d+[.)]) / : null;
+      const pieces = starts ? text.split("\n").reduce((pieces2, line) => {
+        if (starts.test(line) || !pieces2.length) pieces2.push([]);
+        pieces2[pieces2.length - 1].push(line);
+        return pieces2;
+      }, []).map((pieceLines) => pieceLines.join("\n")) : text.split(/\n\s*\n/);
+      return pieces.map((piece) => piece.trim()).filter(Boolean);
     }
     module2.exports = splitText;
   }
@@ -1417,19 +1479,19 @@ var require_splitOps = __commonJS({
     var fitHeight2 = require_fitHeight();
     var newId2 = require_newId();
     var splitText = require_splitText();
-    function splitOps2(d, id, by = "paragraph") {
-      const card = d.nodes.find((n) => n.id === id);
+    function splitOps2(canvasData, id, separator = "paragraph") {
+      const card = canvasData.nodes.find((node) => node.id === id);
       if (!card || card.type !== "text") {
         throw new Error("split takes one text card");
       }
-      const pieces = splitText(card.text || "", by);
-      if (pieces.length < 2) throw new Error(`nothing to split by ${by}`);
+      const pieces = splitText(card.text || "", separator);
+      if (pieces.length < 2) throw new Error(`nothing to split by ${separator}`);
       let y = card.y;
-      return pieces.map((text, i) => {
+      return pieces.map((text, index) => {
         const height = fitHeight2(text, card.width);
-        const node = { ...card, id: i ? newId2() : card.id, text, y, height };
+        const node = { ...card, id: index ? newId2() : card.id, text, y, height };
         y += height + 20;
-        return i ? { op: "add", node } : { op: "set", id, text, height };
+        return index ? { op: "add", node } : { op: "set", id, text, height };
       });
     }
     module2.exports = splitOps2;
@@ -1448,12 +1510,12 @@ var require_today = __commonJS({
 var require_toTrash = __commonJS({
   "src/board/toTrash.js"(exports2, module2) {
     var abs2 = require_abs();
-    var fs2 = require("fs");
+    var fileSystem2 = require("fs");
     var path2 = require("path");
     var toTrash2 = (rel) => {
       const dest = abs2(path2.posix.join(".trash", path2.posix.basename(rel)));
-      fs2.mkdirSync(path2.dirname(dest), { recursive: true });
-      fs2.renameSync(abs2(rel), dest);
+      fileSystem2.mkdirSync(path2.dirname(dest), { recursive: true });
+      fileSystem2.renameSync(abs2(rel), dest);
     };
     module2.exports = toTrash2;
   }
@@ -4582,7 +4644,7 @@ var expandOps = require_expandOps();
 var extractOps = require_extractOps();
 var fitHeight = require_fitHeight();
 var freePath = require_freePath();
-var fs = require("fs");
+var fileSystem = require("fs");
 var layoutOps = require_layoutOps();
 var linksTo = require_linksTo();
 var mergeOps = require_mergeOps();
@@ -4598,10 +4660,10 @@ var today = require_today();
 var toTrash = require_toTrash();
 var writeOps = require_writeOps();
 var args = process.argv.slice(2);
-var positional = args.filter((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--")));
-var opt = (name) => {
-  const i = args.indexOf(name);
-  return i >= 0 ? args[i + 1] : void 0;
+var positional = args.filter((argument, index) => !argument.startsWith("--") && !(index > 0 && args[index - 1].startsWith("--")));
+var option = (name) => {
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : void 0;
 };
 {
   const [cmd, boardArg, ...rest] = positional;
@@ -4615,18 +4677,18 @@ var opt = (name) => {
       print(args.includes("--active") ? activeTree(workflowTree(board)) : workflowTree(board));
       break;
     case "set": {
-      const op = { op: "set", id: rest[0], color: colorArg(opt("--color")) };
-      if (opt("--text") !== void 0) op.text = opt("--text");
-      if (opt("--file") !== void 0) op.file = opt("--file");
-      console.log(writeOps(board, [op]));
+      const operation = { op: "set", id: rest[0], color: colorArg(option("--color")) };
+      if (option("--text") !== void 0) operation.text = option("--text");
+      if (option("--file") !== void 0) operation.file = option("--file");
+      console.log(writeOps(board, [operation]));
       break;
     }
     case "add": {
-      const w = Number(opt("--width") || 320), h = Number(opt("--height") || fitHeight(opt("--text"), w));
-      const pos = place(readBoard(board), opt("--near"), w, h);
-      const node = { id: newId(), type: "text", text: opt("--text") || "", x: pos.x, y: pos.y, width: w, height: h };
-      const c = colorArg(opt("--color"));
-      if (c) node.color = c;
+      const width = Number(option("--width") || 320), height = Number(option("--height") || fitHeight(option("--text"), width));
+      const position = place(readBoard(board), option("--near"), width, height);
+      const node = { id: newId(), type: "text", text: option("--text") || "", x: position.x, y: position.y, width, height };
+      const color = colorArg(option("--color"));
+      if (color) node.color = color;
       writeOps(board, [{ op: "add", node }]);
       console.log(node.id);
       break;
@@ -4635,38 +4697,38 @@ var opt = (name) => {
       console.log(writeOps(board, [{ op: "remove", id: rest[0] }]));
       break;
     case "edge": {
-      const [a, b] = SIDES[defaultDir()];
-      const [fromSide, toSide] = /depends on/i.test(opt("--label") || "") ? [b, a] : [a, b];
+      const [fromSideDefault, toSideDefault] = SIDES[defaultDir()];
+      const [fromSide, toSide] = /depends on/i.test(option("--label") || "") ? [toSideDefault, fromSideDefault] : [fromSideDefault, toSideDefault];
       const edge = { id: newId(), fromNode: rest[0], fromSide, toNode: rest[1], toSide };
-      if (opt("--label")) edge.label = opt("--label");
+      if (option("--label")) edge.label = option("--label");
       console.log(writeOps(board, [{ op: "edge", edge }]));
       break;
     }
     case "layout": {
-      const ids = (opt("--ids") || "").split(",").filter(Boolean);
-      const dir = (opt("--dir") || defaultDir()).toUpperCase();
-      if (!SIDES[dir]) {
-        console.error(`layout: --dir must be TB, LR, BT or RL, not ${dir}`);
+      const ids = (option("--ids") || "").split(",").filter(Boolean);
+      const direction = (option("--dir") || defaultDir()).toUpperCase();
+      if (!SIDES[direction]) {
+        console.error(`layout: --dir must be TB, LR, BT or RL, not ${direction}`);
         process.exit(1);
       }
-      const ops = layoutOps(readBoard(board), { ids, dir, fit: args.includes("--fit"), dagre: require_dagre_min(), flow: settings().foldDirection });
-      console.log(writeOps(board, ops), ops.filter((o) => o.op === "set").length, "cards");
+      const operations = layoutOps(readBoard(board), { ids, direction, fit: args.includes("--fit"), dagre: require_dagre_min(), flow: settings().foldDirection });
+      console.log(writeOps(board, operations), operations.filter((operation) => operation.op === "set").length, "cards");
       break;
     }
     case "pack":
     case "collapse": {
-      const name = opt("--name");
+      const name = option("--name");
       if (!name) throw new Error("collapse needs --name");
       const file = freePath(path.posix.dirname(board), name, ".canvas");
-      const { ops, sub, id } = collapseOps(readBoard(board), (opt("--ids") || "").split(",").filter(Boolean), file, name);
-      fs.writeFileSync(abs(file), serialize(sub));
-      writeOps(board, ops);
+      const { operations, sub, id } = collapseOps(readBoard(board), (option("--ids") || "").split(",").filter(Boolean), file, name);
+      fileSystem.writeFileSync(abs(file), serialize(sub));
+      writeOps(board, operations);
       console.log(file, id);
       break;
     }
     case "unpack":
     case "expand": {
-      const card = readBoard(board).nodes.find((n) => n.id === rest[0]);
+      const card = readBoard(board).nodes.find((node) => node.id === rest[0]);
       const sub = card && cardLinks(card).canvas;
       if (!sub) throw new Error("card links no canvas");
       const others = args.includes("--keep") ? [] : linksTo(sub, board, rest[0]);
@@ -4680,34 +4742,34 @@ var opt = (name) => {
       break;
     }
     case "merge":
-      console.log(writeOps(board, mergeOps(readBoard(board), (opt("--ids") || "").split(",").filter(Boolean))));
+      console.log(writeOps(board, mergeOps(readBoard(board), (option("--ids") || "").split(",").filter(Boolean))));
       break;
     case "split":
-      console.log(writeOps(board, splitOps(readBoard(board), rest[0], opt("--by") || "paragraph")));
+      console.log(writeOps(board, splitOps(readBoard(board), rest[0], option("--by") || "paragraph")));
       break;
     case "extract":
-      console.log(writeOps(board, extractOps(readBoard(board), rest[0], opt("--text") || "")));
+      console.log(writeOps(board, extractOps(readBoard(board), rest[0], option("--text") || "")));
       break;
     case "archive": {
-      const d = readBoard(board);
+      const canvasData = readBoard(board);
       const ids = rest[0].split(",");
       for (const id of ids) {
-        const n = d.nodes.find((n2) => n2.id === id);
-        const a = archiveNote(d, id, board, today(), n && cardContexts(n));
-        const dir = archiveDir(board, settings());
-        const file = freePath(dir, a.name, ".md");
-        fs.mkdirSync(abs(dir), { recursive: true });
-        fs.writeFileSync(abs(file), a.content);
+        const node = canvasData.nodes.find((node2) => node2.id === id);
+        const archived = archiveNote(canvasData, id, board, today(), node && cardContexts(node));
+        const folder = archiveDir(board, settings());
+        const file = freePath(folder, archived.name, ".md");
+        fileSystem.mkdirSync(abs(folder), { recursive: true });
+        fileSystem.writeFileSync(abs(file), archived.content);
         console.log(file);
       }
       writeOps(board, ids.map((id) => ({ op: "remove", id })));
       break;
     }
     case "restore": {
-      const src = fs.readFileSync(abs(boardArg), "utf8");
-      const target = restoreOps({ nodes: [], edges: [] }, src).board;
-      const { ops } = restoreOps(readBoard(target), src);
-      console.log(writeOps(target, ops), target, ops[0].node.id);
+      const source = fileSystem.readFileSync(abs(boardArg), "utf8");
+      const target = restoreOps({ nodes: [], edges: [] }, source).board;
+      const { operations } = restoreOps(readBoard(target), source);
+      console.log(writeOps(target, operations), target, operations[0].node.id);
       toTrash(boardArg);
       break;
     }
@@ -4715,7 +4777,7 @@ var opt = (name) => {
       print(rollup(board));
       break;
     case "check":
-      print(check(board, opt("--ids") ? new Set(opt("--ids").split(",")) : void 0));
+      print(check(board, option("--ids") ? new Set(option("--ids").split(",")) : void 0));
       break;
     default:
       console.error("Usage: node .obsidian/plugins/canvas-board/canvas.js read|tree|set|add|remove|edge|layout|pack|unpack|merge|split|extract|archive|restore|rollup|check <board> ... (see header)");
