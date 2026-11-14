@@ -1,47 +1,9 @@
-// APM counter: canvas cards touched in a rolling window (default 15 min) in the status bar, colored against the personal
-// best; shown only while a canvas is the active tab. An action = a card whose content or color changed on the open canvas.
-// Moving or resizing is not one. Pace = distinct cards touched in the window, so typing a sentence in one card counts once.
-// No `obsidian` import: main.js loads this file by path, as canvas.js, and owns the settings UI.
-// Tests: node test-apm.js
-const MINUTE_MS = 60000;
-const INPUT_MS = 10000; // a saved change only counts this soon after a key or mouse press (agents and sync write files too)
-const MIN_PB = 5; // under this the ratio to PB means nothing (just after a reset): no color, no alert
-const SAVE_EVERY_MS = 10000;
-const unitOf = windowMinutes => `cards/${windowMinutes}`; // a personal best from another unit is not comparable: it is dropped
-const rateName = windowMinutes => windowMinutes === 1 ? 'APM' : `AP${windowMinutes}M`; // APM extended to the window: AP15M
-const CONTENT_KEYS = ['text', 'file', 'subpath', 'url', 'label', 'color'];
-const DEFAULTS = { pb: 0, pbDate: '', lowPercent: 25, idleMinutes: 5, windowMinutes: 15 };
-
-const cardsOf = json => {
-	const map = new Map();
-	for (const n of JSON.parse(json || '{}').nodes || []) map.set(n.id, JSON.stringify(CONTENT_KEYS.map(k => n[k] ?? null)));
-	return map;
-};
-
-// Ids of the cards created, deleted, or changed in content or color. Pure, for the tests.
-function touchedCards(before, after) {
-	const out = [];
-	for (const [id, v] of after) if (before.get(id) !== v) out.push(id);
-	for (const id of before.keys()) if (!after.has(id)) out.push(id);
-	return out;
-}
-
-function band(pace, pb, lowPercent, warmingUp = false) {
-	if (pb < MIN_PB) return 'calibrating';
-	if (pace >= pb) return 'best';
-	const ratio = (pace / pb) * 100;
-	if (ratio < lowPercent) return warmingUp ? 'calibrating' : 'low'; // a session's first window can't be full yet: no alert
-	if (ratio < 50) return 'orange';
-	if (ratio < 75) return 'yellow';
-	return 'green';
-}
-
-// The settings live under `apm` in the plugin's data.json. First load: taken over from the old apm-counter plugin's file, if any.
-function loadSettings(stored, legacy) {
-	const s = Object.assign({}, DEFAULTS, stored || legacy || {});
-	if (s.unit !== unitOf(s.windowMinutes)) Object.assign(s, { pb: 0, pbDate: '', unit: unitOf(s.windowMinutes) });
-	return s;
-}
+const { INPUT_MS, MINUTE_MS, SAVE_EVERY_MS } = require('./constants.js');
+const band = require('./band.js');
+const cardsOf = require('./cardsOf.js');
+const rateName = require('./rateName.js');
+const touchedCards = require('./touchedCards.js');
+const unitOf = require('./unitOf.js');
 
 class ApmCounter {
 	// plugin: the Kanvas board plugin (registerEvent, registerDomEvent, registerInterval, addStatusBarItem, activeCanvas, app);
@@ -178,4 +140,4 @@ class ApmCounter {
 	}
 }
 
-module.exports = { ApmCounter, loadSettings, band, rateName, touchedCards, cardsOf, DEFAULTS, unitOf };
+module.exports = ApmCounter;

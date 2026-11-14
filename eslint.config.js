@@ -6,7 +6,7 @@ const glossary = require('./style/glossary.js');
 const terseNames = require('./style/terseNames.js');
 
 module.exports = [
-  { ignores: ['dagre.min.js', 'node_modules/**'] },
+  { ignores: ['dagre.min.js', 'main.js', 'canvas.js', 'node_modules/**'] },
   {
     files: ['**/*.js'],
     languageOptions: { ecmaVersion: 2022, sourceType: 'commonjs', globals: { ...globals.node, ...globals.browser } },

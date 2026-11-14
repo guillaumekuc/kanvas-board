@@ -1,1808 +1,5808 @@
-// Kanvas board (Canvas + Kanban): color hotkeys for selected canvas cards, a command that opens a terminal running the
-// canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
-// to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (pack, unpack dissolve / copy, merge,
-// split, extract), archive/restore, view tools (search current canvas, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. Writes skill/SKILL.md to
-// .claude/skills/canvas-board/ on load when missing; after that the vault copy is the user's, edited in Settings > Agent instructions (command "Reset agent skill").
-// The agent workflow (what a pass takes, roll-up, check) is workflow.js; here only the "Workflow" toggles gate.
-// apm.js: the APM counter in the status bar, on canvases only.
-const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, AbstractInputSuggest, Scope, setIcon } = require('obsidian');
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-
-// [color name, canvas color, command key, default label]. Labels can be edited in Settings > Workflow.
-const COLORS = [
-	['none', '', '0', 'Inbox'],
-	['red', '1', '1', 'Blocked'],
-	['orange', '2', '2', 'In Progress'],
-	['yellow', '3', '3', 'Review'],
-	['green', '4', '4', 'Done'],
-	['cyan', '5', '5', 'Do'],
-	['purple', '6', '6', 'Clarify'],
-];
-
-// Terminal command: empty = the platform's terminal (defaultLaunch); else {vault} {board} {claude} are replaced
-// and quoted parts stay one argument.
-const DEFAULTS = {
-	defaultBoard: 'Board.canvas',
-	claudePath: '',
-	layoutDirection: 'TB', // TB, LR, BT or RL
-	colorLabels: {}, // color name → label, when edited (Settings > Workflow)
-	cardWarning: '60',
-	staleDays: '7', // yellow cards whose note is untouched this long get a warning badge (and the rollup's `· Nd`)
-	hideTagBranches: true, // a hidden tag also hides the cards below its cards (in the fold direction)
-	foldDirection: 'out', // fold hides the cards a card points to (out) or the cards pointing to it (in)
-	terminal: '',
-	passColors: 'cyan purple', // cards that start a pass (and that tree --active takes, see workflow.js); empty = never
-	notesFolder: 'Board notes', // where the agent keeps the notes it makes for cards (read by workflow.js and the skill)
-	archiveMode: 'board', // board: archive notes in "<board> archive/" next to each board; global: all in archiveFolder
-	archiveFolder: 'Board notes/Archive', // the one archive folder when archiveMode is global
-};
-const COLOR_NUM = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
-const parseColors = s => new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLOR_NUM[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
-// Settings > Workflow: what each color does (as in the skill). Fixed: the label above is only how it reads.
-const WORKFLOW = [
-	['cyan', 'The agent carries the card to done.'],
-	['purple', 'The agent takes one step, then hands back.'],
-	['orange', 'A pass is on the card.'],
-	['yellow', 'A question or a review for you.'],
-	['red', 'Nothing moves until it is unblocked.'],
-	['green', 'Finished. Remove the card when it no longer helps.'],
-	['none', 'No state. The agent never touches it.'],
-];
-// Tidy layout directions, in the order shift-click cycles them. `turn`: how far the button's icon rotates.
-const LAYOUT_DIRS = {
-	TB: { name: 'top to bottom', turn: 0 },
-	LR: { name: 'left to right', turn: -90 },
-	BT: { name: 'bottom to top', turn: 180 },
-	RL: { name: 'right to left', turn: 90 },
-};
-// The icon's next rotation for a direction: the shortest way there, so cycling keeps turning the same way.
-const nextTurn = (current, target) => current + ((target - current) % 360 + 540) % 360 - 180;
-
-// The pass's terminal when the "Terminal command" setting is empty: [command, args], or null (no terminal found).
-// Windows Terminal; macOS Terminal.app through AppleScript (paths passed as argv, quoted by the shell);
-// on Linux the first known terminal on PATH. `claude` runs in the vault folder with the skill as its prompt.
-const onPath = bin => String(process.env.PATH || '').split(path.delimiter).some(d => d && fs.existsSync(path.join(d, bin)));
-const LINUX_TERMINALS = [ // [binary, (vault, command) => args]
-	['gnome-terminal', (v, c) => [`--working-directory=${v}`, '--', ...c]],
-	['konsole', (v, c) => ['--workdir', v, '-e', ...c]],
-	['xfce4-terminal', (v, c) => ['--working-directory', v, '-x', ...c]],
-	['kitty', (v, c) => ['--directory', v, ...c]],
-	['alacritty', (v, c) => ['--working-directory', v, '-e', ...c]],
-	['wezterm', (v, c) => ['start', '--cwd', v, '--', ...c]],
-	['foot', (v, c) => [`--working-directory=${v}`, ...c]],
-	['x-terminal-emulator', (v, c) => ['-e', ...c]],
-	['xterm', (v, c) => ['-e', ...c]],
-];
-function defaultLaunch({ vault, board, claude }) {
-	const prompt = `/canvas-board ${board}`;
-	if (process.platform === 'win32') return ['wt.exe', ['-w', 'canvas-board', 'new-tab', '-d', vault, '--title', `pass ${board}`, claude, prompt]];
-	if (process.platform === 'darwin') return ['osascript', [
-		'-e', 'on run argv',
-		'-e', 'tell application "Terminal"',
-		'-e', 'activate',
-		'-e', 'do script "cd " & quoted form of item 1 of argv & " && " & quoted form of item 2 of argv & " " & quoted form of item 3 of argv',
-		'-e', 'end tell',
-		'-e', 'end run',
-		vault, claude, prompt,
-	]];
-	const found = LINUX_TERMINALS.find(([bin]) => onPath(bin));
-	return found ? [found[0], found[1](vault, [claude, prompt])] : null;
-}
-
-// Claude Code: the setting, else the native installer's ~/.local/bin/claude(.exe), else `claude` on PATH.
-function claudeBin(setting) {
-	if (setting) return setting;
-	const local = path.join(os.homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
-	return fs.existsSync(local) ? local : 'claude';
-}
-
-module.exports = class CanvasBoardPlugin extends Plugin {
-	async onload() {
-		this.settings = Object.assign({}, DEFAULTS, await this.loadData());
-		this.addSettingTab(new CanvasBoardSettings(this.app, this));
-		const dir = path.join(this.app.vault.adapter.basePath, this.manifest.dir);
-		const script = path.join(dir, 'canvas.js');
-		const req = window.require || require; // the plugin's own require has no cache to clear on reload
-		if (req.cache) delete req.cache[script];
-		const cb = req(script);
-		const { applyOps, layoutOps } = cb;
-		this.cb = cb;
-		const apmScript = path.join(dir, 'apm.js');
-		if (req.cache) delete req.cache[apmScript];
-		const apmLib = req(apmScript);
-		let legacyApm;
-		if (!this.settings.apm) { try { legacyApm = JSON.parse(fs.readFileSync(path.join(dir, '..', 'apm-counter', 'data.json'), 'utf8')); } catch (e) { /* never installed */ } }
-		this.settings.apm = apmLib.loadSettings(this.settings.apm, legacyApm);
-		this.apm = new apmLib.ApmCounter(this, this.settings.apm, () => this.saveData(this.settings));
-		this.apm.load();
-		this.register(() => this.apm.unload());
-		const dagrePath = path.join(dir, 'dagre.min.js');
-		if (req.cache) delete req.cache[dagrePath];
-		const dagre = req(dagrePath);
-		this.api = {
-			read: board => {
-				const canvas = this.openCanvas(board);
-				return canvas ? JSON.stringify(canvas.getData()) : null;
-			},
-			// Changing a card's type needs setData() without the card, then with it, to keep its id.
-			apply: async (board, ops) => {
-				const canvas = this.openCanvas(board);
-				if (!canvas) return null;
-				const d = canvas.getData();
-				const retyped = applyOps(d, ops);
-				if (retyped.length) canvas.setData({ ...d, nodes: d.nodes.filter(n => !retyped.includes(n.id)) });
-				canvas.setData(d);
-				canvas.requestSave();
-				await new Promise(r => setTimeout(r, 2500));
-				return 'obsidian';
-			},
-		};
-		this.syncSkill(dir);
-		this.addCommand({
-			id: 'reset-skill',
-			name: "Reset agent skill to the plugin's version (overwrites your edits)",
-			callback: () => this.syncSkill(dir, true),
-		});
-
-		for (const [name, color, key] of COLORS) {
-			this.addCommand({
-				id: `color-${key}`,
-				name: this.colorCommandName(name),
-				checkCallback: checking => {
-					const canvas = this.activeCanvas();
-					if (!canvas || canvas.selection.size === 0) return false;
-					if (!checking) {
-						for (const node of canvas.selection) node.setColor(color);
-						canvas.requestSave();
-					}
-					return true;
-				},
-			});
-		}
-
-		// Selected cards only (2+; the rest never moves): never the whole board unasked (Ctrl+A first). Ctrl+Z undoes it.
-		this.addCommand({
-			id: 'tidy-layout',
-			name: 'Tidy layout (selected cards)',
-			checkCallback: checking => {
-				const canvas = this.activeCanvas();
-				if (!canvas) return false;
-				if (!checking) {
-					if (canvas.selection.size < 2) {
-						new Notice('Tidy layout: select the cards to tidy first (2 or more; Ctrl+A for the whole canvas).');
-						return true;
-					}
-					const ids = [...canvas.selection].map(n => n.id);
-					const d = canvas.getData();
-					this.edit(canvas, layoutOps(d, { ids, dir: this.settings.layoutDirection, dagre, flow: this.settings.foldDirection }), d);
-				}
-				return true;
-			},
-		});
-		this.addCommand({
-			id: 'tidy-direction-next',
-			name: 'Tidy layout direction: next',
-			callback: () => this.cycleLayoutDirection(),
-		});
-		for (const [dir, { name }] of Object.entries(LAYOUT_DIRS))
-			this.addCommand({
-				id: `tidy-direction-${dir.toLowerCase()}`,
-				name: `Tidy layout direction: ${name}`,
-				checkCallback: checking => {
-					if (this.settings.layoutDirection === dir) return false;
-					if (!checking) this.setLayoutDirection(dir);
-					return true;
-				},
-			});
-
-		// Refactor and archive commands: one undo step each (Ctrl+Z), same code as canvas.js for agents.
-		// Each is also a right-click item (label `menu`) on the cards it applies to.
-		// `menu` is [title, Lucide icon], or null for a command with no menu item.
-		const actions = this.actions = [];
-		const runAction = this.runAction = (run, canvas, sel) => Promise.resolve(run(canvas, sel)).catch(e => new Notice(`Kanvas board: ${e.message}`));
-		const canvasCommand = (id, name, menu, test, run) => {
-			actions.push({ id, menu, test, run });
-			this.addCommand({
-				id, name,
-				checkCallback: checking => {
-					const canvas = this.activeCanvas();
-					if (!canvas || !test(canvas, [...canvas.selection])) return false;
-					if (!checking) runAction(run, canvas, [...canvas.selection]);
-					return true;
-				},
-			});
-		};
-		const isText = n => n.getData().type === 'text';
-
-		// Pack / unpack (ids stay collapse / expand so hotkeys keep working). Pack moves cards into a new subcanvas.
-		canvasCommand('collapse', 'Pack into subcanvas', ['Pack into subcanvas', 'package'], (c, sel) => sel.length > 0, (canvas, sel) =>
-			new NamePrompt(this.app, 'Subcanvas name', async name => {
-				const board = this.activeFile();
-				const dir = board.parent && board.parent.path !== '/' ? board.parent.path + '/' : '';
-				const file = this.freePath(dir, name, '.canvas');
-				const { ops, sub } = cb.collapseOps(canvas.getData(), sel.map(n => n.id), file, name);
-				await this.app.vault.create(file, JSON.stringify(sub, null, '\t'));
-				this.edit(canvas, ops);
-				this.undoNotice(canvas, `packed ${sel.length} card${sel.length > 1 ? 's' : ''} into ${file}`, [file]);
-			}).open());
-
-		// Unpack (dissolve) = cut and paste: the cards come out, the file goes to the trash. Other links to the file
-		// (cards on any canvas, notes) would break: then a choice. Unpack (copy) = copy and paste: the file stays.
-		const linked = (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]);
-		canvasCommand('expand', 'Unpack subcanvas (dissolve)', ['Unpack subcanvas (dissolve)', 'package-open'], linked, async (canvas, [node]) => {
-			const file = this.linkedCanvas(node);
-			const links = await this.subcanvasLinks(file, canvas, node.id);
-			if (!links.length) return this.unpack(canvas, node, file, 'dissolve');
-			new UnpackChoice(this.app, file, links, mode => this.unpack(canvas, node, file, mode, links).catch(e => new Notice(`Kanvas board: ${e.message}`))).open();
-		});
-		canvasCommand('unpack-copy', 'Unpack subcanvas (copy)', ['Unpack subcanvas (copy)', 'copy'], linked, (canvas, [node]) =>
-			this.unpack(canvas, node, this.linkedCanvas(node), 'copy'));
-
-		canvasCommand('merge', 'Merge selected cards', ['Merge cards', 'merge'], (c, sel) => sel.length > 1 && sel.every(isText), (canvas, sel) =>
-			this.edit(canvas, cb.mergeOps(canvas.getData(), sel.map(n => n.id))));
-
-		// Only the top-level split is a menu item; the others stay commands.
-		for (const [by, label] of [['paragraph', 'paragraph'], ['bullet', 'top-level bullet'], ['h1', 'heading 1'], ['h2', 'heading 2'], ['h3', 'heading 3']])
-			canvasCommand(`split-${by}`, `Split card by ${label}`, by === 'bullet' ? ['Split by top-level bullet', 'split'] : null, (c, sel) => sel.length === 1 && isText(sel[0]) && !sel[0].isEditing, (canvas, [node]) =>
-				this.edit(canvas, cb.splitOps(canvas.getData(), node.id, by)));
-
-		// The card being edited, with text selected: the selection becomes a new card.
-		canvasCommand('extract', 'Extract current selection to a new card', ['Extract current selection to a new card', 'text-select'], (c, sel) => sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]), (canvas, [node]) => {
-			const editor = this.cardEditor(node);
-			const part = editor.getSelection();
-			if (!part.trim()) throw new Error('select some text in the card first');
-			const from = editor.posToOffset(editor.getCursor('from'));
-			const before = editor.getValue();
-			editor.replaceSelection('');
-			node.blur();
-			const d = canvas.getData();
-			const n = d.nodes.find(x => x.id === node.id);
-			if (n) n.text = before; // the editor may not have saved yet: work from what it showed
-			this.edit(canvas, cb.extractOps(d, node.id, part, from), d);
-		});
-
-		canvasCommand('archive', 'Archive selected cards', ['Archive', 'archive'], (c, sel) => sel.length > 0, async (canvas, sel) => {
-			const board = this.activeFile().path;
-			const d = canvas.getData();
-			const dir = cb.archiveDir(board, this.settings);
-			if (!this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
-			const notes = [];
-			for (const node of sel) {
-				const a = cb.archiveNote(d, node.id, board, window.moment().format('YYYY-MM-DD'), this.cardContexts(node, board));
-				notes.push(this.freePath(dir + '/', a.name, '.md'));
-				await this.app.vault.create(notes[notes.length - 1], a.content);
-			}
-			this.edit(canvas, sel.map(n => ({ op: 'remove', id: n.id })));
-			this.undoNotice(canvas, `archived ${sel.length} card${sel.length > 1 ? 's' : ''}`, notes);
-		});
-
-		// Fold hides the cards linked to a card, following edges in the "Fold direction" setting (out: the cards it
-		// points to, then on; in: the cards pointing to it, then on). Unfold shows N levels again and folds the cards
-		// at level N, so a branch opens in stages, like folders. Folds are stored on the card (see foldOf), so Ctrl+Z
-		// undoes them. With several cards selected, each one that can be folded (or unfolded) is.
-		const canFold = (c, n) => !this.foldOf(n) && this.branchLinks(c, this.settings.foldDirection).has(n.id);
-		canvasCommand('fold', 'Fold branch', ['Fold branch', 'chevrons-down-up'], (c, sel) => sel.some(n => canFold(c, n)), (canvas, sel) =>
-			this.setFolds(canvas, new Map(sel.filter(n => canFold(canvas, n)).map(n => [n.id, this.settings.foldDirection]))));
-		for (const [levels, id, name, menu] of [[1, 'unfold', 'Unfold branch 1 level', ['Unfold 1 level', 'chevron-down']],
-			[2, 'unfold-2', 'Unfold branch 2 levels', null], [3, 'unfold-3', 'Unfold branch 3 levels', null],
-			[Infinity, 'unfold-all', 'Unfold whole branch', ['Unfold whole branch', 'chevrons-up-down']]])
-			canvasCommand(id, name, menu, (c, sel) => sel.some(n => this.unfoldTargets(c, n.id).length), (canvas, sel) =>
-				this.unfold(canvas, [...new Set(sel.flatMap(n => this.unfoldTargets(canvas, n.id)))], levels));
-		for (const [dir, label] of [['out', 'outgoing (cards it points to)'], ['in', 'incoming (cards pointing to it)']])
-			this.addCommand({
-				id: `fold-direction-${dir}`,
-				name: `Fold direction: ${label}`,
-				checkCallback: checking => {
-					if (this.settings.foldDirection === dir) return false;
-					if (!checking) {
-						this.settings.foldDirection = dir;
-						this.saveData(this.settings);
-						new Notice(`Kanvas board: fold direction ${label}`);
-					}
-					return true;
-				},
-			});
-
-		// Templates: the selection (and edges between its cards) as Templates/Canvas/<name>.canvas. Typing the name
-		// suggests the existing templates: picking one (or typing its name) overwrites it, the button says so.
-		const templates = () => this.app.vault.getFiles().filter(f => f.extension === 'canvas' && f.path.startsWith(cb.TEMPLATE_DIR + '/'));
-		const templateName = f => f.path.slice(cb.TEMPLATE_DIR.length + 1, -'.canvas'.length); // subfolders kept
-		canvasCommand('template-save', 'Save selected cards as a template', ['Save as template', 'layout-template'], (c, sel) => sel.length > 0, canvas => {
-			const existing = new Map(templates().map(f => [templateName(f).toLowerCase(), f]));
-			new NamePrompt(this.app, 'Template name', async name => {
-				const content = JSON.stringify((({ nodes, edges }) => ({ nodes, edges }))(canvas.getSelectionData()), null, '\t');
-				const old = existing.get(name.toLowerCase());
-				if (old) { await this.app.vault.modify(old, content); new Notice(`Kanvas board: template ${old.path} overwritten`); return; }
-				if (!this.app.vault.getAbstractFileByPath(cb.TEMPLATE_DIR)) await this.app.vault.createFolder(cb.TEMPLATE_DIR);
-				const file = this.freePath(cb.TEMPLATE_DIR + '/', name, '.canvas');
-				await this.app.vault.create(file, content);
-				new Notice(`Kanvas board: template saved to ${file}`);
-			}, { suggestions: [...existing.values()].map(templateName), overwrite: v => existing.has(v.toLowerCase()) }).open();
-		});
-		// Selection tools: the selection grows to related cards (visible ones only: hidden cards never stay selected).
-		// Children: every level down, in the fold direction. The selected cards stay selected.
-		const cards = sel => sel.filter(n => !n.from && n.getData().type !== 'group');
-		const selectMore = this.selectMore = (canvas, sel, keep) => {
-			const add = [...canvas.nodes.values()].filter(n => n.getData().type !== 'group' && !this.isHidden(canvas, n) && keep(n));
-			canvas.updateSelection(() => { canvas.selection.clear(); for (const n of [...sel, ...add]) canvas.selection.add(n); });
-			return add.length;
-		};
-		const childIds = (c, sel) => new Set(cards(sel).flatMap(n => this.branchLevels(c, n.id, this.settings.foldDirection).flat()));
-		canvasCommand('select-children', 'Select children (all levels down, in the fold direction)', ['Select children', 'list-tree'],
-			(c, sel) => [...childIds(c, sel)].some(id => c.nodes.get(id) && !this.isHidden(c, c.nodes.get(id)) && !c.selection.has(c.nodes.get(id))),
-			(canvas, sel) => { const ids = childIds(canvas, sel); selectMore(canvas, sel, n => ids.has(n.id)); });
-		const tagsOf = sel => new Set(cards(sel).flatMap(n => [...this.cardTagSet(n)]));
-		canvasCommand('select-same-tag', 'Select cards with the same tag', ['Select same tag', 'tag'], (c, sel) => tagsOf(sel).size > 0, (canvas, sel) => {
-			const tags = tagsOf(sel);
-			selectMore(canvas, sel, n => [...this.cardTagSet(n)].some(t => tags.has(t)));
-		});
-		canvasCommand('select-same-color', 'Select cards with the same color', ['Select same color', 'palette'], (c, sel) => cards(sel).length > 0, (canvas, sel) => {
-			const colors = new Set(cards(sel).map(n => n.getData().color || ''));
-			selectMore(canvas, sel, n => colors.has(n.getData().color || ''));
-		});
-
-		this.addCommand({
-			id: 'template-insert',
-			name: 'Insert cards from template',
-			checkCallback: checking => {
-				const canvas = this.activeCanvas();
-				if (!canvas) return false;
-				if (!checking) {
-					const files = this.app.vault.getFiles().filter(f => f.extension === 'canvas' && f.path.startsWith(cb.TEMPLATE_DIR + '/'));
-					if (!files.length) new Notice(`Kanvas board: no template in ${cb.TEMPLATE_DIR} (Save selected cards as a template)`);
-					else new Picker(this.app, 'Template', files, f => f.basename, f => this.insertTemplate(canvas, f)).open();
-				}
-				return true;
-			},
-		});
-
-		// Search, filter: the active canvas only. Filter and folds hide cards (styles.css). The filter is
-		// view only (the file is untouched, it resets when the board is reopened); folds are in the file.
-		this.views = new WeakMap(); // canvas → { xcolors, xtags (hidden colors and tags), hidden (card ids) }
-		this.panes = new Map(); // canvas → FilterPane, one per open canvas
-		// A find bar like the one in notes (count, previous / next, all), named after Obsidian's "Search current file".
-		this.finds = new Map(); // canvas → FindBar
-		this.addCommand({
-			id: 'find',
-			name: 'Search current canvas',
-			checkCallback: checking => {
-				const canvas = this.activeCanvas();
-				if (!canvas) return false;
-				if (!checking) {
-					let f = this.finds.get(canvas);
-					if (!f) { f = new FindBar(this, canvas); this.finds.set(canvas, f); }
-					f.open();
-				}
-				return true;
-			},
-		});
-		this.addCommand({
-			id: 'filter',
-			name: 'Toggle filter pane',
-			checkCallback: checking => {
-				const canvas = this.activeCanvas();
-				if (!canvas) return false;
-				if (!checking) this.pane(canvas).toggle();
-				return true;
-			},
-		});
-		this.addCommand({
-			id: 'show-all',
-			name: 'Unhide all',
-			checkCallback: checking => {
-				const canvas = this.activeCanvas();
-				if (!canvas || !this.viewLabel(canvas)) return false;
-				if (!checking) this.showAll(canvas);
-				return true;
-			},
-		});
-
-		// Right-click on one card, on a selection, or inside a card being edited (Extract).
-		const addActions = (menu, canvas, sel) => {
-			for (const a of actions) if (a.menu && a.test(canvas, sel))
-				menu.addItem(item => item.setTitle(this.keyedTitle(a.menu[0], a.id)).setIcon(a.menu[1]).setSection('canvas-board').onClick(() => runAction(a.run, canvas, sel)));
-		};
-		this.registerEvent(this.app.workspace.on('canvas:selection-menu', (menu, canvas) => addActions(menu, canvas, [...canvas.selection])));
-		this.registerEvent(this.app.workspace.on('canvas:node-menu', (menu, node) =>
-			addActions(menu, node.canvas, node.canvas.selection.has(node) ? [...node.canvas.selection] : [node])));
-		this.registerEvent(this.app.workspace.on('editor-menu', (menu, editor) => {
-			const canvas = this.activeCanvas();
-			const node = canvas && [...canvas.selection].find(n => n.isEditing && this.cardEditor(n) === editor);
-			if (node) addActions(menu, canvas, [node]);
-		}));
-
-		const isArchived = file => {
-			const fm = file && file.extension === 'md' && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
-			return !!(fm && fm['archived-from']);
-		};
-		this.addCommand({
-			id: 'restore',
-			name: 'Restore archived card (from its archive note)',
-			checkCallback: checking => {
-				const file = this.app.workspace.getActiveFile();
-				if (!isArchived(file)) return false;
-				if (!checking) this.restore(file).catch(e => new Notice(`Kanvas board: ${e.message}`));
-				return true;
-			},
-		});
-		// Right-click on an archive note: a link to it, the file explorer, its tab.
-		this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
-			if (isArchived(file)) menu.addItem(item => item.setTitle('Restore archived card').setIcon('archive-restore').setSection('canvas-board')
-				.onClick(() => this.restore(file).catch(e => new Notice(`Kanvas board: ${e.message}`))));
-		}));
-
-		this.addCommand({
-			id: 'run-pass',
-			name: 'Run pass (recheck the board)',
-			callback: () => this.runPass(),
-		});
-		this.addCommand({
-			id: 'open-board',
-			name: 'Open the board',
-			callback: () => this.openBoard(),
-		});
-		this.addCommand({
-			id: 'create-starter-board',
-			name: 'Create a starter board (color legend and first cards)',
-			callback: () => this.createStarterBoard(),
-		});
-		this.addRibbonIcon('kanban-square', 'Open the board (Kanvas board)', () => this.openBoard());
-
-		// Card count of the active canvas in the status bar: boards get hard to manage past a threshold.
-		// Next to it, the active filter and folds; click to change them.
-		this.countEl = this.addStatusBarItem();
-		this.viewEl = this.addStatusBarItem();
-		this.viewEl.addClass('mod-clickable');
-		this.viewEl.onClickEvent(() => { const c = this.activeCanvas(); if (c) this.pane(c).toggle(true); });
-		const tick = () => {
-			this.updateCount();
-			// Cards that come into view or are added get the classes again. Every open canvas has its filter pane.
-			const open = new Set();
-			for (const l of this.app.workspace.getLeavesOfType('canvas')) {
-				const canvas = l.view.canvas;
-				if (!canvas || !canvas.wrapperEl) continue;
-				open.add(canvas);
-				this.decorate(l.view);
-				this.refreshView(canvas); // folds come with the file: every canvas
-				this.pane(canvas).update();
-			}
-			for (const [canvas, pane] of this.panes) if (!open.has(canvas)) { pane.destroy(); this.panes.delete(canvas); }
-			for (const [canvas, f] of this.finds) if (!open.has(canvas)) { f.destroy(); this.finds.delete(canvas); }
-		};
-		this.registerEvent(this.app.workspace.on('active-leaf-change', tick));
-		this.registerInterval(window.setInterval(tick, 2000));
-		tick();
-		this.register(() => {
-			for (const pane of this.panes.values()) pane.destroy();
-			this.panes.clear();
-			for (const f of this.finds.values()) f.destroy();
-			this.finds.clear();
-			for (const l of this.app.workspace.getLeavesOfType('canvas')) {
-				const canvas = l.view.canvas;
-				this.undecorate(l.view);
-				if (!this.views.has(canvas)) continue;
-				delete canvas.updateSelection;
-				delete canvas.applyHistory;
-				this.paint(canvas, new Set(), new Map()); // folds stay in the file, only the screen is cleared
-			}
-		});
-	}
-
-	// --- Presentation: where the commands show on screen ---------------------------------------------------------
-	// Control bar and selection toolbar are undocumented canvas DOM (.canvas-controls, canvas.menu.render), like
-	// folds and the filter pane: an Obsidian update may drop those buttons, the commands stay. Header action and
-	// ribbon icon are documented API. See "Obsidian internals" in README.md.
-
-	// Label of a color: the one edited in Settings > Workflow, else the default.
-	colorLabel(name) {
-		return (this.settings.colorLabels || {})[name] || COLORS.find(c => c[0] === name)[3];
-	}
-
-	colorCommandName(name) {
-		return `Color selected cards: ${name} (${this.colorLabel(name)})`;
-	}
-
-	// An edited label also renames its command in the palette and the hotkey list. The id, and so the key, stays.
-	async setColorLabel(name, label) {
-		const labels = this.settings.colorLabels = { ...this.settings.colorLabels };
-		if (label) labels[name] = label; else delete labels[name];
-		await this.saveData(this.settings);
-		const row = COLORS.find(c => c[0] === name);
-		const cmd = this.app.commands && this.app.commands.commands[`${this.manifest.id}:color-${row[2]}`];
-		if (cmd) cmd.name = `${this.manifest.name}: ${this.colorCommandName(name)}`;
-		for (const canvas of this.panes.keys()) this.refreshView(canvas);
-	}
-
-	// Hotkey of a plugin command as Obsidian prints it ("Alt + ↑"), or ''.
-	hotkey(id) {
-		const hm = this.app.hotkeyManager;
-		try { return (hm && hm.printHotkeyForCommand && hm.printHotkeyForCommand(`${this.manifest.id}:${id}`)) || ''; } catch (e) { return ''; }
-	}
-
-	// Tooltip with its key, the way the canvas's own buttons show it ("Zoom to selection\n(Shift + 2)").
-	keyedLabel(label, id) {
-		const k = this.hotkey(id);
-		return k ? `${label}\n(${k})` : label;
-	}
-
-	// Menu item title with its key, muted, after the label.
-	keyedTitle(label, id) {
-		const k = this.hotkey(id);
-		if (!k) return label;
-		return createFragment(f => { f.appendText(label); f.createSpan({ cls: 'canvas-board-key', text: k }); });
-	}
-
-	// A notice with an Undo button: one canvas undo step and the files the action made go to the trash. Only while
-	// the board has not changed since (else the undo would take back something else).
-	// `restore` ({ path, content }) brings a trashed file back on undo (unpack). Redirected links are not undone.
-	undoNotice(canvas, msg, files = [], restore = null) {
-		const h = canvas.history;
-		const at = h ? h.current : null;
-		const frag = createFragment(f => {
-			f.appendText(`Kanvas board: ${msg} `);
-			const b = f.createEl('button', { cls: 'canvas-board-notice-undo', text: 'Undo' });
-			b.addEventListener('click', async () => {
-				if (!h || h.current !== at) { new Notice('Kanvas board: the board changed since, use Ctrl+Z'); return; }
-				canvas.undo();
-				for (const p of files) { const file = this.app.vault.getAbstractFileByPath(p); if (file) await this.app.fileManager.trashFile(file); }
-				if (restore && !this.app.vault.getAbstractFileByPath(restore.path)) await this.app.vault.create(restore.path, restore.content);
-			});
-		});
-		new Notice(frag, 8000);
-	}
-
-	async openBoard() {
-		const board = this.settings.defaultBoard;
-		const leaf = this.app.workspace.getLeavesOfType('canvas').find(l => l.view.file && l.view.file.path === board);
-		if (leaf) { this.app.workspace.setActiveLeaf(leaf, { focus: true }); return; }
-		const file = this.app.vault.getAbstractFileByPath(board);
-		if (!file) {
-			new Notice(createFragment(f => {
-				f.appendText(`Kanvas board: ${board} not found (setting "Default board"). `);
-				const b = f.createEl('button', { cls: 'canvas-board-notice-undo', text: 'Create a starter board' });
-				b.addEventListener('click', () => this.createStarterBoard());
-			}), 10000);
-			return;
-		}
-		await this.app.workspace.getLeaf(false).openFile(file);
-	}
-
-	// Onboarding: the default board when it does not exist yet, else "Starter board.canvas" (numbered when taken).
-	// A legend group (one card per color: its label and what it does, from Settings > Workflow) and a group of
-	// first steps, one of them a wish to color cyan and run a pass on. Opens it.
-	async createStarterBoard() {
-		const vault = this.app.vault;
-		let board = this.settings.defaultBoard;
-		if (vault.getAbstractFileByPath(board)) {
-			const dir = path.posix.dirname(board) === '.' ? '' : `${path.posix.dirname(board)}/`;
-			let n = 1;
-			do board = `${dir}Starter board${n > 1 ? ` ${n}` : ''}.canvas`; while (vault.getAbstractFileByPath(board) && ++n);
-		}
-		const id = () => Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-		const nodes = [];
-		const edges = [];
-		const W = 400;
-		nodes.push({ id: id(), type: 'group', label: 'How the colors work', x: -40, y: -80, width: W + 80, height: WORKFLOW.length * 100 + 100 });
-		// Legend cards stay uncolored (a colored one would be state: a pass would take the cyan and purple ones),
-		// an emoji dot stands for the color.
-		const DOT = { cyan: '🔵', purple: '🟣', orange: '🟠', yellow: '🟡', red: '🔴', green: '🟢', none: '⚪' };
-		WORKFLOW.forEach(([name, meaning], i) => {
-			nodes.push({ id: id(), type: 'text', text: `${DOT[name]} **${this.colorLabel(name)}** (${COLOR_NUM[name] ? name : 'uncolored'})\n${meaning}`, x: 0, y: i * 100, width: W, height: 80 });
-		});
-		const steps = [
-			'**1. Write a wish**\nOne card, one thing you want done, in your own words. Uncolored cards are ideas: the agent never touches them.',
-			'**2. Color it**\nCyan: the agent carries it to done. Purple: one step (a brief, then a plan), then it hands back. Color hotkeys: Settings > Kanvas board > Hotkeys.',
-			'**3. Run a pass**\nCommand "Kanvas board: Run pass". A terminal opens with the agent on this board; it turns the cards it takes orange.',
-			'**4. Answer**\nYellow: a question or a review for you, in the card\'s note. Answer there, color the card cyan or purple again, run the next pass.',
-		];
-		const x0 = W + 160;
-		nodes.push({ id: id(), type: 'group', label: 'First steps', x: x0 - 40, y: -80, width: W + 80, height: steps.length * 160 + 280 });
-		let prev;
-		steps.forEach((text, i) => {
-			const card = { id: id(), type: 'text', text, x: x0, y: i * 160, width: W, height: 130 };
-			nodes.push(card);
-			if (prev) edges.push({ id: id(), fromNode: prev, fromSide: 'bottom', toNode: card.id, toSide: 'top' });
-			prev = card.id;
-		});
-		nodes.push({ id: id(), type: 'text', text: 'Try it: color this card cyan, then run a pass.\n\nWrite a short note that explains this board in my own words.', x: x0, y: steps.length * 160 + 20, width: W, height: 130 });
-		try {
-			const dir = path.posix.dirname(board);
-			if (dir !== '.' && !vault.getAbstractFileByPath(dir)) await vault.createFolder(dir);
-			const file = await vault.create(board, JSON.stringify({ nodes, edges }, null, '\t'));
-			await this.app.workspace.getLeaf(false).openFile(file);
-			new Notice(`Kanvas board: starter board created (${board})`);
-		} catch (e) {
-			new Notice(`Kanvas board: could not create the starter board (${e.message})`);
-		}
-	}
-
-	async setLayoutDirection(dir) {
-		this.settings.layoutDirection = dir;
-		await this.saveData(this.settings);
-		for (const leaf of this.app.workspace.getLeavesOfType('canvas')) this.decorate(leaf.view);
-		new Notice(`Kanvas board: tidy layout ${LAYOUT_DIRS[dir].name}`);
-	}
-
-	cycleLayoutDirection() {
-		const dirs = Object.keys(LAYOUT_DIRS);
-		return this.setLayoutDirection(dirs[(dirs.indexOf(this.settings.layoutDirection) + 1) % dirs.length]);
-	}
-
-	// Runs a plugin command on this canvas view (made active first: a click on its buttons may not focus it).
-	runOn(view, id) {
-		const leaf = this.app.workspace.getLeavesOfType('canvas').find(l => l.view === view);
-		if (leaf && this.app.workspace.activeLeaf !== leaf) this.app.workspace.setActiveLeaf(leaf, { focus: true });
-		this.app.commands.executeCommandById(`${this.manifest.id}:${id}`);
-	}
-
-	// Buttons on a canvas view, added once (tick runs every 2 s and adds back what the canvas redrew away).
-	decorate(view) {
-		const canvas = view.canvas;
-		// View header: Run pass, a command about the whole board.
-		if (!view.canvasBoardAction && view.addAction)
-			view.canvasBoardAction = view.addAction('play', 'Run pass', () => this.runPass());
-		if (view.canvasBoardAction) view.canvasBoardAction.setAttr('aria-label', this.keyedLabel('Run pass', 'run-pass'));
-		// Control bar (top right): Search, Filter, Tidy layout, above Canvas help.
-		const controls = canvas.wrapperEl && canvas.wrapperEl.querySelector('.canvas-controls');
-		if (controls) {
-			let group = controls.querySelector('.canvas-board-controls');
-			if (!group) {
-				group = createDiv({ cls: 'canvas-control-group mod-raised canvas-board-controls' });
-				const help = controls.lastElementChild;
-				controls.insertBefore(group, help);
-				for (const [id, label, icon] of [['find', 'Search current canvas', 'search'], ['filter', 'Filter cards', 'filter'], ['tidy-layout', 'Tidy layout', 'network']]) {
-					const b = group.createDiv({ cls: 'canvas-control-item', attr: { 'data-command': id, 'data-label': label, 'data-tooltip-position': 'left' } });
-					setIcon(b, icon);
-					b.addEventListener('click', e => {
-						if (id === 'tidy-layout' && e.shiftKey) this.cycleLayoutDirection();
-						else this.runOn(view, id);
-					});
-				}
-			}
-			for (const b of group.children) b.setAttr('aria-label', this.keyedLabel(b.dataset.label, b.dataset.command));
-			// The tidy icon points the way the layout flows; its tooltip says so and how to change it.
-			const tidy = group.querySelector('[data-command="tidy-layout"]');
-			const dir = LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
-			if (tidy) {
-				this.tidyTurn = nextTurn(this.tidyTurn ?? dir.turn, dir.turn);
-				tidy.style.setProperty('--canvas-board-tidy-turn', `${this.tidyTurn}deg`);
-				tidy.setAttr('aria-label', this.keyedLabel(`Tidy layout: ${dir.name}\nShift-click: next direction`, 'tidy-layout'));
-			}
-		}
-		// Selection toolbar: Fold, Unfold, Archive after the canvas's own buttons, when they apply.
-		const menu = canvas.menu;
-		if (menu && menu.render && !menu.canvasBoardRender) {
-			const orig = menu.canvasBoardRender = menu.render;
-			const plugin = this;
-			menu.render = function (...a) {
-				const r = orig.apply(this, a);
-				try { plugin.menuButtons(canvas); } catch (e) { console.error('canvas-board: selection toolbar', e); }
-				return r;
-			};
-			// The color picker opens on click: its swatches get the state as tooltip.
-			menu.canvasBoardObserver = new MutationObserver(() => {
-				for (const item of menu.menuEl.querySelectorAll('.canvas-color-picker-item:not(.canvas-color-picker-custom)')) {
-					const c = (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || '';
-					const row = COLORS.find(x => x[1] === c);
-					if (row) item.setAttrs({ 'aria-label': this.keyedLabel(this.colorLabel(row[0]), `color-${row[2]}`), 'data-tooltip-position': 'top' });
-				}
-			});
-			menu.canvasBoardObserver.observe(menu.menuEl, { childList: true, subtree: true });
-		}
-	}
-
-	menuButtons(canvas) {
-		const el = canvas.menu.menuEl;
-		const sel = [...canvas.selection];
-		if (!sel.length || !el.childElementCount || el.querySelector('.canvas-board-menu-btn')) return;
-		for (const id of ['fold', 'unfold', 'archive']) {
-			const a = this.actions.find(x => x.id === id);
-			if (!a || !a.test(canvas, sel)) continue;
-			const b = el.createEl('button', { cls: 'clickable-icon canvas-board-menu-btn', attr: { 'aria-label': this.keyedLabel(a.menu[0], id), 'data-tooltip-position': 'top' } });
-			setIcon(b, a.menu[1]);
-			b.addEventListener('click', () => this.runAction(a.run, canvas, [...canvas.selection]));
-		}
-	}
-
-	undecorate(view) {
-		const canvas = view.canvas;
-		if (view.canvasBoardAction) { view.canvasBoardAction.remove(); delete view.canvasBoardAction; }
-		if (canvas.wrapperEl) for (const el of canvas.wrapperEl.querySelectorAll('.canvas-board-controls, .canvas-board-menu-btn')) el.remove();
-		const menu = canvas.menu;
-		if (menu && menu.canvasBoardRender) {
-			menu.render = menu.canvasBoardRender;
-			delete menu.canvasBoardRender;
-			menu.canvasBoardObserver.disconnect();
-			delete menu.canvasBoardObserver;
-		}
-	}
-
-	// Filter state of an open canvas. `create` false only reads (an empty state, not stored).
-	viewState(canvas, create = true) {
-		const empty = () => ({ xcolors: new Set(), xtags: new Set(), hidden: new Set() });
-		let v = this.views.get(canvas);
-		if (v || !create) return v || empty();
-		v = empty();
-		this.views.set(canvas, v);
-		// Hidden cards never stay selected (select all, drag to select), so Delete never hits a card you can't see.
-		const plugin = this;
-		const orig = canvas.updateSelection;
-		canvas.updateSelection = function (fn) {
-			const r = orig.call(this, () => {
-				fn();
-				for (const x of [...this.selection]) if (v.hidden.has(x.id) || (x.from && (v.hidden.has(x.from.node.id) || v.hidden.has(x.to.node.id)))) this.selection.delete(x);
-			});
-			plugin.updateCount(); // selected count in the status bar follows at once
-			return r;
-		};
-		// Undo / redo may bring folds back or take them away: redraw at once.
-		const history = canvas.applyHistory;
-		if (history) canvas.applyHistory = function (...a) {
-			const r = history.apply(this, a);
-			plugin.refreshView(this);
-			return r;
-		};
-		return v;
-	}
-
-	isHidden(canvas, node) {
-		return this.viewState(canvas, false).hidden.has(node.id);
-	}
-
-	// Clears the filter and unfolds every card (one undo step for the folds).
-	showAll(canvas) {
-		const v = this.viewState(canvas, false);
-		v.xcolors.clear();
-		v.xtags.clear();
-		const folds = this.folds(canvas);
-		if (folds.size) this.setFolds(canvas, new Map([...folds.keys()].map(id => [id, null])));
-		else this.refreshView(canvas);
-	}
-
-	// A fold is stored on the card as "canvasBoard": {"folded": "in" | "out"} (the fold direction). JSON Canvas
-	// 1.0 has no such field; other readers ignore it and show every card. Obsidian keeps it (node.unknownData).
-	foldOf(node) {
-		const cb = node.getData().canvasBoard;
-		return (cb && cb.folded) || null;
-	}
-
-	folds(canvas) {
-		const m = new Map();
-		for (const n of canvas.nodes.values()) { const dir = this.foldOf(n); if (dir) m.set(n.id, dir); }
-		return m;
-	}
-
-	// `changes`: card id → direction to fold, or null to unfold. One canvas edit, one undo step.
-	setFolds(canvas, changes) {
-		if (!changes.size) return;
-		const d = canvas.getData();
-		for (const n of d.nodes) {
-			if (!changes.has(n.id)) continue;
-			const cb = { ...(n.canvasBoard || {}) };
-			const dir = changes.get(n.id);
-			if (dir) cb.folded = dir; else delete cb.folded;
-			if (Object.keys(cb).length) n.canvasBoard = cb; else delete n.canvasBoard;
-		}
-		this.edit(canvas, [], d);
-		this.refreshView(canvas);
-	}
-
-	pane(canvas) {
-		let p = this.panes.get(canvas);
-		if (!p) { p = new FilterPane(this, canvas); this.panes.set(canvas, p); }
-		return p;
-	}
-
-	// Card id → ids one edge away, following edges out (from → to) or in (to → from).
-	branchLinks(canvas, dir) {
-		const links = new Map();
-		for (const e of canvas.edges.values()) {
-			const [a, b] = dir === 'in' ? [e.to.node.id, e.from.node.id] : [e.from.node.id, e.to.node.id];
-			if (a !== b) links.set(a, (links.get(a) || []).concat(b));
-		}
-		return links;
-	}
-
-	// Ids below a folded card, level by level (level 1 first).
-	branchLevels(canvas, root, dir) {
-		const links = this.branchLinks(canvas, dir);
-		const seen = new Set([root]);
-		const levels = [];
-		let level = [root];
-		while (level.length) {
-			const next = [];
-			for (const id of level) for (const x of links.get(id) || []) if (!seen.has(x)) { seen.add(x); next.push(x); }
-			if (next.length) levels.push(next);
-			level = next;
-		}
-		return levels;
-	}
-
-	// The cards an unfold on `id` applies to: the card itself if folded, else the nearest folded cards of its open
-	// branch (in the fold direction, not past another fold), so pressing unfold again opens the next level.
-	unfoldTargets(canvas, id) {
-		const node = canvas.nodes.get(id);
-		if (!node) return [];
-		if (this.foldOf(node)) return [id];
-		const links = this.branchLinks(canvas, this.settings.foldDirection);
-		const seen = new Set([id]);
-		const found = [];
-		let level = [id];
-		while (level.length) {
-			const next = [];
-			for (const x of level) for (const y of links.get(x) || []) {
-				if (seen.has(y)) continue;
-				seen.add(y);
-				const n = canvas.nodes.get(y);
-				if (n && this.foldOf(n)) found.push(y); else next.push(y);
-			}
-			level = next;
-		}
-		return found;
-	}
-
-	// Shows `levels` levels of each folded branch; the cards at the last shown level that lead further get folded.
-	unfold(canvas, ids, levels) {
-		const changes = new Map();
-		for (const id of ids) {
-			const node = canvas.nodes.get(id);
-			const dir = node && this.foldOf(node);
-			if (!dir) continue;
-			changes.set(id, null);
-			const below = this.branchLevels(canvas, id, dir);
-			const links = this.branchLinks(canvas, dir);
-			if (levels < below.length) for (const x of below[levels - 1]) if ((links.get(x) || []).length) changes.set(x, dir);
-		}
-		this.setFolds(canvas, changes);
-	}
-
-	// Tags of a card (no #): the `#tags` in its own text, never those of the notes it links. Exact match only:
-	// #tag1 is not #tag10.
-	cardTagSet(node) {
-		const tags = new Set();
-		for (const m of (node.getData().text || '').matchAll(/(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g)) if (!/^\d+$/.test(m[1])) tags.add(m[1]);
-		return tags;
-	}
-
-	// Every color and tag shows by default; a hidden color, or any hidden tag, hides the card.
-	matches(node, v) {
-		if (v.xcolors.has(node.getData().color || '')) return false;
-		if (!v.xtags.size) return true;
-		const tags = this.cardTagSet(node);
-		return ![...v.xtags].some(t => tags.has(t));
-	}
-
-	filtering(v) {
-		return !!(v.xcolors.size || v.xtags.size);
-	}
-
-	// Hidden = not matching the filter (groups always show), or below a folded card. With the setting "Hide cards
-	// under hidden tags", a card hidden by a tag also hides its branch, as a fold in the fold direction would.
-	refreshView(canvas) {
-		const v = this.viewState(canvas);
-		const hidden = new Set();
-		if (this.filtering(v))
-			for (const node of canvas.nodes.values()) if (node.getData().type !== 'group' && !this.matches(node, v)) hidden.add(node.id);
-		if (v.xtags.size && this.settings.hideTagBranches)
-			for (const node of canvas.nodes.values()) {
-				const tags = this.cardTagSet(node);
-				if (![...v.xtags].some(t => tags.has(t))) continue;
-				for (const id of this.branchLevels(canvas, node.id, this.settings.foldDirection).flat())
-					if (canvas.nodes.get(id) && canvas.nodes.get(id).getData().type !== 'group') hidden.add(id);
-			}
-		const folded = new Map();
-		for (const [root, dir] of this.folds(canvas)) {
-			const below = this.branchLevels(canvas, root, dir).flat();
-			folded.set(root, below.length);
-			for (const id of below) hidden.add(id);
-		}
-		v.hidden = hidden;
-		this.paint(canvas, hidden, folded);
-		if ([...canvas.selection].some(x => hidden.has(x.id))) canvas.updateSelection(() => {});
-		if (canvas === this.activeCanvas()) this.updateViewLabel(canvas);
-		const pane = this.panes.get(canvas);
-		if (pane) pane.update();
-	}
-
-	// Hides the `hidden` cards and their edges; `folded` (id → count) gets the "· N folded" badge, a click on it
-	// unfolds one level.
-	paint(canvas, hidden, folded) {
-		for (const node of canvas.nodes.values()) {
-			node.nodeEl.toggleClass('canvas-board-hidden', hidden.has(node.id));
-			let badge = node.nodeEl.querySelector(':scope > .canvas-board-folded');
-			if (!folded.has(node.id)) { if (badge) badge.remove(); continue; }
-			if (!badge) {
-				badge = node.nodeEl.createDiv({ cls: 'canvas-board-folded', attr: { 'data-tooltip-position': 'bottom' } });
-				for (const ev of ['pointerdown', 'mousedown', 'dblclick']) badge.addEventListener(ev, e => e.stopPropagation());
-				badge.addEventListener('click', e => { e.stopPropagation(); this.unfold(canvas, [node.id], 1); });
-			}
-			badge.setText(`· ${folded.get(node.id)} folded`);
-			badge.setAttr('aria-label', this.keyedLabel('Unfold 1 level', 'unfold'));
-		}
-		this.paintStale(canvas);
-		for (const e of canvas.edges.values()) {
-			const off = hidden.has(e.from.node.id) || hidden.has(e.to.node.id);
-			for (const el of [e.lineGroupEl, e.lineEndGroupEl, e.labelElement && e.labelElement.wrapperEl]) if (el) el.classList.toggle('canvas-board-hidden', off);
-		}
-	}
-
-	// Yellow (needs me) cards whose note was not touched for "Stale after" days: a warning badge (the icon of
-	// `- [!]`) with the time since the note last changed. Cards without a note have no date: no badge.
-	paintStale(canvas) {
-		const days = Number(this.settings.staleDays) || 0;
-		const board = canvas.view && canvas.view.file ? canvas.view.file.path : '';
-		for (const node of canvas.nodes.values()) {
-			const d = node.getData();
-			let age = -1;
-			if (days > 0 && d.color === '3') {
-				let file = null;
-				if (d.type === 'file') file = this.app.vault.getAbstractFileByPath(d.file);
-				else if (d.type === 'text') {
-					const m = /\[\[([^\]|#]+)/.exec(d.text || '');
-					if (m) file = this.app.metadataCache.getFirstLinkpathDest(m[1].trim(), board);
-				}
-				if (file && file.stat) age = Math.floor((Date.now() - file.stat.mtime) / 86400000);
-			}
-			let badge = node.nodeEl.querySelector(':scope > .canvas-board-stale');
-			if (age < days || age < 0) { if (badge) badge.remove(); continue; }
-			if (!badge) {
-				badge = node.nodeEl.createDiv({ cls: 'canvas-board-stale', attr: { 'data-tooltip-position': 'top' } });
-				setIcon(badge.createSpan({ cls: 'canvas-board-stale-icon' }), 'triangle-alert');
-				badge.createSpan({ cls: 'canvas-board-stale-text' });
-			}
-			const label = age < 1 ? 'today' : `${age}d`;
-			if (badge.dataset.age !== label) {
-				badge.dataset.age = label;
-				badge.querySelector('.canvas-board-stale-text').setText(label);
-				badge.setAttr('aria-label', `Waiting on you · note untouched for ${age} day${age === 1 ? '' : 's'} (stale after ${days})`);
-			}
-		}
-	}
-
-	// Status bar and closed pane: only how many cards are hidden (filter and folds); the pane says by what.
-	viewLabel(canvas) {
-		const n = this.viewState(canvas, false).hidden.size;
-		return n ? `${n} card${n > 1 ? 's' : ''} hidden` : '';
-	}
-
-	updateViewLabel(canvas) {
-		const label = canvas ? this.viewLabel(canvas) : '';
-		this.viewEl.setText(label);
-		this.viewEl.toggle(!!label);
-	}
-
-	cardText(node) {
-		const d = node.getData();
-		return String((d.type === 'text' ? d.text : d.type === 'file' ? d.file : d.type === 'link' ? d.url : d.label) || '');
-	}
-
-	// Background of a color dot: a preset canvas color ('1'…'6'), a custom hex, or none.
-	dotStyle(color) {
-		return !color ? '' : `background: ${color.startsWith('#') ? color : `var(--canvas-color-${color})`}`;
-	}
-
-	// Template cards are centered on the visible canvas, whatever is selected; they end up selected.
-	async insertTemplate(canvas, file) {
-		const tpl = JSON.parse(await this.app.vault.read(file));
-		const nodes = tpl.nodes || [];
-		const b = canvas.getViewportBBox();
-		const w = nodes.length ? Math.max(...nodes.map(n => n.x + n.width)) - Math.min(...nodes.map(n => n.x)) : 0;
-		const h = nodes.length ? Math.max(...nodes.map(n => n.y + n.height)) - Math.min(...nodes.map(n => n.y)) : 0;
-		const at = { x: Math.round((b.minX + b.maxX - w) / 2), y: Math.round((b.minY + b.maxY - h) / 2) };
-		const ops = this.cb.templateOps(tpl, at);
-		this.edit(canvas, ops);
-		const added = ops.filter(o => o.op === 'add').map(o => canvas.nodes.get(o.node.id)).filter(Boolean);
-		canvas.updateSelection(() => { canvas.selection.clear(); for (const n of added) canvas.selection.add(n); });
-	}
-
-	updateCount() {
-		const canvas = this.activeCanvas();
-		this.updateViewLabel(canvas);
-		if (!canvas) { this.countEl.setText(''); this.countEl.hide(); return; }
-		const cards = [...canvas.nodes.values()].map(n => n.getData()).filter(n => n.type !== 'group');
-		const names = { '': 'none', 1: 'red', 2: 'orange', 3: 'yellow', 4: 'green', 5: 'cyan', 6: 'purple' };
-		const byColor = {};
-		for (const n of cards) { const c = names[n.color || ''] || 'custom'; byColor[c] = (byColor[c] || 0) + 1; }
-		const max = Number(this.settings.cardWarning) || 0;
-		const over = max > 0 && cards.length > max;
-		const sel = [...canvas.selection].filter(x => !x.from).length; // cards and groups, not edges
-		// Only the card count takes the warning color, not the selected count.
-		this.countEl.empty();
-		this.countEl.createSpan({ text: `${cards.length} cards`, cls: over ? 'canvas-board-over' : '' }); // warning color, see styles.css
-		if (sel) this.countEl.appendText(` · ${sel} selected`);
-		this.countEl.setAttr('aria-label', (over ? `over ${max} · ` : '') + Object.entries(byColor).map(([c, k]) => `${c} ${k}`).join(' · '));
-		this.countEl.setAttr('data-tooltip-position', 'top');
-		this.countEl.show();
-	}
-
-	// The plugin folder holds the skill's default; the vault copy is written only when missing (then it is the
-	// user's, plugin updates never overwrite it) or on "Reset agent skill" (`force`).
-	skillPath() {
-		return path.join(this.app.vault.adapter.basePath, '.claude', 'skills', 'canvas-board', 'SKILL.md');
-	}
-
-	syncSkill(dir, force = false) {
-		const src = path.join(dir, 'skill', 'SKILL.md');
-		const dest = this.skillPath();
-		try {
-			if (!force && fs.existsSync(dest)) return;
-			fs.mkdirSync(path.dirname(dest), { recursive: true });
-			fs.copyFileSync(src, dest);
-			if (force) new Notice('Kanvas board: agent skill reset to the plugin\'s version');
-		} catch (e) {
-			console.error('canvas-board: skill sync failed', e);
-			if (force) new Notice(`Kanvas board: skill reset failed (${e.message})`);
-		}
-	}
-
-	// One undo step: the state before is pushed (unless the history already ends with it), then the edited data
-	// is set, which pushes it, so Ctrl+Z and Ctrl+Y each take one step. `d` is passed when the caller already changed it (extract).
-	edit(canvas, ops, d = canvas.getData()) {
-		const before = canvas.getData();
-		const retyped = this.cb.applyOps(d, ops);
-		const h = canvas.history;
-		const last = h && h.data && h.data[h.current];
-		const same = x => JSON.stringify(x, (k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort()) : v); // key order aside
-		if (canvas.pushHistory && (!last || same(last) !== same(before))) canvas.pushHistory(before);
-		if (retyped.length) canvas.setData({ ...d, nodes: d.nodes.filter(n => !retyped.includes(n.id)) });
-		canvas.setData(d); // pushes the new state
-		canvas.requestSave(false); // without false it pushes it again a moment later: one more Ctrl+Z needed
-	}
-
-	activeFile() {
-		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
-		return view && view.file;
-	}
-
-	freePath(dir, name, ext) {
-		for (let k = 1; ; k++) {
-			const p = `${dir}${name}${k > 1 ? ' ' + k : ''}${ext}`;
-			if (!this.app.vault.getAbstractFileByPath(p)) return p;
-		}
-	}
-
-	// Cards (on any canvas) and notes that link `file`, except card `skipId` on `canvas`: [{ path, id?, label }].
-	async subcanvasLinks(file, canvas, skipId) {
-		const out = [];
-		const here = this.canvasFile(canvas);
-		const hits = from => target => { const f = this.app.metadataCache.getFirstLinkpathDest(target, from); return !!f && f.path === file.path; };
-		for (const f of this.app.vault.getFiles().filter(f => f.extension === 'canvas' && f.path !== file.path)) {
-			const open = f.path === here ? canvas : this.openCanvas(f.path);
-			let d;
-			try { d = open ? open.getData() : JSON.parse((await this.app.vault.cachedRead(f)) || '{}'); } catch (e) { continue; }
-			for (const n of d.nodes || []) {
-				if (f.path === here && n.id === skipId) continue;
-				const hit = n.type === 'file' ? n.file === file.path : n.type === 'text' && this.cb.relinkText(n.text, hits(f.path), () => '\u0000') !== n.text;
-				if (hit) out.push({ path: f.path, id: n.id, label: (n.text || n.file || '').split('\n')[0] });
-			}
-		}
-		const resolved = this.app.metadataCache.resolvedLinks;
-		for (const src in resolved) if (src !== file.path && !src.endsWith('.canvas') && resolved[src][file.path]) out.push({ path: src, label: src });
-		return out;
-	}
-
-	canvasFile(canvas) {
-		const leaf = this.app.workspace.getLeavesOfType('canvas').find(l => l.view.canvas === canvas);
-		return leaf && leaf.view.file ? leaf.view.file.path : null;
-	}
-
-	// mode: dissolve (file to trash, other links break), copy (file kept), group (cards in a group named after the
-	// file, other links redirected: cards on this board get an edge to the group, other cards and notes link this board).
-	async unpack(canvas, node, file, mode, links = []) {
-		const sub = JSON.parse((await this.app.vault.read(file)) || '{}');
-		const content = JSON.stringify({ nodes: sub.nodes || [], edges: sub.edges || [] }, null, '\t');
-		const label = (((node.getData().text || '').match(/\|([^\]]+)\]\]/) || [])[1] || file.basename).trim(); // the card's alias, else the file name
-		const ops = this.cb.expandOps(canvas.getData(), node.id, { nodes: sub.nodes || [], edges: sub.edges || [] }, mode === 'group' ? { group: label } : {});
-		const here = this.canvasFile(canvas);
-		const isSub = from => target => { const f = this.app.metadataCache.getFirstLinkpathDest(target, from); return !!f && f.path === file.path; };
-		if (mode === 'group') {
-			const [a, b] = this.cb.SIDES[this.settings.layoutDirection] || this.cb.SIDES.TB;
-			for (const l of links.filter(l => l.path === here)) {
-				const n = canvas.getData().nodes.find(x => x.id === l.id);
-				if (!n) continue;
-				ops.push({ op: 'set', id: n.id, text: n.type === 'text' ? this.cb.relinkText(n.text, isSub(here), t => t) : label });
-				ops.push({ op: 'edge', edge: { id: [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join(''), fromNode: n.id, fromSide: a, toNode: ops.group, toSide: b } });
-			}
-		}
-		this.edit(canvas, ops);
-		if (mode === 'group') {
-			const to = t => `[[${here}|${t}]]`;
-			for (const p of [...new Set(links.filter(l => l.path !== here).map(l => l.path))]) {
-				const f = this.app.vault.getAbstractFileByPath(p);
-				if (!f) continue;
-				if (p.endsWith('.canvas')) {
-					const relink = d => { for (const n of d.nodes || []) {
-						if (n.type === 'file' && n.file === file.path) n.file = here;
-						else if (n.type === 'text') n.text = this.cb.relinkText(n.text, isSub(p), to);
-					} };
-					const open = this.openCanvas(p);
-					if (open) { const d = open.getData(); relink(d); open.setData(d); open.requestSave(); }
-					else await this.app.vault.process(f, t => { const d = JSON.parse(t || '{}'); relink(d); return JSON.stringify(d, null, '\t'); });
-				} else await this.app.vault.process(f, t => this.cb.relinkText(t, isSub(p), to));
-			}
-		}
-		if (mode !== 'copy') await this.app.fileManager.trashFile(file);
-		const n = (sub.nodes || []).length, k = links.length, s = x => (x > 1 ? 's' : '');
-		const what = {
-			dissolve: `unpacked ${n} card${s(n)}, ${file.path} trashed` + (k ? ` (${k} link${s(k)} now broken)` : ''),
-			copy: `unpacked ${n} card${s(n)}, ${file.path} kept`,
-			group: `unpacked ${n} card${s(n)} into a group, ${k} link${s(k)} redirected`,
-		}[mode];
-		this.undoNotice(canvas, what, [], mode === 'copy' ? null : { path: file.path, content });
-	}
-
-	linkedCanvas(node) {
-		const d = node.getData();
-		const target = d.type === 'file' ? d.file : ((d.text || '').match(/\[\[([^\]|#]+\.canvas)/) || [])[1];
-		if (!target || !target.endsWith('.canvas')) return null;
-		return this.app.vault.getAbstractFileByPath(target) || this.app.metadataCache.getFirstLinkpathDest(target.trim(), '');
-	}
-
-	cardEditor(node) {
-		const child = node.child;
-		return child && ((child.editMode && child.editMode.editor) || child.editor) || null;
-	}
-
-	// Context of the note a card links (its `context:` list), so its archive note keeps the same context.
-	cardContexts(node, board) {
-		const d = node.getData();
-		const target = d.type === 'file' ? d.file : ((d.text || '').match(/\[\[([^\]|#]+)/) || [])[1];
-		const file = target && this.app.metadataCache.getFirstLinkpathDest(target.trim(), board);
-		const fm = file && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
-		const c = fm && fm.context ? [].concat(fm.context).map(String) : [];
-		return c.length ? c : undefined;
-	}
-
-	async restore(note) {
-		const src = await this.app.vault.read(note);
-		const { board } = this.cb.restoreOps({ nodes: [], edges: [] }, src);
-		const file = this.app.vault.getAbstractFileByPath(board) || this.app.metadataCache.getFirstLinkpathDest(board, note.path);
-		if (!file) throw new Error(`board ${board} not found`);
-		const canvas = this.openCanvas(file.path);
-		if (canvas) this.edit(canvas, this.cb.restoreOps(canvas.getData(), src).ops);
-		else await this.app.vault.process(file, text => {
-			const d = JSON.parse(text);
-			d.nodes = d.nodes || []; d.edges = d.edges || [];
-			this.cb.applyOps(d, this.cb.restoreOps(d, src).ops);
-			return JSON.stringify(d, null, '\t');
-		});
-		await this.app.fileManager.trashFile(note);
-		new Notice(`Kanvas board: card restored on ${file.path}`);
-	}
-
-	openCanvas(board) {
-		const leaf = this.app.workspace.getLeavesOfType('canvas').find(l => l.view.file && l.view.file.path === board);
-		return leaf ? leaf.view.canvas : null;
-	}
-
-	activeCanvas() {
-		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
-		return view && view.getViewType() === 'canvas' ? view.canvas : null;
-	}
-
-	// True if the board, or a plan canvas linked from one of its cards, has a card in `go` (setting "Workflow").
-	async hasGoCards(board, go) {
-		const read = async p => {
-			const file = this.app.vault.getAbstractFileByPath(p);
-			if (!file) return [];
-			try { return JSON.parse(await this.app.vault.cachedRead(file)).nodes || []; } catch (e) { return []; }
-		};
-		const isGo = n => go.has(n.color);
-		const open = this.openCanvas(board);
-		const nodes = open ? open.getData().nodes : await read(board);
-		if (nodes.some(isGo)) return true;
-		for (const n of nodes) {
-			for (const m of (n.text || '').matchAll(/\[\[([^\]|#]+\.canvas)/g)) {
-				const dest = this.app.metadataCache.getFirstLinkpathDest(m[1].trim(), board);
-				if (dest && (await read(dest.path)).some(isGo)) return true;
-			}
-		}
-		return false;
-	}
-
-	async runPass() {
-		const vault = this.app.vault.adapter.basePath;
-		const claude = claudeBin(this.settings.claudePath);
-		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
-		const board = view && view.getViewType() === 'canvas' && view.file ? view.file.path : this.settings.defaultBoard;
-		const go = parseColors(this.settings.passColors);
-		if (!go.size) {
-			new Notice(createFragment(f => {
-				f.appendText('Kanvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. ');
-				const b = f.createEl('button', { cls: 'canvas-board-notice-undo', text: 'Open settings' });
-				b.addEventListener('click', () => { this.app.setting.open(); this.app.setting.openTabById(this.manifest.id); });
-			}), 10000);
-			return;
-		}
-		if (!(await this.hasGoCards(board, go))) {
-			const names = Object.keys(COLOR_NUM).filter(k => go.has(COLOR_NUM[k]));
-			new Notice(`Kanvas board: nothing to do on ${board} (no ${names.join(' or ')} card)`);
-			return;
-		}
-		const vars = { vault, board, claude };
-		const template = String(this.settings.terminal || '').trim();
-		const launch = template
-			? (([c, ...a]) => [c, a])((template.match(/"[^"]*"|\S+/g) || [])
-				.map(a => a.replace(/^"|"$/g, '').replace(/\{(vault|board|claude)\}/g, (_, k) => vars[k])))
-			: defaultLaunch(vars);
-		if (!launch) {
-			new Notice('Kanvas board: no terminal found to start the pass. Set "Terminal command" in the plugin settings.', 10000);
-			return;
-		}
-		const [cmd, cmdArgs] = launch;
-		try {
-			const child = spawn(cmd, cmdArgs, { cwd: vault, detached: true, stdio: 'ignore' });
-			child.on('error', e => new Notice(`Kanvas board: could not start the pass (${e.message})`));
-			child.unref();
-			new Notice(`Kanvas board: pass started on ${board}`);
-		} catch (e) {
-			new Notice(`Kanvas board: could not start the pass (${e.message})`);
-		}
-	}
+// Built from src/ by `npm run build`; edit src/, not this file.
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
-// One-line name prompt; Enter confirms, Escape cancels. Options: `suggestions` (names listed as you type, Enter
-// or click picks one into the field) and `overwrite` (name → true when it would replace a file: the button then
-// reads "Overwrite", in the warning color).
-// Unpack (dissolve) when other cards or notes link the subcanvas: group and redirect, keep the file, or break them.
-class UnpackChoice extends Modal {
-	constructor(app, file, links, onPick) {
-		super(app);
-		this.file = file;
-		this.links = links;
-		this.onPick = onPick;
-	}
+// src/plugin/constants.js
+var require_constants = __commonJS({
+  "src/plugin/constants.js"(exports2, module2) {
+    var COLORS = [
+      ["none", "", "0", "Inbox"],
+      ["red", "1", "1", "Blocked"],
+      ["orange", "2", "2", "In Progress"],
+      ["yellow", "3", "3", "Review"],
+      ["green", "4", "4", "Done"],
+      ["cyan", "5", "5", "Do"],
+      ["purple", "6", "6", "Clarify"]
+    ];
+    var DEFAULTS = {
+      defaultBoard: "Board.canvas",
+      claudePath: "",
+      layoutDirection: "TB",
+      // TB, LR, BT or RL
+      colorLabels: {},
+      // color name → label, when edited (Settings > Workflow)
+      cardWarning: "60",
+      staleDays: "7",
+      // yellow cards whose note is untouched this long get a warning badge (and the rollup's `· Nd`)
+      hideTagBranches: true,
+      // a hidden tag also hides the cards below its cards (in the fold direction)
+      foldDirection: "out",
+      // fold hides the cards a card points to (out) or the cards pointing to it (in)
+      terminal: "",
+      passColors: "cyan purple",
+      // cards that start a pass (and that tree --active takes, see workflow.js); empty = never
+      notesFolder: "Board notes",
+      // where the agent keeps the notes it makes for cards (read by workflow.js and the skill)
+      archiveMode: "board",
+      // board: archive notes in "<board> archive/" next to each board; global: all in archiveFolder
+      archiveFolder: "Board notes/Archive"
+      // the one archive folder when archiveMode is global
+    };
+    var COLOR_NUM = { red: "1", orange: "2", yellow: "3", green: "4", cyan: "5", purple: "6" };
+    var WORKFLOW = [
+      ["cyan", "The agent carries the card to done."],
+      ["purple", "The agent takes one step, then hands back."],
+      ["orange", "A pass is on the card."],
+      ["yellow", "A question or a review for you."],
+      ["red", "Nothing moves until it is unblocked."],
+      ["green", "Finished. Remove the card when it no longer helps."],
+      ["none", "No state. The agent never touches it."]
+    ];
+    var LAYOUT_DIRS = {
+      TB: { name: "top to bottom", turn: 0 },
+      LR: { name: "left to right", turn: -90 },
+      BT: { name: "bottom to top", turn: 180 },
+      RL: { name: "right to left", turn: 90 }
+    };
+    var LINUX_TERMINALS = [
+      // [binary, (vault, command) => args]
+      ["gnome-terminal", (v, c) => [`--working-directory=${v}`, "--", ...c]],
+      ["konsole", (v, c) => ["--workdir", v, "-e", ...c]],
+      ["xfce4-terminal", (v, c) => ["--working-directory", v, "-x", ...c]],
+      ["kitty", (v, c) => ["--directory", v, ...c]],
+      ["alacritty", (v, c) => ["--working-directory", v, "-e", ...c]],
+      ["wezterm", (v, c) => ["start", "--cwd", v, "--", ...c]],
+      ["foot", (v, c) => [`--working-directory=${v}`, ...c]],
+      ["x-terminal-emulator", (v, c) => ["-e", ...c]],
+      ["xterm", (v, c) => ["-e", ...c]]
+    ];
+    module2.exports = { COLORS, DEFAULTS, COLOR_NUM, WORKFLOW, LAYOUT_DIRS, LINUX_TERMINALS };
+  }
+});
 
-	onOpen() {
-		const k = this.links.length;
-		this.setTitle(`${this.file.basename} is linked from ${k} other place${k > 1 ? 's' : ''}`);
-		const ul = this.contentEl.createEl('ul');
-		for (const l of this.links.slice(0, 8)) ul.createEl('li', { text: l.id ? `${l.label} (${l.path})` : l.path });
-		if (k > 8) ul.createEl('li', { text: `and ${k - 8} more` });
-		const s = new Setting(this.contentEl);
-		const pick = mode => { this.close(); this.onPick(mode); };
-		s.addButton(b => b.setButtonText('Unpack into a group, redirect links').setCta().onClick(() => pick('group')));
-		s.addButton(b => b.setButtonText('Keep the file (copy)').onClick(() => pick('copy')));
-		s.addButton(b => b.setButtonText('Break links and trash').setWarning().onClick(() => pick('dissolve')));
-		s.addButton(b => b.setButtonText('Cancel').onClick(() => this.close()));
-	}
+// src/apm/constants.js
+var require_constants2 = __commonJS({
+  "src/apm/constants.js"(exports2, module2) {
+    var MINUTE_MS = 6e4;
+    var INPUT_MS = 1e4;
+    var MIN_PB = 5;
+    var SAVE_EVERY_MS = 1e4;
+    var CONTENT_KEYS = ["text", "file", "subpath", "url", "label", "color"];
+    var DEFAULTS = { pb: 0, pbDate: "", lowPercent: 25, idleMinutes: 5, windowMinutes: 15 };
+    module2.exports = { MINUTE_MS, INPUT_MS, MIN_PB, SAVE_EVERY_MS, CONTENT_KEYS, DEFAULTS };
+  }
+});
 
-	onClose() {
-		this.contentEl.empty();
-	}
-}
+// src/apm/band.js
+var require_band = __commonJS({
+  "src/apm/band.js"(exports2, module2) {
+    var { MIN_PB } = require_constants2();
+    function band(pace, pb, lowPercent, warmingUp = false) {
+      if (pb < MIN_PB) return "calibrating";
+      if (pace >= pb) return "best";
+      const ratio = pace / pb * 100;
+      if (ratio < lowPercent) return warmingUp ? "calibrating" : "low";
+      if (ratio < 50) return "orange";
+      if (ratio < 75) return "yellow";
+      return "green";
+    }
+    module2.exports = band;
+  }
+});
 
-class NamePrompt extends Modal {
-	constructor(app, title, onSubmit, opts = {}) {
-		super(app);
-		this.title = title;
-		this.onSubmit = onSubmit;
-		this.opts = opts;
-	}
+// src/apm/cardsOf.js
+var require_cardsOf = __commonJS({
+  "src/apm/cardsOf.js"(exports2, module2) {
+    var { CONTENT_KEYS } = require_constants2();
+    var cardsOf = (json) => {
+      const map = /* @__PURE__ */ new Map();
+      for (const n of JSON.parse(json || "{}").nodes || []) map.set(n.id, JSON.stringify(CONTENT_KEYS.map((k) => n[k] ?? null)));
+      return map;
+    };
+    module2.exports = cardsOf;
+  }
+});
 
-	onOpen() {
-		this.setTitle(this.title);
-		const { suggestions, overwrite } = this.opts;
-		let value = '';
-		let button, suggest, picked = false;
-		const clean = v => v.trim().replace(/[\\/:#^|[\]]/g, '');
-		// Subfolder names (a/b) are allowed for suggestions only: they name an existing file.
-		const nameOf = v => suggestions && suggestions.some(s => s.toLowerCase() === v.trim().toLowerCase()) ? v.trim() : clean(v);
-		const refresh = () => {
-			if (!button) return;
-			const over = !!(overwrite && value.trim() && overwrite(nameOf(value)));
-			button.setButtonText(over ? 'Overwrite' : 'Create');
-			button.buttonEl.toggleClass('mod-warning', over);
-			button.buttonEl.toggleClass('mod-cta', !over);
-		};
-		const submit = () => {
-			const name = nameOf(value);
-			if (!name) return;
-			this.close();
-			Promise.resolve(this.onSubmit(name)).catch(e => new Notice(`Kanvas board: ${e.message}`));
-		};
-		new Setting(this.contentEl).addText(t => {
-			t.onChange(v => { value = v; refresh(); });
-			if (suggestions && suggestions.length) suggest = new NameSuggest(this.app, t.inputEl, suggestions, v => {
-				t.setValue(v); value = v; refresh();
-				picked = true; setTimeout(() => { picked = false; }, 0); // the Enter that picked does not also submit
-			});
-			t.inputEl.addEventListener('keydown', e => {
-				if (e.key !== 'Enter' || picked || (suggest && suggest.suggestEl && suggest.suggestEl.isConnected)) return;
-				e.preventDefault();
-				submit();
-			});
-			setTimeout(() => t.inputEl.focus(), 0);
-		}).addButton(b => { button = b; b.setButtonText('Create').setCta().onClick(submit); });
-	}
+// src/apm/rateName.js
+var require_rateName = __commonJS({
+  "src/apm/rateName.js"(exports2, module2) {
+    var rateName = (windowMinutes) => windowMinutes === 1 ? "APM" : `AP${windowMinutes}M`;
+    module2.exports = rateName;
+  }
+});
 
-	onClose() {
-		this.contentEl.empty();
-	}
-}
+// src/apm/touchedCards.js
+var require_touchedCards = __commonJS({
+  "src/apm/touchedCards.js"(exports2, module2) {
+    function touchedCards(before, after) {
+      const out = [];
+      for (const [id, v] of after) if (before.get(id) !== v) out.push(id);
+      for (const id of before.keys()) if (!after.has(id)) out.push(id);
+      return out;
+    }
+    module2.exports = touchedCards;
+  }
+});
 
-// Names under a text field that contain what is typed (all of them when it is empty); picking one calls `onPick`.
-class NameSuggest extends AbstractInputSuggest {
-	constructor(app, inputEl, names, onPick) {
-		super(app, inputEl);
-		this.names = names;
-		this.onPick = onPick;
-	}
+// src/apm/unitOf.js
+var require_unitOf = __commonJS({
+  "src/apm/unitOf.js"(exports2, module2) {
+    var unitOf = (windowMinutes) => `cards/${windowMinutes}`;
+    module2.exports = unitOf;
+  }
+});
 
-	getSuggestions(q) {
-		q = q.trim().toLowerCase();
-		return this.names.filter(n => n.toLowerCase().includes(q)).sort((a, b) => a.localeCompare(b));
-	}
+// src/apm/ApmCounter.js
+var require_ApmCounter = __commonJS({
+  "src/apm/ApmCounter.js"(exports2, module2) {
+    var { INPUT_MS, MINUTE_MS, SAVE_EVERY_MS } = require_constants2();
+    var band = require_band();
+    var cardsOf = require_cardsOf();
+    var rateName = require_rateName();
+    var touchedCards = require_touchedCards();
+    var unitOf = require_unitOf();
+    var ApmCounter = class {
+      // plugin: the Kanvas board plugin (registerEvent, registerDomEvent, registerInterval, addStatusBarItem, activeCanvas, app);
+      // save(): writes the plugin's data.json, with this.settings in it.
+      constructor(plugin, settings, save) {
+        this.plugin = plugin;
+        this.app = plugin.app;
+        this.settings = settings;
+        this.save = save;
+        this.touched = /* @__PURE__ */ new Map();
+        this.snapshots = /* @__PURE__ */ new Map();
+        this.lastAction = 0;
+        this.sessionStart = 0;
+        this.lastInput = 0;
+        this.lastSave = 0;
+        this.dirty = false;
+      }
+      load() {
+        const { plugin } = this;
+        this.el = plugin.addStatusBarItem();
+        this.el.addClass("apm-counter");
+        const listen = (win) => {
+          const input = () => {
+            this.lastInput = Date.now();
+          };
+          plugin.registerDomEvent(win, "keydown", input, { capture: true, passive: true });
+          plugin.registerDomEvent(win, "mousedown", input, { capture: true, passive: true });
+        };
+        listen(window);
+        plugin.registerEvent(this.app.workspace.on("window-open", (w) => listen(w.win)));
+        plugin.registerEvent(this.app.workspace.on("active-leaf-change", () => this.refresh()));
+        this.app.workspace.onLayoutReady(async () => {
+          for (const f of this.app.vault.getFiles()) if (f.extension === "canvas") await this.snapshot(f);
+          plugin.registerEvent(this.app.vault.on("modify", (f) => this.onModify(f)));
+          plugin.registerEvent(this.app.vault.on("rename", (f, old) => {
+            if (this.snapshots.has(old)) {
+              this.snapshots.set(f.path, this.snapshots.get(old));
+              this.snapshots.delete(old);
+            }
+          }));
+        });
+        plugin.registerInterval(window.setInterval(() => this.refresh(), 1e3));
+        this.refresh();
+      }
+      async unload() {
+        if (this.dirty) await this.save();
+      }
+      // Returns the file's cards, or null when it can't be read as a canvas right now (a half-written file).
+      async snapshot(file) {
+        try {
+          const cards = cardsOf(await this.app.vault.read(file));
+          this.snapshots.set(file.path, cards);
+          return cards;
+        } catch {
+          return null;
+        }
+      }
+      async onModify(file) {
+        if (file.extension !== "canvas") return;
+        const before = this.snapshots.get(file.path);
+        const after = await this.snapshot(file);
+        if (!before || !after) return;
+        const now = Date.now();
+        if (now - this.lastInput > INPUT_MS || this.app.workspace.getActiveFile()?.path !== file.path) return;
+        this.record(touchedCards(before, after).map((id) => `${file.path}#${id}`), now);
+      }
+      record(keys, now = Date.now()) {
+        if (!keys.length) return;
+        for (const k of keys) this.touched.set(k, now);
+        if (now - this.lastAction > this.settings.idleMinutes * MINUTE_MS) this.sessionStart = now;
+        this.lastAction = now;
+        this.refresh(now);
+      }
+      pace(now = Date.now()) {
+        const windowMs = this.settings.windowMinutes * MINUTE_MS;
+        for (const [k, t] of this.touched) if (t <= now - windowMs) this.touched.delete(k);
+        return this.touched.size;
+      }
+      isIdle(now) {
+        if (now - this.lastAction > this.settings.idleMinutes * MINUTE_MS) return true;
+        const windows = [window, ...[...this.app.workspace.floatingSplit?.children ?? []].map((c) => c.win)];
+        return !windows.some((w) => w && w.document.hasFocus());
+      }
+      refresh(now = Date.now()) {
+        const pace = this.pace(now);
+        const s = this.settings;
+        if (pace > s.pb) {
+          s.pb = pace;
+          s.pbDate = new Date(now).toISOString().slice(0, 10);
+          this.dirty = true;
+        }
+        if (this.dirty && now - this.lastSave >= SAVE_EVERY_MS) {
+          this.dirty = false;
+          this.lastSave = now;
+          this.save();
+        }
+        const shown = !!this.plugin.activeCanvas();
+        if (this.shown !== shown) {
+          this.el.toggle(shown);
+          this.shown = shown;
+        }
+        if (!shown) return;
+        const state = this.isIdle(now) ? "idle" : band(pace, s.pb, s.lowPercent, now - this.sessionStart < s.windowMinutes * MINUTE_MS);
+        if (this.state !== state) {
+          if (this.state) this.el.removeClass("apm-" + this.state);
+          this.el.addClass("apm-" + state);
+          this.state = state;
+        }
+        const text = `${pace} ${rateName(s.windowMinutes)} \xB7 PB ${s.pb}`;
+        if (this.text !== text) {
+          this.el.setText(text);
+          this.text = text;
+          const what = `Cards touched in the last ${s.windowMinutes} min.`;
+          this.el.setAttribute("aria-label", s.pbDate ? `${what} Personal best set ${s.pbDate}.` : what);
+        }
+      }
+      async resetPb() {
+        this.settings.pb = 0;
+        this.settings.pbDate = "";
+        this.touched.clear();
+        this.dirty = false;
+        await this.save();
+        this.refresh();
+      }
+      async setWindow(minutes) {
+        this.settings.windowMinutes = minutes;
+        this.settings.unit = unitOf(minutes);
+        await this.resetPb();
+      }
+    };
+    module2.exports = ApmCounter;
+  }
+});
 
-	renderSuggestion(name, el) {
-		el.setText(name);
-		el.createSpan({ cls: 'canvas-board-key', text: 'overwrite' });
-	}
+// src/board/constants.js
+var require_constants3 = __commonJS({
+  "src/board/constants.js"(exports2, module2) {
+    var path = require("path");
+    var ROOT = path.resolve(__dirname, "..", "..", "..");
+    var DEFAULT_BOARD = "Board.canvas";
+    var SKIP_DIRS = /* @__PURE__ */ new Set([".git", ".obsidian", ".trash", "node_modules"]);
+    var COLORS = { red: "1", orange: "2", yellow: "3", green: "4", cyan: "5", purple: "6" };
+    var URGENCY = ["1", "3", "2", "5", "6", "4"];
+    var TEMPLATE_DIR = "Templates/Canvas";
+    var ARCHIVE_DIR = "Board notes/Archive";
+    var OBSIDIAN = ["obsidian", "C:\\Program Files\\Obsidian\\Obsidian.com", "/Applications/Obsidian.app/Contents/MacOS/Obsidian"];
+    var SIDES = { TB: ["bottom", "top"], LR: ["right", "left"], BT: ["top", "bottom"], RL: ["left", "right"] };
+    module2.exports = { ROOT, DEFAULT_BOARD, SKIP_DIRS, COLORS, URGENCY, TEMPLATE_DIR, ARCHIVE_DIR, OBSIDIAN, SIDES };
+  }
+});
 
-	selectSuggestion(name) {
-		this.onPick(name);
-		this.close();
-	}
-}
+// src/board/applyOps.js
+var require_applyOps = __commonJS({
+  "src/board/applyOps.js"(exports2, module2) {
+    function applyOps(d, ops) {
+      const retyped = [];
+      for (const o of ops) {
+        if (o.op === "set") {
+          const n = d.nodes.find((n2) => n2.id === o.id);
+          if (!n) throw new Error("no node " + o.id);
+          if (o.color !== void 0) {
+            if (o.color) n.color = o.color;
+            else delete n.color;
+          }
+          if (o.file !== void 0) {
+            if (n.type !== "file") retyped.push(n.id);
+            n.type = "file";
+            n.file = o.file;
+            delete n.text;
+          }
+          if (o.text !== void 0) {
+            if (n.type !== "text") retyped.push(n.id);
+            n.type = "text";
+            n.text = o.text;
+            delete n.file;
+          }
+          for (const k of ["x", "y", "width", "height"]) if (o[k] !== void 0) n[k] = o[k];
+        } else if (o.op === "sides") {
+          const e = d.edges.find((e2) => e2.id === o.id);
+          if (e) {
+            e.fromSide = o.fromSide;
+            e.toSide = o.toSide;
+          }
+        } else if (o.op === "add") d.nodes.push(o.node);
+        else if (o.op === "remove") {
+          d.nodes = d.nodes.filter((n) => n.id !== o.id);
+          d.edges = d.edges.filter((e) => e.fromNode !== o.id && e.toNode !== o.id);
+        } else if (o.op === "edge") d.edges.push(o.edge);
+        else if (o.op === "retarget") {
+          const e = d.edges.find((e2) => e2.id === o.id);
+          if (e) {
+            e.fromNode = o.fromNode;
+            e.toNode = o.toNode;
+          }
+        } else if (o.op === "ends") {
+          const e = d.edges.find((e2) => e2.id === o.id);
+          if (e) {
+            e.fromEnd = o.fromEnd;
+            e.toEnd = o.toEnd;
+          }
+        } else if (o.op === "unedge") d.edges = d.edges.filter((e) => e.id !== o.id);
+      }
+      return retyped;
+    }
+    module2.exports = applyOps;
+  }
+});
 
-// Fuzzy pick from `items` (shown by `label`); Enter calls `onChoose`.
-class Picker extends FuzzySuggestModal {
-	constructor(app, placeholder, items, label, onChoose) {
-		super(app);
-		this.setPlaceholder(placeholder);
-		this.items = items;
-		this.label = label;
-		this.onChoose = onChoose;
-	}
+// src/board/archiveDir.js
+var require_archiveDir = __commonJS({
+  "src/board/archiveDir.js"(exports2, module2) {
+    var { ARCHIVE_DIR } = require_constants3();
+    var path = require("path");
+    function archiveDir(board, s = {}) {
+      if (s.archiveMode === "global") return String(s.archiveFolder || ARCHIVE_DIR).trim().replace(/[/\\]+$/, "") || ARCHIVE_DIR;
+      const b = String(board).replace(/\\/g, "/"), dir = path.posix.dirname(b);
+      return (dir === "." ? "" : dir + "/") + path.posix.basename(b, ".canvas") + " archive";
+    }
+    module2.exports = archiveDir;
+  }
+});
 
-	getItems() { return this.items; }
-	getItemText(item) { return this.label(item); }
-	onChooseItem(item) { Promise.resolve(this.onChoose(item)).catch(e => new Notice(`Kanvas board: ${e.message}`)); }
-}
+// src/board/noteName.js
+var require_noteName = __commonJS({
+  "src/board/noteName.js"(exports2, module2) {
+    var noteName = (text) => (String(text).split("\n").find((l) => l.trim()) || "Card").replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, "").replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/[#^|[\]*_`>:\\/"?<]/g, "").replace(/\s+/g, " ").trim().slice(0, 60).trim() || "Card";
+    module2.exports = noteName;
+  }
+});
 
-// Offsets of `query` in `text`, ignoring case.
-function matchOffsets(text, query) {
-	const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-	return Array.from(text.matchAll(re), m => m.index);
-}
+// src/board/yamlStr.js
+var require_yamlStr = __commonJS({
+  "src/board/yamlStr.js"(exports2, module2) {
+    var yamlStr = (s) => JSON.stringify(String(s));
+    module2.exports = yamlStr;
+  }
+});
 
-// Frames every `query` in the text under `root`, as search does in notes. A card being edited is left alone:
-// CodeMirror owns its DOM. Returns the frames.
-function frameText(root, query) {
-	const doc = root.ownerDocument;
-	const walker = doc.createTreeWalker(root, 4); // text nodes
-	const texts = [];
-	while (walker.nextNode()) texts.push(walker.currentNode);
-	const frames = [];
-	for (const node of texts) {
-		if (node.parentElement.closest('.cm-editor, input, textarea')) continue;
-		const here = [];
-		// from the end, so the offsets before stay valid
-		for (const at of matchOffsets(node.data, query).reverse()) {
-			const hit = node.splitText(at);
-			hit.splitText(query.length);
-			const frame = doc.createElement('span');
-			frame.className = 'canvas-board-find-text';
-			hit.replaceWith(frame);
-			frame.append(hit);
-			here.unshift(frame);
-		}
-		frames.push(...here);
-	}
-	return frames;
-}
+// src/board/archiveNote.js
+var require_archiveNote = __commonJS({
+  "src/board/archiveNote.js"(exports2, module2) {
+    var noteName = require_noteName();
+    var yamlStr = require_yamlStr();
+    function archiveNote(d, id, board, date, contexts = ["G&A"]) {
+      const n = d.nodes.find((n2) => n2.id === id);
+      if (!n) throw new Error("no node " + id);
+      const edges = d.edges.filter((e) => e.fromNode === id || e.toNode === id).map((e) => yamlStr([e.id, e.fromNode, e.fromSide || "", e.toNode, e.toSide || "", e.label || ""].join(" | ")));
+      const fm = [
+        "---",
+        "context:",
+        ...contexts.map((c) => `  - ${c}`),
+        `archived-from: "[[${board}]]"`,
+        `archived: ${date}`,
+        `card-id: ${yamlStr(n.id)}`,
+        `card-type: ${n.type}`,
+        ...n.type === "file" ? [`card-file: ${yamlStr(n.file)}`] : [],
+        ...n.type === "link" ? [`card-url: ${yamlStr(n.url)}`] : [],
+        `x: ${n.x}`,
+        `y: ${n.y}`,
+        `width: ${n.width}`,
+        `height: ${n.height}`,
+        `color: ${yamlStr(n.color || "")}`,
+        edges.length ? "edges:" : "edges: []",
+        ...edges.map((e) => `  - ${e}`),
+        "---",
+        ""
+      ].join("\n");
+      const body = n.type === "text" ? n.text : n.type === "file" ? `[[${n.file}]]` : n.type === "link" ? n.url : n.label || "";
+      return { name: noteName(n.type === "text" ? n.text : n.file || n.url || n.label), content: fm + body + "\n", ops: [{ op: "remove", id }] };
+    }
+    module2.exports = archiveNote;
+  }
+});
 
-function clearFrames(root) {
-	for (const frame of root.querySelectorAll('.canvas-board-find-text')) {
-		const parent = frame.parentNode;
-		frame.replaceWith(...frame.childNodes);
-		parent.normalize();
-	}
-}
+// src/board/bounds.js
+var require_bounds = __commonJS({
+  "src/board/bounds.js"(exports2, module2) {
+    var bounds = (ns) => {
+      const x = Math.min(...ns.map((n) => n.x)), y = Math.min(...ns.map((n) => n.y));
+      return { x, y, w: Math.max(...ns.map((n) => n.x + n.width)) - x, h: Math.max(...ns.map((n) => n.y + n.height)) - y };
+    };
+    module2.exports = bounds;
+  }
+});
 
-// Find bar at the top of a canvas, built with the classes of the notes' find bar (document-search-*) so it looks
-// the same: matches are the cards whose text (or file, link, group label) contains the query, ignoring case, in
-// reading order (top to bottom, then left to right). Typing jumps to the first one; Enter / Shift+Enter or the
-// arrows go to the next / previous (it wraps), Alt+Enter or the "all" button selects every match and zooms to them
-// all, Escape or the cross closes. Every match is outlined, the current one selected and zoomed to (a hidden one
-// clears filter and folds first). The text found is framed inside the cards, like search in notes; cards render when
-// they come into view, so an observer frames them again while there are matches. Keys typed in the field never reach
-// the canvas.
-class FindBar {
-	constructor(plugin, canvas) {
-		this.plugin = plugin;
-		this.canvas = canvas;
-		this.matches = [];
-		this.index = -1;
-		this.framed = [];
-		this.observer = new MutationObserver(() => {
-			window.clearTimeout(this.frameTimer);
-			this.frameTimer = window.setTimeout(() => this.frame(), 100);
-		});
-		const el = this.el = canvas.wrapperEl.createDiv({ cls: 'document-search-container canvas-board-find' });
-		for (const ev of ['pointerdown', 'mousedown', 'wheel', 'dblclick', 'contextmenu']) el.addEventListener(ev, e => e.stopPropagation());
-		const box = el.createDiv({ cls: 'document-search' });
-		const field = this.field = box.createDiv({ cls: 'search-input-container document-search-input' });
-		this.input = field.createEl('input', { type: 'search', attr: { placeholder: 'Find…', spellcheck: 'false' } });
-		this.countEl = field.createDiv({ cls: 'document-search-count' }); // inside the field, as in notes (absolute)
-		const buttons = box.createDiv({ cls: 'document-search-buttons' });
-		const button = (icon, label, fn) => {
-			const b = buttons.createEl('button', { cls: 'document-search-button clickable-icon', attr: { 'aria-label': label } });
-			setIcon(b, icon);
-			b.addEventListener('click', fn);
-		};
-		button('arrow-up', 'Previous (Shift+Enter)', () => this.step(-1));
-		button('arrow-down', 'Next (Enter)', () => this.step(1));
-		const all = buttons.createEl('button', { cls: 'document-search-button', text: 'All', attr: { 'aria-label': 'Select all matches (Alt+Enter)' } });
-		all.addEventListener('click', () => this.selectAll());
-		const close = box.createDiv({ cls: 'document-search-close-button clickable-icon', attr: { 'aria-label': 'Close (Escape)' } });
-		setIcon(close, 'x');
-		close.addEventListener('click', () => this.close());
-		// Own key scope while the field has focus: canvas keys (Delete, arrows) stay off, global hotkeys still work.
-		this.scope = new Scope(plugin.app.scope);
-		this.input.addEventListener('keydown', e => {
-			if (e.key === 'Enter' && e.altKey) { e.preventDefault(); this.selectAll(); }
-			else if (e.key === 'Enter') { e.preventDefault(); this.step(e.shiftKey ? -1 : 1); }
-			else if (e.key === 'Escape') { e.preventDefault(); this.close(); }
-		});
-		this.input.addEventListener('focus', () => plugin.app.keymap.pushScope(this.scope));
-		this.input.addEventListener('blur', () => plugin.app.keymap.popScope(this.scope));
-		this.input.addEventListener('input', () => this.search());
-		el.hide();
-	}
+// src/board/newId.js
+var require_newId = __commonJS({
+  "src/board/newId.js"(exports2, module2) {
+    var newId = () => [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join("");
+    module2.exports = newId;
+  }
+});
 
-	open() {
-		this.el.show();
-		this.input.focus();
-		this.input.select();
-		if (this.input.value) this.search();
-	}
+// src/board/withGroupMembers.js
+var require_withGroupMembers = __commonJS({
+  "src/board/withGroupMembers.js"(exports2, module2) {
+    function withGroupMembers(d, ids) {
+      const pick = new Set(ids);
+      for (const g of d.nodes.filter((n) => n.type === "group" && pick.has(n.id)))
+        for (const n of d.nodes) if (n.x >= g.x && n.y >= g.y && n.x + n.width <= g.x + g.width && n.y + n.height <= g.y + g.height) pick.add(n.id);
+      return pick;
+    }
+    module2.exports = withGroupMembers;
+  }
+});
 
-	close() {
-		this.mark([]);
-		this.el.hide();
-		this.input.blur();
-	}
+// src/board/collapseOps.js
+var require_collapseOps = __commonJS({
+  "src/board/collapseOps.js"(exports2, module2) {
+    var bounds = require_bounds();
+    var newId = require_newId();
+    var withGroupMembers = require_withGroupMembers();
+    function collapseOps(d, ids, file, label) {
+      const pick = withGroupMembers(d, ids);
+      const moving = d.nodes.filter((n) => pick.has(n.id));
+      if (!moving.length) throw new Error("nothing to collapse");
+      const b = bounds(moving);
+      const sub = {
+        nodes: moving.map((n) => ({ ...n, x: n.x - b.x, y: n.y - b.y })),
+        edges: d.edges.filter((e) => pick.has(e.fromNode) && pick.has(e.toNode))
+      };
+      const W = 320, H = 60;
+      const card = {
+        id: newId(),
+        type: "text",
+        text: `[[${file}|${label}]]`,
+        x: Math.round(b.x + (b.w - W) / 2),
+        y: Math.round(b.y + (b.h - H) / 2),
+        width: W,
+        height: H
+      };
+      const ops = [{ op: "add", node: card }];
+      for (const e of d.edges) {
+        const from = pick.has(e.fromNode), to = pick.has(e.toNode);
+        if (from !== to) ops.push({ op: "retarget", id: e.id, fromNode: from ? card.id : e.fromNode, toNode: to ? card.id : e.toNode });
+      }
+      for (const n of moving) ops.push({ op: "remove", id: n.id });
+      return { ops, sub, id: card.id };
+    }
+    module2.exports = collapseOps;
+  }
+});
 
-	search() {
-		const q = this.input.value.trim().toLowerCase();
-		const p = this.plugin;
-		this.matches = !q ? [] : [...this.canvas.nodes.values()]
-			.filter(n => p.cardText(n).toLowerCase().includes(q))
-			.sort((a, b) => a.y - b.y || a.x - b.x);
-		this.index = this.matches.length ? 0 : -1;
-		this.mark(this.matches);
-		this.show();
-	}
+// src/board/byReading.js
+var require_byReading = __commonJS({
+  "src/board/byReading.js"(exports2, module2) {
+    var byReading = (a, b) => a.y - b.y || a.x - b.x;
+    module2.exports = byReading;
+  }
+});
 
-	step(d) {
-		if (!this.matches.length) return;
-		this.index = (this.index + d + this.matches.length) % this.matches.length;
-		this.show();
-	}
+// src/board/expandOps.js
+var require_expandOps = __commonJS({
+  "src/board/expandOps.js"(exports2, module2) {
+    var bounds = require_bounds();
+    var byReading = require_byReading();
+    var newId = require_newId();
+    function expandOps(d, id, sub, { group } = {}) {
+      const card = d.nodes.find((n) => n.id === id);
+      if (!card) throw new Error("no node " + id);
+      if (!sub.nodes.length) throw new Error("empty subcanvas");
+      const taken = new Set(d.nodes.map((n) => n.id).concat(d.edges.map((e) => e.id)));
+      const ids = new Map(sub.nodes.map((n) => [n.id, taken.has(n.id) ? newId() : n.id]));
+      const b = bounds(sub.nodes);
+      const others = d.nodes.filter((n) => n.id !== id);
+      let ox = Math.round(card.x + (card.width - b.w) / 2) - b.x;
+      const oy = Math.round(card.y + (card.height - b.h) / 2) - b.y;
+      const hits = () => sub.nodes.some((p) => others.some((n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
+      for (let k = 0; k < 200 && hits(); k++) ox += 40;
+      const nodes = sub.nodes.map((n) => ({ ...n, id: ids.get(n.id), x: n.x + ox, y: n.y + oy }));
+      let first = nodes.filter((n) => n.type !== "group").sort(byReading)[0] || nodes[0];
+      const ops = [];
+      if (group) {
+        const P = 30;
+        const gx = Math.min(...nodes.map((n) => n.x)) - P, gy = Math.min(...nodes.map((n) => n.y)) - P;
+        first = {
+          id: newId(),
+          type: "group",
+          label: group,
+          x: gx,
+          y: gy,
+          width: Math.max(...nodes.map((n) => n.x + n.width)) + P - gx,
+          height: Math.max(...nodes.map((n) => n.y + n.height)) + P - gy
+        };
+        ops.push({ op: "add", node: first });
+      }
+      ops.push(...nodes.map((node) => ({ op: "add", node })));
+      for (const e of sub.edges) ops.push({ op: "edge", edge: { ...e, id: taken.has(e.id) ? newId() : e.id, fromNode: ids.get(e.fromNode), toNode: ids.get(e.toNode) } });
+      for (const e of d.edges) if (e.fromNode === id || e.toNode === id)
+        ops.push({ op: "retarget", id: e.id, fromNode: e.fromNode === id ? first.id : e.fromNode, toNode: e.toNode === id ? first.id : e.toNode });
+      ops.push({ op: "remove", id });
+      return group ? Object.assign(ops, { group: first.id }) : ops;
+    }
+    module2.exports = expandOps;
+  }
+});
 
-	// Every match selected (so it can be moved, colored...) and in view; Enter goes back to one at a time.
-	selectAll() {
-		const { canvas, plugin, matches } = this;
-		if (!matches.length) return;
-		if (matches.some(n => plugin.isHidden(canvas, n))) { plugin.showAll(canvas); new Notice('Kanvas board: filter and folds cleared to show the cards'); }
-		for (const n of matches) n.nodeEl.addClass('is-current');
-		canvas.updateSelection(() => { canvas.selection.clear(); for (const n of matches) canvas.selection.add(n); });
-		canvas.zoomToSelection();
-		this.countEl.setText(`all ${matches.length}`);
-		this.input.focus();
-	}
+// src/board/fitHeight.js
+var require_fitHeight = __commonJS({
+  "src/board/fitHeight.js"(exports2, module2) {
+    function fitHeight(text, w) {
+      const perLine = Math.max(10, Math.floor((w - 40) / 8));
+      const lines = String(text || "").split("\n").reduce((s, l) => s + Math.max(1, Math.ceil(l.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").length / perLine)), 0);
+      return Math.max(60, lines * 26 + 34);
+    }
+    module2.exports = fitHeight;
+  }
+});
 
-	mark(nodes) {
-		for (const n of this.canvas.nodes.values()) n.nodeEl.removeClass('canvas-board-find-match', 'is-current');
-		for (const n of nodes) n.nodeEl.addClass('canvas-board-find-match');
-		this.frame(nodes);
-	}
+// src/board/extractOps.js
+var require_extractOps = __commonJS({
+  "src/board/extractOps.js"(exports2, module2) {
+    var fitHeight = require_fitHeight();
+    var newId = require_newId();
+    function extractOps(d, id, part, from) {
+      const card = d.nodes.find((n) => n.id === id);
+      if (!card || card.type !== "text") throw new Error("extract takes one text card");
+      const at = from !== void 0 && card.text.slice(from, from + part.length) === part ? from : card.text.indexOf(part);
+      if (!part.trim() || at < 0) throw new Error("text not found in the card");
+      const left = (card.text.slice(0, at) + card.text.slice(at + part.length)).replace(/\n{3,}/g, "\n\n").trim();
+      const text = part.trim();
+      const height = fitHeight(text, card.width);
+      let y = card.y;
+      while (d.nodes.some((n) => n.x === card.x + card.width + 40 && n.y === y)) y += 40;
+      const node = { id: newId(), type: "text", text, x: card.x + card.width + 40, y, width: card.width, height };
+      if (card.color) node.color = card.color;
+      return [{ op: "set", id, text: left, height: fitHeight(left, card.width) }, { op: "add", node }];
+    }
+    module2.exports = extractOps;
+  }
+});
 
-	// Frames the query in the given cards (default: the same ones again) and watches for cards rendering.
-	frame(nodes = this.framed) {
-		const root = n => n.contentEl || n.nodeEl; // not nodeEl when there is a choice: it also holds the fold badge
-		this.observer.disconnect();
-		for (const n of this.framed) clearFrames(root(n));
-		this.framed = nodes;
-		const q = this.input.value.trim();
-		for (const n of nodes) {
-			const frames = frameText(root(n), q);
-			if (n === this.revealing && frames[0]) { this.reveal(frames[0]); this.revealing = null; }
-		}
-		if (nodes.length) this.observer.observe(this.canvas.wrapperEl, { childList: true, subtree: true });
-	}
+// src/board/layoutOps.js
+var require_layoutOps = __commonJS({
+  "src/board/layoutOps.js"(exports2, module2) {
+    var { SIDES } = require_constants3();
+    var fitHeight = require_fitHeight();
+    function layoutOps(d, { ids, dir = "TB", fit = false, dagre, flow = "out" }) {
+      const cards = d.nodes.filter((n) => n.type !== "group");
+      const pick = new Set(ids && ids.length ? ids : cards.map((n) => n.id));
+      const moving = cards.filter((n) => pick.has(n.id));
+      const fixed = cards.filter((n) => !pick.has(n.id));
+      if (!moving.length) return [];
+      const g = new dagre.graphlib.Graph();
+      g.setGraph({ rankdir: dir, nodesep: 40, ranksep: 80, marginx: 0, marginy: 0 });
+      g.setDefaultEdgeLabel(() => ({}));
+      const size = (n) => ({ width: n.width, height: fit && n.type === "text" ? fitHeight(n.text, n.width) : n.height });
+      for (const n of moving) g.setNode(n.id, size(n));
+      const inner = d.edges.filter((e) => pick.has(e.fromNode) && pick.has(e.toNode));
+      const back = (e) => flow === "in" || /depends on/i.test(e.label || "");
+      for (const e of inner) back(e) ? g.setEdge(e.toNode, e.fromNode) : g.setEdge(e.fromNode, e.toNode);
+      dagre.layout(g);
+      const box = (ns) => ns.reduce((b2, n) => ({ x0: Math.min(b2.x0, n.x), y0: Math.min(b2.y0, n.y), x1: Math.max(b2.x1, n.x + n.width), y1: Math.max(b2.y1, n.y + n.height) }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+      const placed = moving.map((n) => {
+        const p = g.node(n.id);
+        return { id: n.id, x: Math.round(p.x - p.width / 2), y: Math.round(p.y - p.height / 2), width: p.width, height: p.height };
+      });
+      const b = box(placed), was = box(moving);
+      const cx = Math.round((was.x0 + was.x1 - b.x0 - b.x1) / 2), cy = Math.round((was.y0 + was.y1 - b.y0 - b.y1) / 2);
+      let ox = cx, oy = cy;
+      const hits = () => placed.some((p) => fixed.some((n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
+      for (let k = 1; k <= 400 && hits(); k++) {
+        const step = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 40;
+        if (dir === "LR" || dir === "RL") oy = cy + step;
+        else ox = cx + step;
+      }
+      const ops = placed.map((p) => ({ op: "set", id: p.id, x: p.x + ox, y: p.y + oy, width: p.width, height: p.height }));
+      const [fromSide, toSide] = SIDES[dir];
+      for (const e of inner) ops.push(back(e) ? { op: "sides", id: e.id, fromSide: toSide, toSide: fromSide } : { op: "sides", id: e.id, fromSide, toSide });
+      return ops;
+    }
+    module2.exports = layoutOps;
+  }
+});
 
-	// Scrolls a long card to its first match. By hand: scrollIntoView would also scroll the canvas itself.
-	reveal(frame) {
-		const box = frame.closest('.markdown-preview-view');
-		if (!box) return;
-		const at = frame.getBoundingClientRect(), view = box.getBoundingClientRect();
-		const zoom = view.height / box.offsetHeight || 1; // on-screen sizes are scaled by the canvas zoom, scrollTop is not
-		box.scrollTop += (at.top - view.top) / zoom - box.clientHeight / 2;
-	}
+// src/board/mostUrgent.js
+var require_mostUrgent = __commonJS({
+  "src/board/mostUrgent.js"(exports2, module2) {
+    var { URGENCY } = require_constants3();
+    var mostUrgent = (colors) => URGENCY.find((c) => colors.includes(c)) || "";
+    module2.exports = mostUrgent;
+  }
+});
 
-	show() {
-		const { canvas, plugin } = this;
-		const q = this.input.value.trim();
-		this.countEl.setText(!q ? '' : this.matches.length ? `${this.index + 1} / ${this.matches.length}` : 'No results');
-		this.field.toggleClass('mod-no-match', !!q && !this.matches.length);
-		const node = this.matches[this.index];
-		if (!node) return;
-		for (const n of this.matches) n.nodeEl.toggleClass('is-current', n === node);
-		if (plugin.isHidden(canvas, node)) { plugin.showAll(canvas); new Notice('Kanvas board: filter and folds cleared to show the card'); }
-		canvas.selectOnly(node);
-		canvas.zoomToSelection();
-		this.revealing = node;
-		this.frame();
-		this.input.focus();
-	}
+// src/board/mergeOps.js
+var require_mergeOps = __commonJS({
+  "src/board/mergeOps.js"(exports2, module2) {
+    var byReading = require_byReading();
+    var fitHeight = require_fitHeight();
+    var mostUrgent = require_mostUrgent();
+    function mergeOps(d, ids) {
+      const cards = d.nodes.filter((n) => ids.includes(n.id)).sort(byReading);
+      if (cards.length < 2) throw new Error("merge needs 2+ cards");
+      if (cards.some((n) => n.type !== "text")) throw new Error("merge takes text cards only");
+      const [keep, ...rest] = cards;
+      const gone = new Set(rest.map((n) => n.id));
+      const all = new Set(cards.map((n) => n.id));
+      const text = cards.map((n) => n.text.trim()).join("\n\n");
+      const width = Math.max(...cards.map((n) => n.width));
+      const ops = [{ op: "set", id: keep.id, text, color: mostUrgent(cards.map((n) => n.color || "")), width, height: fitHeight(text, width) }];
+      const center = (n) => [n.x + n.width / 2, n.y + n.height / 2];
+      const dist = (a, b) => Math.hypot(center(a)[0] - center(b)[0], center(a)[1] - center(b)[1]);
+      const twoWay = (e) => e.fromEnd === "arrow" && e.toEnd !== "none";
+      const byOther = /* @__PURE__ */ new Map();
+      for (const e of d.edges) {
+        if (!all.has(e.fromNode) && !all.has(e.toNode)) continue;
+        if (all.has(e.fromNode) && all.has(e.toNode)) {
+          if (gone.has(e.fromNode) || gone.has(e.toNode)) ops.push({ op: "unedge", id: e.id });
+          continue;
+        }
+        const out = all.has(e.fromNode), other = out ? e.toNode : e.fromNode;
+        const len = dist(d.nodes.find((n) => n.id === (out ? e.fromNode : e.toNode)), d.nodes.find((n) => n.id === other) || keep);
+        if (!byOther.has(other)) byOther.set(other, []);
+        byOther.get(other).push({ e, out, len });
+      }
+      for (const list of byOther.values()) {
+        list.sort((a, b) => a.len - b.len);
+        const best = list.find((x) => twoWay(x.e)) || list[0];
+        const both = list.some((x) => x.out) && list.some((x) => !x.out);
+        for (const x of list) if (x !== best) ops.push({ op: "unedge", id: x.e.id });
+        const e = best.e;
+        if (gone.has(e.fromNode) || gone.has(e.toNode))
+          ops.push({ op: "retarget", id: e.id, fromNode: gone.has(e.fromNode) ? keep.id : e.fromNode, toNode: gone.has(e.toNode) ? keep.id : e.toNode });
+        if (both && !twoWay(e)) ops.push({ op: "ends", id: e.id, fromEnd: "arrow", toEnd: "arrow" });
+      }
+      for (const n of rest) ops.push({ op: "remove", id: n.id });
+      return ops;
+    }
+    module2.exports = mergeOps;
+  }
+});
 
-	destroy() {
-		this.mark([]);
-		window.clearTimeout(this.frameTimer);
-		this.plugin.app.keymap.popScope(this.scope);
-		this.el.remove();
-	}
-}
+// src/board/plainLines.js
+var require_plainLines = __commonJS({
+  "src/board/plainLines.js"(exports2, module2) {
+    function plainLines(text) {
+      const name = (n) => n.replace(/\.(md|canvas)$/, "").split("/").pop();
+      return String(text || "").split("\n").map((l) => l.replace(/!?\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(/!?\[\[([^\]#]*)#\^?([^\]]+)\]\]/g, (_, n, h) => n ? `${name(n)} \u203A ${h}` : h).replace(/!?\[\[([^\]]+)\]\]/g, (_, n) => name(n)).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/, "").replace(/\*\*|__|~~|==|`/g, "").replace(/(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g, "$1$2").replace(/\s+/g, " ").trim()).filter(Boolean);
+    }
+    module2.exports = plainLines;
+  }
+});
 
-// Filter pane in the top-left corner of a canvas, like Graph view's filters: closed, a filter button; open,
-// one dot per color and one chip per tag on the canvas, all shown at first (click: hide, again: show), the
-// folded cards, reset buttons and Show all. Every change applies at once. Shift-click on a color, tag or folded card
-// adds its visible cards to the selection instead.
-class FilterPane {
-	constructor(plugin, canvas) {
-		this.plugin = plugin;
-		this.canvas = canvas;
-		this.isOpen = false;
-		this.key = '';
-		const el = this.el = canvas.wrapperEl.createDiv({ cls: 'canvas-board-pane' });
-		// Clicks and scrolls stay in the pane (no canvas pan, no deselect).
-		for (const ev of ['pointerdown', 'mousedown', 'wheel', 'dblclick', 'contextmenu']) el.addEventListener(ev, e => e.stopPropagation());
-		const head = el.createDiv({ cls: 'canvas-board-pane-head' });
-		const btn = head.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': plugin.keyedLabel('Filter cards', 'filter'), 'data-tooltip-position': 'right' } });
-		setIcon(btn, 'filter');
-		btn.addEventListener('click', () => this.toggle());
-		this.badge = head.createSpan({ cls: 'canvas-board-pane-badge' });
-		this.body = el.createDiv({ cls: 'canvas-board-pane-body' });
-		const v = () => plugin.viewState(canvas);
-		const apply = () => plugin.refreshView(canvas);
+// src/board/relinkText.js
+var require_relinkText = __commonJS({
+  "src/board/relinkText.js"(exports2, module2) {
+    var path = require("path");
+    function relinkText(text, hits, to) {
+      return (text || "").replace(/!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g, (m, target, sub, alias) => hits(target.trim()) ? to(alias || path.posix.basename(target.trim()).replace(/\.canvas$/, "")) : m);
+    }
+    module2.exports = relinkText;
+  }
+});
 
-		const section = (title, reset) => {
-			const s = this.body.createDiv({ cls: 'canvas-board-pane-section' });
-			const h = s.createDiv({ cls: 'canvas-board-pane-heading' });
-			h.createSpan({ text: title });
-			if (reset) {
-				const r = h.createSpan({ cls: 'clickable-icon canvas-board-pane-reset', attr: { 'aria-label': 'Reset' } });
-				setIcon(r, 'rotate-ccw');
-				r.addEventListener('click', () => { reset(); apply(); });
-			}
-			return s;
-		};
+// src/board/restoreOps.js
+var require_restoreOps = __commonJS({
+  "src/board/restoreOps.js"(exports2, module2) {
+    var newId = require_newId();
+    function restoreOps(d, src) {
+      const fm = (src.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) || [])[1];
+      if (!fm || !/^archived-from:/m.test(fm)) throw new Error("not an archived card note");
+      const get = (k) => {
+        const m = new RegExp(`^${k}: (.*)$`, "m").exec(fm);
+        if (!m) return void 0;
+        const v = m[1].trim();
+        return v.startsWith('"') ? JSON.parse(v) : v;
+      };
+      const board = get("archived-from").replace(/^\[\[|\]\]$/g, "");
+      const body = src.slice(src.indexOf("---", 3) + 3).replace(/^\r?\n/, "").replace(/\s+$/, "");
+      const type = get("card-type") || "text";
+      const ids = new Set(d.nodes.map((n) => n.id));
+      const id = ids.has(get("card-id")) ? newId() : get("card-id");
+      const node = { id, type, x: Number(get("x")), y: Number(get("y")), width: Number(get("width")), height: Number(get("height")) };
+      if (type === "text") node.text = body;
+      if (type === "file") node.file = get("card-file");
+      if (type === "link") node.url = get("card-url");
+      if (get("color")) node.color = get("color");
+      const ops = [{ op: "add", node }];
+      const old = get("card-id");
+      const edgeIds = new Set(d.edges.map((e) => e.id));
+      for (const m of fm.matchAll(/^ {2}- (".*")$/gm)) {
+        const [eid, from, fromSide, to, toSide, label] = JSON.parse(m[1]).split(" | ");
+        const fromNode = from === old ? id : from, toNode = to === old ? id : to;
+        if (edgeIds.has(eid) || !(fromNode === id || ids.has(fromNode)) || !(toNode === id || ids.has(toNode))) continue;
+        const edge = { id: eid, fromNode, toNode };
+        if (fromSide) edge.fromSide = fromSide;
+        if (toSide) edge.toSide = toSide;
+        if (label) edge.label = label;
+        ops.push({ op: "edge", edge });
+      }
+      return { board, ops };
+    }
+    module2.exports = restoreOps;
+  }
+});
 
-		this.colorsEl = section('Colors', () => v().xcolors.clear()).createDiv({ cls: 'canvas-board-chips' });
-		this.tagsSection = section('Tags', () => v().xtags.clear());
-		this.tagsEl = this.tagsSection.createDiv({ cls: 'canvas-board-chips' });
+// src/board/splitText.js
+var require_splitText = __commonJS({
+  "src/board/splitText.js"(exports2, module2) {
+    function splitText(text, by) {
+      const h = /^h([1-6])$/.exec(by);
+      const starts = h ? new RegExp(`^#{${h[1]}} `) : by === "bullet" ? /^([-*+]|\d+[.)]) / : null;
+      const pieces = starts ? text.split("\n").reduce((acc, line) => {
+        if (starts.test(line) || !acc.length) acc.push([]);
+        acc[acc.length - 1].push(line);
+        return acc;
+      }, []).map((l) => l.join("\n")) : text.split(/\n\s*\n/);
+      return pieces.map((p) => p.trim()).filter(Boolean);
+    }
+    module2.exports = splitText;
+  }
+});
 
-		this.foldedSection = section('Folded', () => plugin.setFolds(canvas, new Map([...plugin.folds(canvas).keys()].map(id => [id, null]))));
-		this.foldedEl = this.foldedSection.createDiv({ cls: 'canvas-board-pane-list' });
+// src/board/splitOps.js
+var require_splitOps = __commonJS({
+  "src/board/splitOps.js"(exports2, module2) {
+    var fitHeight = require_fitHeight();
+    var newId = require_newId();
+    var splitText = require_splitText();
+    function splitOps(d, id, by = "paragraph") {
+      const card = d.nodes.find((n) => n.id === id);
+      if (!card || card.type !== "text") throw new Error("split takes one text card");
+      const pieces = splitText(card.text || "", by);
+      if (pieces.length < 2) throw new Error(`nothing to split by ${by}`);
+      let y = card.y;
+      return pieces.map((text, i) => {
+        const height = fitHeight(text, card.width);
+        const node = { ...card, id: i ? newId() : card.id, text, y, height };
+        y += height + 20;
+        return i ? { op: "add", node } : { op: "set", id, text, height };
+      });
+    }
+    module2.exports = splitOps;
+  }
+});
 
-		const foot = this.body.createDiv({ cls: 'canvas-board-pane-foot' });
-		const all = foot.createDiv({ cls: 'clickable-icon', attr: { 'aria-label': 'Unhide all (clear filter and folds)' } });
-		setIcon(all, 'eye');
-		all.addEventListener('click', () => plugin.showAll(canvas));
-		this.toggle(false);
-	}
+// src/board/templateOps.js
+var require_templateOps = __commonJS({
+  "src/board/templateOps.js"(exports2, module2) {
+    var newId = require_newId();
+    function templateOps(tpl, at) {
+      const nodes = tpl.nodes || [];
+      if (!nodes.length) throw new Error("empty template");
+      const x0 = Math.min(...nodes.map((n) => n.x)), y0 = Math.min(...nodes.map((n) => n.y));
+      const ids = new Map(nodes.map((n) => [n.id, newId()]));
+      const ops = nodes.map((n) => ({ op: "add", node: { ...n, id: ids.get(n.id), x: n.x - x0 + at.x, y: n.y - y0 + at.y } }));
+      for (const e of tpl.edges || []) if (ids.has(e.fromNode) && ids.has(e.toNode))
+        ops.push({ op: "edge", edge: { ...e, id: newId(), fromNode: ids.get(e.fromNode), toNode: ids.get(e.toNode) } });
+      return ops;
+    }
+    module2.exports = templateOps;
+  }
+});
 
-	tags() {
-		const tags = new Set();
-		for (const node of this.canvas.nodes.values()) for (const t of this.plugin.cardTagSet(node)) tags.add(t);
-		return tags;
-	}
+// src/plugin/boardLibrary.js
+var require_boardLibrary = __commonJS({
+  "src/plugin/boardLibrary.js"(exports2, module2) {
+    var { SIDES, TEMPLATE_DIR } = require_constants3();
+    module2.exports = {
+      SIDES,
+      TEMPLATE_DIR,
+      applyOps: require_applyOps(),
+      archiveDir: require_archiveDir(),
+      archiveNote: require_archiveNote(),
+      collapseOps: require_collapseOps(),
+      expandOps: require_expandOps(),
+      extractOps: require_extractOps(),
+      layoutOps: require_layoutOps(),
+      mergeOps: require_mergeOps(),
+      plainLines: require_plainLines(),
+      relinkText: require_relinkText(),
+      restoreOps: require_restoreOps(),
+      splitOps: require_splitOps(),
+      templateOps: require_templateOps()
+    };
+  }
+});
 
-	toggle(open = !this.isOpen) {
-		this.isOpen = open;
-		this.el.toggleClass('is-open', open);
-		this.key = '';
-		this.update();
-	}
+// src/plugin/parseColors.js
+var require_parseColors = __commonJS({
+  "src/plugin/parseColors.js"(exports2, module2) {
+    var { COLOR_NUM } = require_constants();
+    var parseColors = (s) => new Set(String(s || "").split(/[\s,]+/).filter(Boolean).map((c) => COLOR_NUM[c.toLowerCase()] || c).filter((c) => /^[1-6]$/.test(c)));
+    module2.exports = parseColors;
+  }
+});
 
-	// Redraws the chips and lists only when something changed (called every 2 s), never the text fields.
-	update() {
-		const { plugin, canvas } = this;
-		const v = plugin.viewState(canvas, false);
-		const counts = {};
-		for (const n of canvas.nodes.values()) { const d = n.getData(); if (d.type !== 'group') counts[d.color || ''] = (counts[d.color || ''] || 0) + 1; }
-		const folds = plugin.folds(canvas);
-		const active = plugin.filtering(v) || folds.size > 0;
-		this.badge.setText(active ? plugin.viewLabel(canvas) : '');
-		this.badge.toggle(!this.isOpen && active);
-		if (!this.isOpen) return;
-		const state = plugin.viewState(canvas);
-		const tags = [...new Set([...this.tags(), ...state.xtags])].sort(); // a hidden tag stays listed, to show it again
-		const foldedCards = [...folds.keys()].map(id => canvas.nodes.get(id)).filter(Boolean).map(n => [n.getData().color, plugin.cardText(n)]);
-		const key = JSON.stringify([counts, [...state.xcolors], tags, [...state.xtags], [...folds], foldedCards, state.hidden.size]);
-		if (key === this.key) return;
-		this.key = key;
-		const apply = () => plugin.refreshView(canvas);
-		const toggle = (set, x) => { if (set.has(x)) set.delete(x); else set.add(x); apply(); };
-		const select = keep => { if (!plugin.selectMore(canvas, [...canvas.selection], keep)) new Notice('Kanvas board: no visible card to select'); };
+// src/plugin/CanvasBoardSettings.js
+var require_CanvasBoardSettings = __commonJS({
+  "src/plugin/CanvasBoardSettings.js"(exports2, module2) {
+    var { COLORS, COLOR_NUM, DEFAULTS, WORKFLOW } = require_constants();
+    var { Notice, PluginSettingTab, Setting } = require("obsidian");
+    var fs = require("fs");
+    var parseColors = require_parseColors();
+    var path = require("path");
+    var CanvasBoardSettings = class extends PluginSettingTab {
+      constructor(app, plugin) {
+        super(app, plugin);
+        this.plugin = plugin;
+      }
+      display() {
+        const { containerEl } = this;
+        containerEl.empty();
+        const text = (name, desc, key) => new Setting(containerEl).setName(name).setDesc(desc).addText((t) => t.setPlaceholder(DEFAULTS[key]).setValue(this.plugin.settings[key]).onChange(async (v) => {
+          this.plugin.settings[key] = v.trim() || DEFAULTS[key];
+          await this.plugin.saveData(this.plugin.settings);
+        }));
+        const heading = (name) => new Setting(containerEl).setName(name).setHeading();
+        new Setting(containerEl).setName("Hotkeys").setDesc("Every canvas board command can have a key; buttons and menu items show it.").addButton((b) => b.setButtonText("Open hotkeys").onClick(() => {
+          this.app.setting.openTabById("hotkeys");
+          const tab = this.app.setting.activeTab;
+          if (tab && tab.searchComponent) {
+            tab.searchComponent.setValue(this.plugin.manifest.name);
+            if (tab.setQuery) tab.setQuery(this.plugin.manifest.name);
+          }
+        }));
+        heading("Board");
+        new Setting(containerEl).setName("Starter board").setDesc('A board with the color legend and first steps: the default board if it does not exist yet, else "Starter board.canvas".').addButton((b) => b.setButtonText("Create").onClick(() => this.plugin.createStarterBoard()));
+        text("Default board", 'Board used by "Run pass" when the active tab is not a canvas, and by "Open the board" (ribbon).', "defaultBoard");
+        text("Card count warning", "The status bar card count turns to the warning color past this many cards (0: never).", "cardWarning");
+        text("Stale after (days)", 'A yellow card whose note is untouched this many days gets a warning badge with its age; the roll-up adds "\xB7 Nd" from the same value (0: never).', "staleDays");
+        text("Agent notes folder", "Where the agent creates the notes and plan canvases for cards. Changing it does not move anything: rename the folder in Obsidian first, so links follow.", "notesFolder");
+        new Setting(containerEl).setName("Archive").setDesc('Where "Archive selected cards" puts the notes: a "<board> archive" folder next to each board, or one folder for all boards. Changing it does not move notes already archived; restore works from any folder.').addDropdown((dd) => dd.addOption("board", "Next to each board").addOption("global", "One folder for all boards").setValue(this.plugin.settings.archiveMode).onChange(async (v) => {
+          this.plugin.settings.archiveMode = v;
+          await this.plugin.saveData(this.plugin.settings);
+          this.display();
+        }));
+        if (this.plugin.settings.archiveMode === "global") text("Archive folder", "The folder for all boards' archive notes.", "archiveFolder");
+        heading("Workflow").setDesc('What each color does and its label, shown in tooltips, the filter pane and the color commands. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.');
+        const go = parseColors(this.plugin.settings.passColors);
+        for (const [name, meaning] of WORKFLOW) {
+          const num = COLOR_NUM[name];
+          const row = new Setting(containerEl).setName(num ? name : "uncolored").setDesc(meaning);
+          row.nameEl.prepend(createSpan({ cls: "canvas-board-dot canvas-board-workflow-dot", attr: { style: this.plugin.dotStyle(num) } }));
+          row.addText((t) => t.setPlaceholder(COLORS.find((c) => c[0] === name)[3]).setValue((this.plugin.settings.colorLabels || {})[name] || "").onChange((v) => this.plugin.setColorLabel(name, v.trim())));
+          if (!num) row.addToggle((t) => t.setTooltip("Never triggers the agent").setValue(false).setDisabled(true));
+          else row.addToggle((t) => t.setTooltip("Triggers the agent").setValue(go.has(num)).onChange(async (on) => {
+            if (on) go.add(num);
+            else go.delete(num);
+            this.plugin.settings.passColors = WORKFLOW.map(([n]) => n).filter((n) => go.has(COLOR_NUM[n])).join(" ");
+            await this.plugin.saveData(this.plugin.settings);
+          }));
+        }
+        heading("Pass");
+        text("Claude path", "Empty: ~/.local/bin/claude (claude.exe on Windows) if it exists, else claude on PATH.", "claudePath");
+        text("Terminal command", "Starts the pass. Empty: Windows Terminal, macOS Terminal, or the first known terminal on Linux (gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm, foot, xterm). Otherwise {vault}, {board}, {claude} are replaced; quote parts with spaces.", "terminal");
+        const skillFile = this.plugin.skillPath();
+        new Setting(containerEl).setName("Agent instructions").setDesc("What the agent does on a pass. Saved when the field loses focus, to .claude/skills/canvas-board/SKILL.md (where Claude Code reads it; any agent can be pointed at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin's version.").addButton((b) => b.setButtonText("Reset").setWarning().onClick(() => {
+          this.plugin.syncSkill(path.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir), true);
+          this.display();
+        }));
+        const editor = containerEl.createEl("textarea", { cls: "canvas-board-skill-editor", attr: { spellcheck: "false", rows: "24" } });
+        try {
+          editor.value = fs.readFileSync(skillFile, "utf8");
+        } catch (e) {
+          editor.placeholder = "No instructions file yet: Reset writes the plugin's version.";
+        }
+        editor.addEventListener("change", () => {
+          try {
+            fs.mkdirSync(path.dirname(skillFile), { recursive: true });
+            fs.writeFileSync(skillFile, editor.value);
+            new Notice("Kanvas board: agent instructions saved");
+          } catch (e) {
+            new Notice(`Kanvas board: could not save the agent instructions (${e.message})`);
+          }
+        });
+        heading("APM counter").setDesc("Canvas cards touched in a rolling window, in the status bar while a canvas is the active tab.");
+        const apm = this.plugin.apm;
+        const a = apm.settings;
+        new Setting(containerEl).setName("Personal best").setDesc(a.pb ? `${a.pb} cards in ${a.windowMinutes} min${a.pbDate ? `, set ${a.pbDate}` : ""}.` : "None yet.").addButton((b) => b.setButtonText("Reset").setWarning().onClick(async () => {
+          await apm.resetPb();
+          this.display();
+        }));
+        new Setting(containerEl).setName("Window (minutes)").setDesc("Cards are counted over this rolling window. Changing it resets the personal best: the numbers are not comparable.").addText((t) => {
+          t.setValue(String(a.windowMinutes));
+          t.inputEl.addEventListener("change", async () => {
+            const n = Number(t.getValue());
+            if (!(n > 0) || n === a.windowMinutes) return;
+            await apm.setWindow(n);
+            this.display();
+          });
+        });
+        new Setting(containerEl).setName("Alert below").setDesc("Percent of the personal best under which the counter turns red and pulses. Not in the first window of a session.").addSlider((sl) => sl.setLimits(5, 50, 5).setValue(a.lowPercent).setDynamicTooltip().onChange(async (v) => {
+          a.lowPercent = v;
+          await this.plugin.saveData(this.plugin.settings);
+          apm.refresh();
+        }));
+        new Setting(containerEl).setName("Idle after (minutes)").setDesc("Without an action for this long, the alert stops and the counter dims. It also dims while Obsidian is not focused.").addText((t) => t.setValue(String(a.idleMinutes)).onChange(async (v) => {
+          const n = Number(v);
+          if (!(n > 0)) return;
+          a.idleMinutes = n;
+          await this.plugin.saveData(this.plugin.settings);
+          apm.refresh();
+        }));
+        heading("Layout");
+        new Setting(containerEl).setName("Layout direction").setDesc('Tidy layout and agent-made plan canvases: the card a branch starts from comes first, following arrows in the fold direction ("depends on" prerequisites too). Shift-click the Tidy layout button, or commands "Tidy layout direction: \u2026", switch it on the fly.').addDropdown((dd) => dd.addOptions({ TB: "Top to bottom", LR: "Left to right", BT: "Bottom to top", RL: "Right to left" }).setValue(this.plugin.settings.layoutDirection).onChange((v) => this.plugin.setLayoutDirection(v)));
+        heading("View");
+        new Setting(containerEl).setName("Fold direction").setDesc('Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Tidy layout reads branches the same way. Commands "Fold direction: \u2026" switch it on the fly.').addDropdown((dd) => dd.addOptions({ out: "Outgoing", in: "Incoming" }).setValue(this.plugin.settings.foldDirection).onChange(async (v) => {
+          this.plugin.settings.foldDirection = v;
+          await this.plugin.saveData(this.plugin.settings);
+        }));
+        new Setting(containerEl).setName("Hide cards under hidden tags").setDesc("Hiding a tag in the filter pane also hides the branch of each card that has it, in the fold direction.").addToggle((t) => t.setValue(this.plugin.settings.hideTagBranches).onChange(async (v) => {
+          this.plugin.settings.hideTagBranches = v;
+          await this.plugin.saveData(this.plugin.settings);
+          for (const canvas of this.plugin.panes.keys()) this.plugin.refreshView(canvas);
+        }));
+      }
+    };
+    module2.exports = CanvasBoardSettings;
+  }
+});
 
-		// Dots only, on one line; the name and card count are in the tooltip.
-		this.colorsEl.empty();
-		for (const [name, color] of COLORS) {
-			const out = state.xcolors.has(color);
-			const chip = this.colorsEl.createDiv({ cls: 'canvas-board-swatch', attr: { 'aria-label': `${plugin.colorLabel(name)} · ${counts[color] || 0} cards · click to ${out ? 'show' : 'hide'} · shift-click to select` } });
-			chip.toggleClass('is-out', out);
-			chip.createSpan({ cls: 'canvas-board-dot', attr: { style: color ? `background: var(--canvas-color-${color})` : '' } });
-			chip.addEventListener('click', e => e.shiftKey ? select(n => (n.getData().color || '') === color) : toggle(state.xcolors, color));
-		}
+// dagre.min.js
+var require_dagre_min = __commonJS({
+  "dagre.min.js"(exports2, module2) {
+    (function(f) {
+      if (typeof exports2 === "object" && typeof module2 !== "undefined") {
+        module2.exports = f();
+      } else if (typeof define === "function" && define.amd) {
+        define([], f);
+      } else {
+        var g;
+        if (typeof window !== "undefined") {
+          g = window;
+        } else if (typeof global !== "undefined") {
+          g = global;
+        } else if (typeof self !== "undefined") {
+          g = self;
+        } else {
+          g = this;
+        }
+        g.dagre = f();
+      }
+    })(function() {
+      var define2, module3, exports3;
+      return (/* @__PURE__ */ (function() {
+        function r(e, n, t) {
+          function o(i2, f) {
+            if (!n[i2]) {
+              if (!e[i2]) {
+                var c = "function" == typeof require && require;
+                if (!f && c) return c(i2, true);
+                if (u) return u(i2, true);
+                var a = new Error("Cannot find module '" + i2 + "'");
+                throw a.code = "MODULE_NOT_FOUND", a;
+              }
+              var p = n[i2] = { exports: {} };
+              e[i2][0].call(p.exports, function(r2) {
+                var n2 = e[i2][1][r2];
+                return o(n2 || r2);
+              }, p, p.exports, r, e, n, t);
+            }
+            return n[i2].exports;
+          }
+          for (var u = "function" == typeof require && require, i = 0; i < t.length; i++) o(t[i]);
+          return o;
+        }
+        return r;
+      })())({ 1: [function(require2, module4, exports4) {
+        module4.exports = { graphlib: require2("@dagrejs/graphlib"), layout: require2("./lib/layout"), debug: require2("./lib/debug"), util: { time: require2("./lib/util").time, notime: require2("./lib/util").notime }, version: require2("./lib/version") };
+      }, { "./lib/debug": 6, "./lib/layout": 8, "./lib/util": 27, "./lib/version": 28, "@dagrejs/graphlib": 29 }], 2: [function(require2, module4, exports4) {
+        "use strict";
+        let greedyFAS = require2("./greedy-fas");
+        let uniqueId = require2("./util").uniqueId;
+        module4.exports = { run, undo };
+        function run(g) {
+          let fas = g.graph().acyclicer === "greedy" ? greedyFAS(g, weightFn(g)) : dfsFAS(g);
+          fas.forEach((e) => {
+            let label = g.edge(e);
+            g.removeEdge(e);
+            label.forwardName = e.name;
+            label.reversed = true;
+            g.setEdge(e.w, e.v, label, uniqueId("rev"));
+          });
+          function weightFn(g2) {
+            return (e) => {
+              return g2.edge(e).weight;
+            };
+          }
+        }
+        function dfsFAS(g) {
+          let fas = [];
+          let stack = {};
+          let visited = {};
+          function dfs(v) {
+            if (Object.hasOwn(visited, v)) {
+              return;
+            }
+            visited[v] = true;
+            stack[v] = true;
+            g.outEdges(v).forEach((e) => {
+              if (Object.hasOwn(stack, e.w)) {
+                fas.push(e);
+              } else {
+                dfs(e.w);
+              }
+            });
+            delete stack[v];
+          }
+          g.nodes().forEach(dfs);
+          return fas;
+        }
+        function undo(g) {
+          g.edges().forEach((e) => {
+            let label = g.edge(e);
+            if (label.reversed) {
+              g.removeEdge(e);
+              let forwardName = label.forwardName;
+              delete label.reversed;
+              delete label.forwardName;
+              g.setEdge(e.w, e.v, label, forwardName);
+            }
+          });
+        }
+      }, { "./greedy-fas": 7, "./util": 27 }], 3: [function(require2, module4, exports4) {
+        let util = require2("./util");
+        module4.exports = addBorderSegments;
+        function addBorderSegments(g) {
+          function dfs(v) {
+            let children = g.children(v);
+            let node = g.node(v);
+            if (children.length) {
+              children.forEach(dfs);
+            }
+            if (Object.hasOwn(node, "minRank")) {
+              node.borderLeft = [];
+              node.borderRight = [];
+              for (let rank = node.minRank, maxRank = node.maxRank + 1; rank < maxRank; ++rank) {
+                addBorderNode(g, "borderLeft", "_bl", v, node, rank);
+                addBorderNode(g, "borderRight", "_br", v, node, rank);
+              }
+            }
+          }
+          g.children().forEach(dfs);
+        }
+        function addBorderNode(g, prop, prefix, sg, sgNode, rank) {
+          let label = { width: 0, height: 0, rank, borderType: prop };
+          let prev = sgNode[prop][rank - 1];
+          let curr = util.addDummyNode(g, "border", label, prefix);
+          sgNode[prop][rank] = curr;
+          g.setParent(curr, sg);
+          if (prev) {
+            g.setEdge(prev, curr, { weight: 1 });
+          }
+        }
+      }, { "./util": 27 }], 4: [function(require2, module4, exports4) {
+        "use strict";
+        module4.exports = { adjust, undo };
+        function adjust(g) {
+          let rankDir = g.graph().rankdir.toLowerCase();
+          if (rankDir === "lr" || rankDir === "rl") {
+            swapWidthHeight(g);
+          }
+        }
+        function undo(g) {
+          let rankDir = g.graph().rankdir.toLowerCase();
+          if (rankDir === "bt" || rankDir === "rl") {
+            reverseY(g);
+          }
+          if (rankDir === "lr" || rankDir === "rl") {
+            swapXY(g);
+            swapWidthHeight(g);
+          }
+        }
+        function swapWidthHeight(g) {
+          g.nodes().forEach((v) => swapWidthHeightOne(g.node(v)));
+          g.edges().forEach((e) => swapWidthHeightOne(g.edge(e)));
+        }
+        function swapWidthHeightOne(attrs) {
+          let w = attrs.width;
+          attrs.width = attrs.height;
+          attrs.height = w;
+        }
+        function reverseY(g) {
+          g.nodes().forEach((v) => reverseYOne(g.node(v)));
+          g.edges().forEach((e) => {
+            let edge = g.edge(e);
+            edge.points.forEach(reverseYOne);
+            if (Object.hasOwn(edge, "y")) {
+              reverseYOne(edge);
+            }
+          });
+        }
+        function reverseYOne(attrs) {
+          attrs.y = -attrs.y;
+        }
+        function swapXY(g) {
+          g.nodes().forEach((v) => swapXYOne(g.node(v)));
+          g.edges().forEach((e) => {
+            let edge = g.edge(e);
+            edge.points.forEach(swapXYOne);
+            if (Object.hasOwn(edge, "x")) {
+              swapXYOne(edge);
+            }
+          });
+        }
+        function swapXYOne(attrs) {
+          let x = attrs.x;
+          attrs.x = attrs.y;
+          attrs.y = x;
+        }
+      }, {}], 5: [function(require2, module4, exports4) {
+        class List {
+          constructor() {
+            let sentinel = {};
+            sentinel._next = sentinel._prev = sentinel;
+            this._sentinel = sentinel;
+          }
+          dequeue() {
+            let sentinel = this._sentinel;
+            let entry = sentinel._prev;
+            if (entry !== sentinel) {
+              unlink(entry);
+              return entry;
+            }
+          }
+          enqueue(entry) {
+            let sentinel = this._sentinel;
+            if (entry._prev && entry._next) {
+              unlink(entry);
+            }
+            entry._next = sentinel._next;
+            sentinel._next._prev = entry;
+            sentinel._next = entry;
+            entry._prev = sentinel;
+          }
+          toString() {
+            let strs = [];
+            let sentinel = this._sentinel;
+            let curr = sentinel._prev;
+            while (curr !== sentinel) {
+              strs.push(JSON.stringify(curr, filterOutLinks));
+              curr = curr._prev;
+            }
+            return "[" + strs.join(", ") + "]";
+          }
+        }
+        function unlink(entry) {
+          entry._prev._next = entry._next;
+          entry._next._prev = entry._prev;
+          delete entry._next;
+          delete entry._prev;
+        }
+        function filterOutLinks(k, v) {
+          if (k !== "_next" && k !== "_prev") {
+            return v;
+          }
+        }
+        module4.exports = List;
+      }, {}], 6: [function(require2, module4, exports4) {
+        let util = require2("./util");
+        let Graph = require2("@dagrejs/graphlib").Graph;
+        module4.exports = { debugOrdering };
+        function debugOrdering(g) {
+          let layerMatrix = util.buildLayerMatrix(g);
+          let h = new Graph({ compound: true, multigraph: true }).setGraph({});
+          g.nodes().forEach((v) => {
+            h.setNode(v, { label: v });
+            h.setParent(v, "layer" + g.node(v).rank);
+          });
+          g.edges().forEach((e) => h.setEdge(e.v, e.w, {}, e.name));
+          layerMatrix.forEach((layer, i) => {
+            let layerV = "layer" + i;
+            h.setNode(layerV, { rank: "same" });
+            layer.reduce((u, v) => {
+              h.setEdge(u, v, { style: "invis" });
+              return v;
+            });
+          });
+          return h;
+        }
+      }, { "./util": 27, "@dagrejs/graphlib": 29 }], 7: [function(require2, module4, exports4) {
+        let Graph = require2("@dagrejs/graphlib").Graph;
+        let List = require2("./data/list");
+        module4.exports = greedyFAS;
+        let DEFAULT_WEIGHT_FN = () => 1;
+        function greedyFAS(g, weightFn) {
+          if (g.nodeCount() <= 1) {
+            return [];
+          }
+          let state = buildState(g, weightFn || DEFAULT_WEIGHT_FN);
+          let results = doGreedyFAS(state.graph, state.buckets, state.zeroIdx);
+          return results.flatMap((e) => g.outEdges(e.v, e.w));
+        }
+        function doGreedyFAS(g, buckets, zeroIdx) {
+          let results = [];
+          let sources = buckets[buckets.length - 1];
+          let sinks = buckets[0];
+          let entry;
+          while (g.nodeCount()) {
+            while (entry = sinks.dequeue()) {
+              removeNode(g, buckets, zeroIdx, entry);
+            }
+            while (entry = sources.dequeue()) {
+              removeNode(g, buckets, zeroIdx, entry);
+            }
+            if (g.nodeCount()) {
+              for (let i = buckets.length - 2; i > 0; --i) {
+                entry = buckets[i].dequeue();
+                if (entry) {
+                  results = results.concat(removeNode(g, buckets, zeroIdx, entry, true));
+                  break;
+                }
+              }
+            }
+          }
+          return results;
+        }
+        function removeNode(g, buckets, zeroIdx, entry, collectPredecessors) {
+          let results = collectPredecessors ? [] : void 0;
+          g.inEdges(entry.v).forEach((edge) => {
+            let weight = g.edge(edge);
+            let uEntry = g.node(edge.v);
+            if (collectPredecessors) {
+              results.push({ v: edge.v, w: edge.w });
+            }
+            uEntry.out -= weight;
+            assignBucket(buckets, zeroIdx, uEntry);
+          });
+          g.outEdges(entry.v).forEach((edge) => {
+            let weight = g.edge(edge);
+            let w = edge.w;
+            let wEntry = g.node(w);
+            wEntry["in"] -= weight;
+            assignBucket(buckets, zeroIdx, wEntry);
+          });
+          g.removeNode(entry.v);
+          return results;
+        }
+        function buildState(g, weightFn) {
+          let fasGraph = new Graph();
+          let maxIn = 0;
+          let maxOut = 0;
+          g.nodes().forEach((v) => {
+            fasGraph.setNode(v, { v, in: 0, out: 0 });
+          });
+          g.edges().forEach((e) => {
+            let prevWeight = fasGraph.edge(e.v, e.w) || 0;
+            let weight = weightFn(e);
+            let edgeWeight = prevWeight + weight;
+            fasGraph.setEdge(e.v, e.w, edgeWeight);
+            maxOut = Math.max(maxOut, fasGraph.node(e.v).out += weight);
+            maxIn = Math.max(maxIn, fasGraph.node(e.w)["in"] += weight);
+          });
+          let buckets = range(maxOut + maxIn + 3).map(() => new List());
+          let zeroIdx = maxIn + 1;
+          fasGraph.nodes().forEach((v) => {
+            assignBucket(buckets, zeroIdx, fasGraph.node(v));
+          });
+          return { graph: fasGraph, buckets, zeroIdx };
+        }
+        function assignBucket(buckets, zeroIdx, entry) {
+          if (!entry.out) {
+            buckets[0].enqueue(entry);
+          } else if (!entry["in"]) {
+            buckets[buckets.length - 1].enqueue(entry);
+          } else {
+            buckets[entry.out - entry["in"] + zeroIdx].enqueue(entry);
+          }
+        }
+        function range(limit) {
+          const range2 = [];
+          for (let i = 0; i < limit; i++) {
+            range2.push(i);
+          }
+          return range2;
+        }
+      }, { "./data/list": 5, "@dagrejs/graphlib": 29 }], 8: [function(require2, module4, exports4) {
+        "use strict";
+        let acyclic = require2("./acyclic");
+        let normalize = require2("./normalize");
+        let rank = require2("./rank");
+        let normalizeRanks = require2("./util").normalizeRanks;
+        let parentDummyChains = require2("./parent-dummy-chains");
+        let removeEmptyRanks = require2("./util").removeEmptyRanks;
+        let nestingGraph = require2("./nesting-graph");
+        let addBorderSegments = require2("./add-border-segments");
+        let coordinateSystem = require2("./coordinate-system");
+        let order = require2("./order");
+        let position = require2("./position");
+        let util = require2("./util");
+        let Graph = require2("@dagrejs/graphlib").Graph;
+        module4.exports = layout;
+        function layout(g, opts) {
+          let time = opts && opts.debugTiming ? util.time : util.notime;
+          time("layout", () => {
+            let layoutGraph = time("  buildLayoutGraph", () => buildLayoutGraph(g));
+            time("  runLayout", () => runLayout(layoutGraph, time, opts));
+            time("  updateInputGraph", () => updateInputGraph(g, layoutGraph));
+          });
+        }
+        function runLayout(g, time, opts) {
+          time("    makeSpaceForEdgeLabels", () => makeSpaceForEdgeLabels(g));
+          time("    removeSelfEdges", () => removeSelfEdges(g));
+          time("    acyclic", () => acyclic.run(g));
+          time("    nestingGraph.run", () => nestingGraph.run(g));
+          time("    rank", () => rank(util.asNonCompoundGraph(g)));
+          time("    injectEdgeLabelProxies", () => injectEdgeLabelProxies(g));
+          time("    removeEmptyRanks", () => removeEmptyRanks(g));
+          time("    nestingGraph.cleanup", () => nestingGraph.cleanup(g));
+          time("    normalizeRanks", () => normalizeRanks(g));
+          time("    assignRankMinMax", () => assignRankMinMax(g));
+          time("    removeEdgeLabelProxies", () => removeEdgeLabelProxies(g));
+          time("    normalize.run", () => normalize.run(g));
+          time("    parentDummyChains", () => parentDummyChains(g));
+          time("    addBorderSegments", () => addBorderSegments(g));
+          time("    order", () => order(g, opts));
+          time("    insertSelfEdges", () => insertSelfEdges(g));
+          time("    adjustCoordinateSystem", () => coordinateSystem.adjust(g));
+          time("    position", () => position(g));
+          time("    positionSelfEdges", () => positionSelfEdges(g));
+          time("    removeBorderNodes", () => removeBorderNodes(g));
+          time("    normalize.undo", () => normalize.undo(g));
+          time("    fixupEdgeLabelCoords", () => fixupEdgeLabelCoords(g));
+          time("    undoCoordinateSystem", () => coordinateSystem.undo(g));
+          time("    translateGraph", () => translateGraph(g));
+          time("    assignNodeIntersects", () => assignNodeIntersects(g));
+          time("    reversePoints", () => reversePointsForReversedEdges(g));
+          time("    acyclic.undo", () => acyclic.undo(g));
+        }
+        function updateInputGraph(inputGraph, layoutGraph) {
+          inputGraph.nodes().forEach((v) => {
+            let inputLabel = inputGraph.node(v);
+            let layoutLabel = layoutGraph.node(v);
+            if (inputLabel) {
+              inputLabel.x = layoutLabel.x;
+              inputLabel.y = layoutLabel.y;
+              inputLabel.rank = layoutLabel.rank;
+              if (layoutGraph.children(v).length) {
+                inputLabel.width = layoutLabel.width;
+                inputLabel.height = layoutLabel.height;
+              }
+            }
+          });
+          inputGraph.edges().forEach((e) => {
+            let inputLabel = inputGraph.edge(e);
+            let layoutLabel = layoutGraph.edge(e);
+            inputLabel.points = layoutLabel.points;
+            if (Object.hasOwn(layoutLabel, "x")) {
+              inputLabel.x = layoutLabel.x;
+              inputLabel.y = layoutLabel.y;
+            }
+          });
+          inputGraph.graph().width = layoutGraph.graph().width;
+          inputGraph.graph().height = layoutGraph.graph().height;
+        }
+        let graphNumAttrs = ["nodesep", "edgesep", "ranksep", "marginx", "marginy"];
+        let graphDefaults = { ranksep: 50, edgesep: 20, nodesep: 50, rankdir: "tb" };
+        let graphAttrs = ["acyclicer", "ranker", "rankdir", "align"];
+        let nodeNumAttrs = ["width", "height"];
+        let nodeDefaults = { width: 0, height: 0 };
+        let edgeNumAttrs = ["minlen", "weight", "width", "height", "labeloffset"];
+        let edgeDefaults = { minlen: 1, weight: 1, width: 0, height: 0, labeloffset: 10, labelpos: "r" };
+        let edgeAttrs = ["labelpos"];
+        function buildLayoutGraph(inputGraph) {
+          let g = new Graph({ multigraph: true, compound: true });
+          let graph = canonicalize(inputGraph.graph());
+          g.setGraph(Object.assign({}, graphDefaults, selectNumberAttrs(graph, graphNumAttrs), util.pick(graph, graphAttrs)));
+          inputGraph.nodes().forEach((v) => {
+            let node = canonicalize(inputGraph.node(v));
+            const newNode = selectNumberAttrs(node, nodeNumAttrs);
+            Object.keys(nodeDefaults).forEach((k) => {
+              if (newNode[k] === void 0) {
+                newNode[k] = nodeDefaults[k];
+              }
+            });
+            g.setNode(v, newNode);
+            g.setParent(v, inputGraph.parent(v));
+          });
+          inputGraph.edges().forEach((e) => {
+            let edge = canonicalize(inputGraph.edge(e));
+            g.setEdge(e, Object.assign({}, edgeDefaults, selectNumberAttrs(edge, edgeNumAttrs), util.pick(edge, edgeAttrs)));
+          });
+          return g;
+        }
+        function makeSpaceForEdgeLabels(g) {
+          let graph = g.graph();
+          graph.ranksep /= 2;
+          g.edges().forEach((e) => {
+            let edge = g.edge(e);
+            edge.minlen *= 2;
+            if (edge.labelpos.toLowerCase() !== "c") {
+              if (graph.rankdir === "TB" || graph.rankdir === "BT") {
+                edge.width += edge.labeloffset;
+              } else {
+                edge.height += edge.labeloffset;
+              }
+            }
+          });
+        }
+        function injectEdgeLabelProxies(g) {
+          g.edges().forEach((e) => {
+            let edge = g.edge(e);
+            if (edge.width && edge.height) {
+              let v = g.node(e.v);
+              let w = g.node(e.w);
+              let label = { rank: (w.rank - v.rank) / 2 + v.rank, e };
+              util.addDummyNode(g, "edge-proxy", label, "_ep");
+            }
+          });
+        }
+        function assignRankMinMax(g) {
+          let maxRank = 0;
+          g.nodes().forEach((v) => {
+            let node = g.node(v);
+            if (node.borderTop) {
+              node.minRank = g.node(node.borderTop).rank;
+              node.maxRank = g.node(node.borderBottom).rank;
+              maxRank = Math.max(maxRank, node.maxRank);
+            }
+          });
+          g.graph().maxRank = maxRank;
+        }
+        function removeEdgeLabelProxies(g) {
+          g.nodes().forEach((v) => {
+            let node = g.node(v);
+            if (node.dummy === "edge-proxy") {
+              g.edge(node.e).labelRank = node.rank;
+              g.removeNode(v);
+            }
+          });
+        }
+        function translateGraph(g) {
+          let minX = Number.POSITIVE_INFINITY;
+          let maxX = 0;
+          let minY = Number.POSITIVE_INFINITY;
+          let maxY = 0;
+          let graphLabel = g.graph();
+          let marginX = graphLabel.marginx || 0;
+          let marginY = graphLabel.marginy || 0;
+          function getExtremes(attrs) {
+            let x = attrs.x;
+            let y = attrs.y;
+            let w = attrs.width;
+            let h = attrs.height;
+            minX = Math.min(minX, x - w / 2);
+            maxX = Math.max(maxX, x + w / 2);
+            minY = Math.min(minY, y - h / 2);
+            maxY = Math.max(maxY, y + h / 2);
+          }
+          g.nodes().forEach((v) => getExtremes(g.node(v)));
+          g.edges().forEach((e) => {
+            let edge = g.edge(e);
+            if (Object.hasOwn(edge, "x")) {
+              getExtremes(edge);
+            }
+          });
+          minX -= marginX;
+          minY -= marginY;
+          g.nodes().forEach((v) => {
+            let node = g.node(v);
+            node.x -= minX;
+            node.y -= minY;
+          });
+          g.edges().forEach((e) => {
+            let edge = g.edge(e);
+            edge.points.forEach((p) => {
+              p.x -= minX;
+              p.y -= minY;
+            });
+            if (Object.hasOwn(edge, "x")) {
+              edge.x -= minX;
+            }
+            if (Object.hasOwn(edge, "y")) {
+              edge.y -= minY;
+            }
+          });
+          graphLabel.width = maxX - minX + marginX;
+          graphLabel.height = maxY - minY + marginY;
+        }
+        function assignNodeIntersects(g) {
+          g.edges().forEach((e) => {
+            let edge = g.edge(e);
+            let nodeV = g.node(e.v);
+            let nodeW = g.node(e.w);
+            let p1, p2;
+            if (!edge.points) {
+              edge.points = [];
+              p1 = nodeW;
+              p2 = nodeV;
+            } else {
+              p1 = edge.points[0];
+              p2 = edge.points[edge.points.length - 1];
+            }
+            edge.points.unshift(util.intersectRect(nodeV, p1));
+            edge.points.push(util.intersectRect(nodeW, p2));
+          });
+        }
+        function fixupEdgeLabelCoords(g) {
+          g.edges().forEach((e) => {
+            let edge = g.edge(e);
+            if (Object.hasOwn(edge, "x")) {
+              if (edge.labelpos === "l" || edge.labelpos === "r") {
+                edge.width -= edge.labeloffset;
+              }
+              switch (edge.labelpos) {
+                case "l":
+                  edge.x -= edge.width / 2 + edge.labeloffset;
+                  break;
+                case "r":
+                  edge.x += edge.width / 2 + edge.labeloffset;
+                  break;
+              }
+            }
+          });
+        }
+        function reversePointsForReversedEdges(g) {
+          g.edges().forEach((e) => {
+            let edge = g.edge(e);
+            if (edge.reversed) {
+              edge.points.reverse();
+            }
+          });
+        }
+        function removeBorderNodes(g) {
+          g.nodes().forEach((v) => {
+            if (g.children(v).length) {
+              let node = g.node(v);
+              let t = g.node(node.borderTop);
+              let b = g.node(node.borderBottom);
+              let l = g.node(node.borderLeft[node.borderLeft.length - 1]);
+              let r = g.node(node.borderRight[node.borderRight.length - 1]);
+              node.width = Math.abs(r.x - l.x);
+              node.height = Math.abs(b.y - t.y);
+              node.x = l.x + node.width / 2;
+              node.y = t.y + node.height / 2;
+            }
+          });
+          g.nodes().forEach((v) => {
+            if (g.node(v).dummy === "border") {
+              g.removeNode(v);
+            }
+          });
+        }
+        function removeSelfEdges(g) {
+          g.edges().forEach((e) => {
+            if (e.v === e.w) {
+              var node = g.node(e.v);
+              if (!node.selfEdges) {
+                node.selfEdges = [];
+              }
+              node.selfEdges.push({ e, label: g.edge(e) });
+              g.removeEdge(e);
+            }
+          });
+        }
+        function insertSelfEdges(g) {
+          var layers = util.buildLayerMatrix(g);
+          layers.forEach((layer) => {
+            var orderShift = 0;
+            layer.forEach((v, i) => {
+              var node = g.node(v);
+              node.order = i + orderShift;
+              (node.selfEdges || []).forEach((selfEdge) => {
+                util.addDummyNode(g, "selfedge", { width: selfEdge.label.width, height: selfEdge.label.height, rank: node.rank, order: i + ++orderShift, e: selfEdge.e, label: selfEdge.label }, "_se");
+              });
+              delete node.selfEdges;
+            });
+          });
+        }
+        function positionSelfEdges(g) {
+          g.nodes().forEach((v) => {
+            var node = g.node(v);
+            if (node.dummy === "selfedge") {
+              var selfNode = g.node(node.e.v);
+              var x = selfNode.x + selfNode.width / 2;
+              var y = selfNode.y;
+              var dx = node.x - x;
+              var dy = selfNode.height / 2;
+              g.setEdge(node.e, node.label);
+              g.removeNode(v);
+              node.label.points = [{ x: x + 2 * dx / 3, y: y - dy }, { x: x + 5 * dx / 6, y: y - dy }, { x: x + dx, y }, { x: x + 5 * dx / 6, y: y + dy }, { x: x + 2 * dx / 3, y: y + dy }];
+              node.label.x = node.x;
+              node.label.y = node.y;
+            }
+          });
+        }
+        function selectNumberAttrs(obj, attrs) {
+          return util.mapValues(util.pick(obj, attrs), Number);
+        }
+        function canonicalize(attrs) {
+          var newAttrs = {};
+          if (attrs) {
+            Object.entries(attrs).forEach(([k, v]) => {
+              if (typeof k === "string") {
+                k = k.toLowerCase();
+              }
+              newAttrs[k] = v;
+            });
+          }
+          return newAttrs;
+        }
+      }, { "./acyclic": 2, "./add-border-segments": 3, "./coordinate-system": 4, "./nesting-graph": 9, "./normalize": 10, "./order": 15, "./parent-dummy-chains": 20, "./position": 22, "./rank": 24, "./util": 27, "@dagrejs/graphlib": 29 }], 9: [function(require2, module4, exports4) {
+        let util = require2("./util");
+        module4.exports = { run, cleanup };
+        function run(g) {
+          let root = util.addDummyNode(g, "root", {}, "_root");
+          let depths = treeDepths(g);
+          let depthsArr = Object.values(depths);
+          let height = util.applyWithChunking(Math.max, depthsArr) - 1;
+          let nodeSep = 2 * height + 1;
+          g.graph().nestingRoot = root;
+          g.edges().forEach((e) => g.edge(e).minlen *= nodeSep);
+          let weight = sumWeights(g) + 1;
+          g.children().forEach((child) => dfs(g, root, nodeSep, weight, height, depths, child));
+          g.graph().nodeRankFactor = nodeSep;
+        }
+        function dfs(g, root, nodeSep, weight, height, depths, v) {
+          let children = g.children(v);
+          if (!children.length) {
+            if (v !== root) {
+              g.setEdge(root, v, { weight: 0, minlen: nodeSep });
+            }
+            return;
+          }
+          let top = util.addBorderNode(g, "_bt");
+          let bottom = util.addBorderNode(g, "_bb");
+          let label = g.node(v);
+          g.setParent(top, v);
+          label.borderTop = top;
+          g.setParent(bottom, v);
+          label.borderBottom = bottom;
+          children.forEach((child) => {
+            dfs(g, root, nodeSep, weight, height, depths, child);
+            let childNode = g.node(child);
+            let childTop = childNode.borderTop ? childNode.borderTop : child;
+            let childBottom = childNode.borderBottom ? childNode.borderBottom : child;
+            let thisWeight = childNode.borderTop ? weight : 2 * weight;
+            let minlen = childTop !== childBottom ? 1 : height - depths[v] + 1;
+            g.setEdge(top, childTop, { weight: thisWeight, minlen, nestingEdge: true });
+            g.setEdge(childBottom, bottom, { weight: thisWeight, minlen, nestingEdge: true });
+          });
+          if (!g.parent(v)) {
+            g.setEdge(root, top, { weight: 0, minlen: height + depths[v] });
+          }
+        }
+        function treeDepths(g) {
+          var depths = {};
+          function dfs2(v, depth) {
+            var children = g.children(v);
+            if (children && children.length) {
+              children.forEach((child) => dfs2(child, depth + 1));
+            }
+            depths[v] = depth;
+          }
+          g.children().forEach((v) => dfs2(v, 1));
+          return depths;
+        }
+        function sumWeights(g) {
+          return g.edges().reduce((acc, e) => acc + g.edge(e).weight, 0);
+        }
+        function cleanup(g) {
+          var graphLabel = g.graph();
+          g.removeNode(graphLabel.nestingRoot);
+          delete graphLabel.nestingRoot;
+          g.edges().forEach((e) => {
+            var edge = g.edge(e);
+            if (edge.nestingEdge) {
+              g.removeEdge(e);
+            }
+          });
+        }
+      }, { "./util": 27 }], 10: [function(require2, module4, exports4) {
+        "use strict";
+        let util = require2("./util");
+        module4.exports = { run, undo };
+        function run(g) {
+          g.graph().dummyChains = [];
+          g.edges().forEach((edge) => normalizeEdge(g, edge));
+        }
+        function normalizeEdge(g, e) {
+          let v = e.v;
+          let vRank = g.node(v).rank;
+          let w = e.w;
+          let wRank = g.node(w).rank;
+          let name = e.name;
+          let edgeLabel = g.edge(e);
+          let labelRank = edgeLabel.labelRank;
+          if (wRank === vRank + 1) return;
+          g.removeEdge(e);
+          let dummy, attrs, i;
+          for (i = 0, ++vRank; vRank < wRank; ++i, ++vRank) {
+            edgeLabel.points = [];
+            attrs = { width: 0, height: 0, edgeLabel, edgeObj: e, rank: vRank };
+            dummy = util.addDummyNode(g, "edge", attrs, "_d");
+            if (vRank === labelRank) {
+              attrs.width = edgeLabel.width;
+              attrs.height = edgeLabel.height;
+              attrs.dummy = "edge-label";
+              attrs.labelpos = edgeLabel.labelpos;
+            }
+            g.setEdge(v, dummy, { weight: edgeLabel.weight }, name);
+            if (i === 0) {
+              g.graph().dummyChains.push(dummy);
+            }
+            v = dummy;
+          }
+          g.setEdge(v, w, { weight: edgeLabel.weight }, name);
+        }
+        function undo(g) {
+          g.graph().dummyChains.forEach((v) => {
+            let node = g.node(v);
+            let origLabel = node.edgeLabel;
+            let w;
+            g.setEdge(node.edgeObj, origLabel);
+            while (node.dummy) {
+              w = g.successors(v)[0];
+              g.removeNode(v);
+              origLabel.points.push({ x: node.x, y: node.y });
+              if (node.dummy === "edge-label") {
+                origLabel.x = node.x;
+                origLabel.y = node.y;
+                origLabel.width = node.width;
+                origLabel.height = node.height;
+              }
+              v = w;
+              node = g.node(v);
+            }
+          });
+        }
+      }, { "./util": 27 }], 11: [function(require2, module4, exports4) {
+        module4.exports = addSubgraphConstraints;
+        function addSubgraphConstraints(g, cg, vs) {
+          let prev = {}, rootPrev;
+          vs.forEach((v) => {
+            let child = g.parent(v), parent, prevChild;
+            while (child) {
+              parent = g.parent(child);
+              if (parent) {
+                prevChild = prev[parent];
+                prev[parent] = child;
+              } else {
+                prevChild = rootPrev;
+                rootPrev = child;
+              }
+              if (prevChild && prevChild !== child) {
+                cg.setEdge(prevChild, child);
+                return;
+              }
+              child = parent;
+            }
+          });
+        }
+      }, {}], 12: [function(require2, module4, exports4) {
+        module4.exports = barycenter;
+        function barycenter(g, movable = []) {
+          return movable.map((v) => {
+            let inV = g.inEdges(v);
+            if (!inV.length) {
+              return { v };
+            } else {
+              let result = inV.reduce((acc, e) => {
+                let edge = g.edge(e), nodeU = g.node(e.v);
+                return { sum: acc.sum + edge.weight * nodeU.order, weight: acc.weight + edge.weight };
+              }, { sum: 0, weight: 0 });
+              return { v, barycenter: result.sum / result.weight, weight: result.weight };
+            }
+          });
+        }
+      }, {}], 13: [function(require2, module4, exports4) {
+        let Graph = require2("@dagrejs/graphlib").Graph;
+        let util = require2("../util");
+        module4.exports = buildLayerGraph;
+        function buildLayerGraph(g, rank, relationship) {
+          let root = createRootNode(g), result = new Graph({ compound: true }).setGraph({ root }).setDefaultNodeLabel((v) => g.node(v));
+          g.nodes().forEach((v) => {
+            let node = g.node(v), parent = g.parent(v);
+            if (node.rank === rank || node.minRank <= rank && rank <= node.maxRank) {
+              result.setNode(v);
+              result.setParent(v, parent || root);
+              g[relationship](v).forEach((e) => {
+                let u = e.v === v ? e.w : e.v, edge = result.edge(u, v), weight = edge !== void 0 ? edge.weight : 0;
+                result.setEdge(u, v, { weight: g.edge(e).weight + weight });
+              });
+              if (Object.hasOwn(node, "minRank")) {
+                result.setNode(v, { borderLeft: node.borderLeft[rank], borderRight: node.borderRight[rank] });
+              }
+            }
+          });
+          return result;
+        }
+        function createRootNode(g) {
+          var v;
+          while (g.hasNode(v = util.uniqueId("_root"))) ;
+          return v;
+        }
+      }, { "../util": 27, "@dagrejs/graphlib": 29 }], 14: [function(require2, module4, exports4) {
+        "use strict";
+        let zipObject = require2("../util").zipObject;
+        module4.exports = crossCount;
+        function crossCount(g, layering) {
+          let cc = 0;
+          for (let i = 1; i < layering.length; ++i) {
+            cc += twoLayerCrossCount(g, layering[i - 1], layering[i]);
+          }
+          return cc;
+        }
+        function twoLayerCrossCount(g, northLayer, southLayer) {
+          let southPos = zipObject(southLayer, southLayer.map((v, i) => i));
+          let southEntries = northLayer.flatMap((v) => {
+            return g.outEdges(v).map((e) => {
+              return { pos: southPos[e.w], weight: g.edge(e).weight };
+            }).sort((a, b) => a.pos - b.pos);
+          });
+          let firstIndex = 1;
+          while (firstIndex < southLayer.length) firstIndex <<= 1;
+          let treeSize = 2 * firstIndex - 1;
+          firstIndex -= 1;
+          let tree = new Array(treeSize).fill(0);
+          let cc = 0;
+          southEntries.forEach((entry) => {
+            let index = entry.pos + firstIndex;
+            tree[index] += entry.weight;
+            let weightSum = 0;
+            while (index > 0) {
+              if (index % 2) {
+                weightSum += tree[index + 1];
+              }
+              index = index - 1 >> 1;
+              tree[index] += entry.weight;
+            }
+            cc += entry.weight * weightSum;
+          });
+          return cc;
+        }
+      }, { "../util": 27 }], 15: [function(require2, module4, exports4) {
+        "use strict";
+        let initOrder = require2("./init-order");
+        let crossCount = require2("./cross-count");
+        let sortSubgraph = require2("./sort-subgraph");
+        let buildLayerGraph = require2("./build-layer-graph");
+        let addSubgraphConstraints = require2("./add-subgraph-constraints");
+        let Graph = require2("@dagrejs/graphlib").Graph;
+        let util = require2("../util");
+        module4.exports = order;
+        function order(g, opts) {
+          if (opts && typeof opts.customOrder === "function") {
+            opts.customOrder(g, order);
+            return;
+          }
+          let maxRank = util.maxRank(g), downLayerGraphs = buildLayerGraphs(g, util.range(1, maxRank + 1), "inEdges"), upLayerGraphs = buildLayerGraphs(g, util.range(maxRank - 1, -1, -1), "outEdges");
+          let layering = initOrder(g);
+          assignOrder(g, layering);
+          if (opts && opts.disableOptimalOrderHeuristic) {
+            return;
+          }
+          let bestCC = Number.POSITIVE_INFINITY, best;
+          for (let i = 0, lastBest = 0; lastBest < 4; ++i, ++lastBest) {
+            sweepLayerGraphs(i % 2 ? downLayerGraphs : upLayerGraphs, i % 4 >= 2);
+            layering = util.buildLayerMatrix(g);
+            let cc = crossCount(g, layering);
+            if (cc < bestCC) {
+              lastBest = 0;
+              best = Object.assign({}, layering);
+              bestCC = cc;
+            }
+          }
+          assignOrder(g, best);
+        }
+        function buildLayerGraphs(g, ranks, relationship) {
+          return ranks.map(function(rank) {
+            return buildLayerGraph(g, rank, relationship);
+          });
+        }
+        function sweepLayerGraphs(layerGraphs, biasRight) {
+          let cg = new Graph();
+          layerGraphs.forEach(function(lg) {
+            let root = lg.graph().root;
+            let sorted = sortSubgraph(lg, root, cg, biasRight);
+            sorted.vs.forEach((v, i) => lg.node(v).order = i);
+            addSubgraphConstraints(lg, cg, sorted.vs);
+          });
+        }
+        function assignOrder(g, layering) {
+          Object.values(layering).forEach((layer) => layer.forEach((v, i) => g.node(v).order = i));
+        }
+      }, { "../util": 27, "./add-subgraph-constraints": 11, "./build-layer-graph": 13, "./cross-count": 14, "./init-order": 16, "./sort-subgraph": 18, "@dagrejs/graphlib": 29 }], 16: [function(require2, module4, exports4) {
+        "use strict";
+        let util = require2("../util");
+        module4.exports = initOrder;
+        function initOrder(g) {
+          let visited = {};
+          let simpleNodes = g.nodes().filter((v) => !g.children(v).length);
+          let simpleNodesRanks = simpleNodes.map((v) => g.node(v).rank);
+          let maxRank = util.applyWithChunking(Math.max, simpleNodesRanks);
+          let layers = util.range(maxRank + 1).map(() => []);
+          function dfs(v) {
+            if (visited[v]) return;
+            visited[v] = true;
+            let node = g.node(v);
+            layers[node.rank].push(v);
+            g.successors(v).forEach(dfs);
+          }
+          let orderedVs = simpleNodes.sort((a, b) => g.node(a).rank - g.node(b).rank);
+          orderedVs.forEach(dfs);
+          return layers;
+        }
+      }, { "../util": 27 }], 17: [function(require2, module4, exports4) {
+        "use strict";
+        let util = require2("../util");
+        module4.exports = resolveConflicts;
+        function resolveConflicts(entries, cg) {
+          let mappedEntries = {};
+          entries.forEach((entry, i) => {
+            let tmp = mappedEntries[entry.v] = { indegree: 0, in: [], out: [], vs: [entry.v], i };
+            if (entry.barycenter !== void 0) {
+              tmp.barycenter = entry.barycenter;
+              tmp.weight = entry.weight;
+            }
+          });
+          cg.edges().forEach((e) => {
+            let entryV = mappedEntries[e.v];
+            let entryW = mappedEntries[e.w];
+            if (entryV !== void 0 && entryW !== void 0) {
+              entryW.indegree++;
+              entryV.out.push(mappedEntries[e.w]);
+            }
+          });
+          let sourceSet = Object.values(mappedEntries).filter((entry) => !entry.indegree);
+          return doResolveConflicts(sourceSet);
+        }
+        function doResolveConflicts(sourceSet) {
+          let entries = [];
+          function handleIn(vEntry) {
+            return (uEntry) => {
+              if (uEntry.merged) {
+                return;
+              }
+              if (uEntry.barycenter === void 0 || vEntry.barycenter === void 0 || uEntry.barycenter >= vEntry.barycenter) {
+                mergeEntries(vEntry, uEntry);
+              }
+            };
+          }
+          function handleOut(vEntry) {
+            return (wEntry) => {
+              wEntry["in"].push(vEntry);
+              if (--wEntry.indegree === 0) {
+                sourceSet.push(wEntry);
+              }
+            };
+          }
+          while (sourceSet.length) {
+            let entry = sourceSet.pop();
+            entries.push(entry);
+            entry["in"].reverse().forEach(handleIn(entry));
+            entry.out.forEach(handleOut(entry));
+          }
+          return entries.filter((entry) => !entry.merged).map((entry) => {
+            return util.pick(entry, ["vs", "i", "barycenter", "weight"]);
+          });
+        }
+        function mergeEntries(target, source) {
+          let sum = 0;
+          let weight = 0;
+          if (target.weight) {
+            sum += target.barycenter * target.weight;
+            weight += target.weight;
+          }
+          if (source.weight) {
+            sum += source.barycenter * source.weight;
+            weight += source.weight;
+          }
+          target.vs = source.vs.concat(target.vs);
+          target.barycenter = sum / weight;
+          target.weight = weight;
+          target.i = Math.min(source.i, target.i);
+          source.merged = true;
+        }
+      }, { "../util": 27 }], 18: [function(require2, module4, exports4) {
+        let barycenter = require2("./barycenter");
+        let resolveConflicts = require2("./resolve-conflicts");
+        let sort = require2("./sort");
+        module4.exports = sortSubgraph;
+        function sortSubgraph(g, v, cg, biasRight) {
+          let movable = g.children(v);
+          let node = g.node(v);
+          let bl = node ? node.borderLeft : void 0;
+          let br = node ? node.borderRight : void 0;
+          let subgraphs = {};
+          if (bl) {
+            movable = movable.filter((w) => w !== bl && w !== br);
+          }
+          let barycenters = barycenter(g, movable);
+          barycenters.forEach((entry) => {
+            if (g.children(entry.v).length) {
+              let subgraphResult = sortSubgraph(g, entry.v, cg, biasRight);
+              subgraphs[entry.v] = subgraphResult;
+              if (Object.hasOwn(subgraphResult, "barycenter")) {
+                mergeBarycenters(entry, subgraphResult);
+              }
+            }
+          });
+          let entries = resolveConflicts(barycenters, cg);
+          expandSubgraphs(entries, subgraphs);
+          let result = sort(entries, biasRight);
+          if (bl) {
+            result.vs = [bl, result.vs, br].flat(true);
+            if (g.predecessors(bl).length) {
+              let blPred = g.node(g.predecessors(bl)[0]), brPred = g.node(g.predecessors(br)[0]);
+              if (!Object.hasOwn(result, "barycenter")) {
+                result.barycenter = 0;
+                result.weight = 0;
+              }
+              result.barycenter = (result.barycenter * result.weight + blPred.order + brPred.order) / (result.weight + 2);
+              result.weight += 2;
+            }
+          }
+          return result;
+        }
+        function expandSubgraphs(entries, subgraphs) {
+          entries.forEach((entry) => {
+            entry.vs = entry.vs.flatMap((v) => {
+              if (subgraphs[v]) {
+                return subgraphs[v].vs;
+              }
+              return v;
+            });
+          });
+        }
+        function mergeBarycenters(target, other) {
+          if (target.barycenter !== void 0) {
+            target.barycenter = (target.barycenter * target.weight + other.barycenter * other.weight) / (target.weight + other.weight);
+            target.weight += other.weight;
+          } else {
+            target.barycenter = other.barycenter;
+            target.weight = other.weight;
+          }
+        }
+      }, { "./barycenter": 12, "./resolve-conflicts": 17, "./sort": 19 }], 19: [function(require2, module4, exports4) {
+        let util = require2("../util");
+        module4.exports = sort;
+        function sort(entries, biasRight) {
+          let parts = util.partition(entries, (entry) => {
+            return Object.hasOwn(entry, "barycenter");
+          });
+          let sortable = parts.lhs, unsortable = parts.rhs.sort((a, b) => b.i - a.i), vs = [], sum = 0, weight = 0, vsIndex = 0;
+          sortable.sort(compareWithBias(!!biasRight));
+          vsIndex = consumeUnsortable(vs, unsortable, vsIndex);
+          sortable.forEach((entry) => {
+            vsIndex += entry.vs.length;
+            vs.push(entry.vs);
+            sum += entry.barycenter * entry.weight;
+            weight += entry.weight;
+            vsIndex = consumeUnsortable(vs, unsortable, vsIndex);
+          });
+          let result = { vs: vs.flat(true) };
+          if (weight) {
+            result.barycenter = sum / weight;
+            result.weight = weight;
+          }
+          return result;
+        }
+        function consumeUnsortable(vs, unsortable, index) {
+          let last;
+          while (unsortable.length && (last = unsortable[unsortable.length - 1]).i <= index) {
+            unsortable.pop();
+            vs.push(last.vs);
+            index++;
+          }
+          return index;
+        }
+        function compareWithBias(bias) {
+          return (entryV, entryW) => {
+            if (entryV.barycenter < entryW.barycenter) {
+              return -1;
+            } else if (entryV.barycenter > entryW.barycenter) {
+              return 1;
+            }
+            return !bias ? entryV.i - entryW.i : entryW.i - entryV.i;
+          };
+        }
+      }, { "../util": 27 }], 20: [function(require2, module4, exports4) {
+        module4.exports = parentDummyChains;
+        function parentDummyChains(g) {
+          let postorderNums = postorder(g);
+          g.graph().dummyChains.forEach((v) => {
+            let node = g.node(v);
+            let edgeObj = node.edgeObj;
+            let pathData = findPath(g, postorderNums, edgeObj.v, edgeObj.w);
+            let path = pathData.path;
+            let lca = pathData.lca;
+            let pathIdx = 0;
+            let pathV = path[pathIdx];
+            let ascending = true;
+            while (v !== edgeObj.w) {
+              node = g.node(v);
+              if (ascending) {
+                while ((pathV = path[pathIdx]) !== lca && g.node(pathV).maxRank < node.rank) {
+                  pathIdx++;
+                }
+                if (pathV === lca) {
+                  ascending = false;
+                }
+              }
+              if (!ascending) {
+                while (pathIdx < path.length - 1 && g.node(pathV = path[pathIdx + 1]).minRank <= node.rank) {
+                  pathIdx++;
+                }
+                pathV = path[pathIdx];
+              }
+              g.setParent(v, pathV);
+              v = g.successors(v)[0];
+            }
+          });
+        }
+        function findPath(g, postorderNums, v, w) {
+          let vPath = [];
+          let wPath = [];
+          let low = Math.min(postorderNums[v].low, postorderNums[w].low);
+          let lim = Math.max(postorderNums[v].lim, postorderNums[w].lim);
+          let parent;
+          let lca;
+          parent = v;
+          do {
+            parent = g.parent(parent);
+            vPath.push(parent);
+          } while (parent && (postorderNums[parent].low > low || lim > postorderNums[parent].lim));
+          lca = parent;
+          parent = w;
+          while ((parent = g.parent(parent)) !== lca) {
+            wPath.push(parent);
+          }
+          return { path: vPath.concat(wPath.reverse()), lca };
+        }
+        function postorder(g) {
+          let result = {};
+          let lim = 0;
+          function dfs(v) {
+            let low = lim;
+            g.children(v).forEach(dfs);
+            result[v] = { low, lim: lim++ };
+          }
+          g.children().forEach(dfs);
+          return result;
+        }
+      }, {}], 21: [function(require2, module4, exports4) {
+        "use strict";
+        let Graph = require2("@dagrejs/graphlib").Graph;
+        let util = require2("../util");
+        module4.exports = { positionX, findType1Conflicts, findType2Conflicts, addConflict, hasConflict, verticalAlignment, horizontalCompaction, alignCoordinates, findSmallestWidthAlignment, balance };
+        function findType1Conflicts(g, layering) {
+          let conflicts = {};
+          function visitLayer(prevLayer, layer) {
+            let k0 = 0, scanPos = 0, prevLayerLength = prevLayer.length, lastNode = layer[layer.length - 1];
+            layer.forEach((v, i) => {
+              let w = findOtherInnerSegmentNode(g, v), k1 = w ? g.node(w).order : prevLayerLength;
+              if (w || v === lastNode) {
+                layer.slice(scanPos, i + 1).forEach((scanNode) => {
+                  g.predecessors(scanNode).forEach((u) => {
+                    let uLabel = g.node(u), uPos = uLabel.order;
+                    if ((uPos < k0 || k1 < uPos) && !(uLabel.dummy && g.node(scanNode).dummy)) {
+                      addConflict(conflicts, u, scanNode);
+                    }
+                  });
+                });
+                scanPos = i + 1;
+                k0 = k1;
+              }
+            });
+            return layer;
+          }
+          layering.length && layering.reduce(visitLayer);
+          return conflicts;
+        }
+        function findType2Conflicts(g, layering) {
+          let conflicts = {};
+          function scan(south, southPos, southEnd, prevNorthBorder, nextNorthBorder) {
+            let v;
+            util.range(southPos, southEnd).forEach((i) => {
+              v = south[i];
+              if (g.node(v).dummy) {
+                g.predecessors(v).forEach((u) => {
+                  let uNode = g.node(u);
+                  if (uNode.dummy && (uNode.order < prevNorthBorder || uNode.order > nextNorthBorder)) {
+                    addConflict(conflicts, u, v);
+                  }
+                });
+              }
+            });
+          }
+          function visitLayer(north, south) {
+            let prevNorthPos = -1, nextNorthPos, southPos = 0;
+            south.forEach((v, southLookahead) => {
+              if (g.node(v).dummy === "border") {
+                let predecessors = g.predecessors(v);
+                if (predecessors.length) {
+                  nextNorthPos = g.node(predecessors[0]).order;
+                  scan(south, southPos, southLookahead, prevNorthPos, nextNorthPos);
+                  southPos = southLookahead;
+                  prevNorthPos = nextNorthPos;
+                }
+              }
+              scan(south, southPos, south.length, nextNorthPos, north.length);
+            });
+            return south;
+          }
+          layering.length && layering.reduce(visitLayer);
+          return conflicts;
+        }
+        function findOtherInnerSegmentNode(g, v) {
+          if (g.node(v).dummy) {
+            return g.predecessors(v).find((u) => g.node(u).dummy);
+          }
+        }
+        function addConflict(conflicts, v, w) {
+          if (v > w) {
+            let tmp = v;
+            v = w;
+            w = tmp;
+          }
+          let conflictsV = conflicts[v];
+          if (!conflictsV) {
+            conflicts[v] = conflictsV = {};
+          }
+          conflictsV[w] = true;
+        }
+        function hasConflict(conflicts, v, w) {
+          if (v > w) {
+            let tmp = v;
+            v = w;
+            w = tmp;
+          }
+          return !!conflicts[v] && Object.hasOwn(conflicts[v], w);
+        }
+        function verticalAlignment(g, layering, conflicts, neighborFn) {
+          let root = {}, align = {}, pos = {};
+          layering.forEach((layer) => {
+            layer.forEach((v, order) => {
+              root[v] = v;
+              align[v] = v;
+              pos[v] = order;
+            });
+          });
+          layering.forEach((layer) => {
+            let prevIdx = -1;
+            layer.forEach((v) => {
+              let ws = neighborFn(v);
+              if (ws.length) {
+                ws = ws.sort((a, b) => pos[a] - pos[b]);
+                let mp = (ws.length - 1) / 2;
+                for (let i = Math.floor(mp), il = Math.ceil(mp); i <= il; ++i) {
+                  let w = ws[i];
+                  if (align[v] === v && prevIdx < pos[w] && !hasConflict(conflicts, v, w)) {
+                    align[w] = v;
+                    align[v] = root[v] = root[w];
+                    prevIdx = pos[w];
+                  }
+                }
+              }
+            });
+          });
+          return { root, align };
+        }
+        function horizontalCompaction(g, layering, root, align, reverseSep) {
+          let xs = {}, blockG = buildBlockGraph(g, layering, root, reverseSep), borderType = reverseSep ? "borderLeft" : "borderRight";
+          function iterate(setXsFunc, nextNodesFunc) {
+            let stack = blockG.nodes();
+            let elem = stack.pop();
+            let visited = {};
+            while (elem) {
+              if (visited[elem]) {
+                setXsFunc(elem);
+              } else {
+                visited[elem] = true;
+                stack.push(elem);
+                stack = stack.concat(nextNodesFunc(elem));
+              }
+              elem = stack.pop();
+            }
+          }
+          function pass1(elem) {
+            xs[elem] = blockG.inEdges(elem).reduce((acc, e) => {
+              return Math.max(acc, xs[e.v] + blockG.edge(e));
+            }, 0);
+          }
+          function pass2(elem) {
+            let min = blockG.outEdges(elem).reduce((acc, e) => {
+              return Math.min(acc, xs[e.w] - blockG.edge(e));
+            }, Number.POSITIVE_INFINITY);
+            let node = g.node(elem);
+            if (min !== Number.POSITIVE_INFINITY && node.borderType !== borderType) {
+              xs[elem] = Math.max(xs[elem], min);
+            }
+          }
+          iterate(pass1, blockG.predecessors.bind(blockG));
+          iterate(pass2, blockG.successors.bind(blockG));
+          Object.keys(align).forEach((v) => xs[v] = xs[root[v]]);
+          return xs;
+        }
+        function buildBlockGraph(g, layering, root, reverseSep) {
+          let blockGraph = new Graph(), graphLabel = g.graph(), sepFn = sep(graphLabel.nodesep, graphLabel.edgesep, reverseSep);
+          layering.forEach((layer) => {
+            let u;
+            layer.forEach((v) => {
+              let vRoot = root[v];
+              blockGraph.setNode(vRoot);
+              if (u) {
+                var uRoot = root[u], prevMax = blockGraph.edge(uRoot, vRoot);
+                blockGraph.setEdge(uRoot, vRoot, Math.max(sepFn(g, v, u), prevMax || 0));
+              }
+              u = v;
+            });
+          });
+          return blockGraph;
+        }
+        function findSmallestWidthAlignment(g, xss) {
+          return Object.values(xss).reduce((currentMinAndXs, xs) => {
+            let max = Number.NEGATIVE_INFINITY;
+            let min = Number.POSITIVE_INFINITY;
+            Object.entries(xs).forEach(([v, x]) => {
+              let halfWidth = width(g, v) / 2;
+              max = Math.max(x + halfWidth, max);
+              min = Math.min(x - halfWidth, min);
+            });
+            const newMin = max - min;
+            if (newMin < currentMinAndXs[0]) {
+              currentMinAndXs = [newMin, xs];
+            }
+            return currentMinAndXs;
+          }, [Number.POSITIVE_INFINITY, null])[1];
+        }
+        function alignCoordinates(xss, alignTo) {
+          let alignToVals = Object.values(alignTo), alignToMin = util.applyWithChunking(Math.min, alignToVals), alignToMax = util.applyWithChunking(Math.max, alignToVals);
+          ["u", "d"].forEach((vert) => {
+            ["l", "r"].forEach((horiz) => {
+              let alignment = vert + horiz, xs = xss[alignment];
+              if (xs === alignTo) return;
+              let xsVals = Object.values(xs);
+              let delta = alignToMin - util.applyWithChunking(Math.min, xsVals);
+              if (horiz !== "l") {
+                delta = alignToMax - util.applyWithChunking(Math.max, xsVals);
+              }
+              if (delta) {
+                xss[alignment] = util.mapValues(xs, (x) => x + delta);
+              }
+            });
+          });
+        }
+        function balance(xss, align) {
+          return util.mapValues(xss.ul, (num, v) => {
+            if (align) {
+              return xss[align.toLowerCase()][v];
+            } else {
+              let xs = Object.values(xss).map((xs2) => xs2[v]).sort((a, b) => a - b);
+              return (xs[1] + xs[2]) / 2;
+            }
+          });
+        }
+        function positionX(g) {
+          let layering = util.buildLayerMatrix(g);
+          let conflicts = Object.assign(findType1Conflicts(g, layering), findType2Conflicts(g, layering));
+          let xss = {};
+          let adjustedLayering;
+          ["u", "d"].forEach((vert) => {
+            adjustedLayering = vert === "u" ? layering : Object.values(layering).reverse();
+            ["l", "r"].forEach((horiz) => {
+              if (horiz === "r") {
+                adjustedLayering = adjustedLayering.map((inner) => {
+                  return Object.values(inner).reverse();
+                });
+              }
+              let neighborFn = (vert === "u" ? g.predecessors : g.successors).bind(g);
+              let align = verticalAlignment(g, adjustedLayering, conflicts, neighborFn);
+              let xs = horizontalCompaction(g, adjustedLayering, align.root, align.align, horiz === "r");
+              if (horiz === "r") {
+                xs = util.mapValues(xs, (x) => -x);
+              }
+              xss[vert + horiz] = xs;
+            });
+          });
+          let smallestWidth = findSmallestWidthAlignment(g, xss);
+          alignCoordinates(xss, smallestWidth);
+          return balance(xss, g.graph().align);
+        }
+        function sep(nodeSep, edgeSep, reverseSep) {
+          return (g, v, w) => {
+            let vLabel = g.node(v);
+            let wLabel = g.node(w);
+            let sum = 0;
+            let delta;
+            sum += vLabel.width / 2;
+            if (Object.hasOwn(vLabel, "labelpos")) {
+              switch (vLabel.labelpos.toLowerCase()) {
+                case "l":
+                  delta = -vLabel.width / 2;
+                  break;
+                case "r":
+                  delta = vLabel.width / 2;
+                  break;
+              }
+            }
+            if (delta) {
+              sum += reverseSep ? delta : -delta;
+            }
+            delta = 0;
+            sum += (vLabel.dummy ? edgeSep : nodeSep) / 2;
+            sum += (wLabel.dummy ? edgeSep : nodeSep) / 2;
+            sum += wLabel.width / 2;
+            if (Object.hasOwn(wLabel, "labelpos")) {
+              switch (wLabel.labelpos.toLowerCase()) {
+                case "l":
+                  delta = wLabel.width / 2;
+                  break;
+                case "r":
+                  delta = -wLabel.width / 2;
+                  break;
+              }
+            }
+            if (delta) {
+              sum += reverseSep ? delta : -delta;
+            }
+            delta = 0;
+            return sum;
+          };
+        }
+        function width(g, v) {
+          return g.node(v).width;
+        }
+      }, { "../util": 27, "@dagrejs/graphlib": 29 }], 22: [function(require2, module4, exports4) {
+        "use strict";
+        let util = require2("../util");
+        let positionX = require2("./bk").positionX;
+        module4.exports = position;
+        function position(g) {
+          g = util.asNonCompoundGraph(g);
+          positionY(g);
+          Object.entries(positionX(g)).forEach(([v, x]) => g.node(v).x = x);
+        }
+        function positionY(g) {
+          let layering = util.buildLayerMatrix(g);
+          let rankSep = g.graph().ranksep;
+          let prevY = 0;
+          layering.forEach((layer) => {
+            const maxHeight = layer.reduce((acc, v) => {
+              const height = g.node(v).height;
+              if (acc > height) {
+                return acc;
+              } else {
+                return height;
+              }
+            }, 0);
+            layer.forEach((v) => g.node(v).y = prevY + maxHeight / 2);
+            prevY += maxHeight + rankSep;
+          });
+        }
+      }, { "../util": 27, "./bk": 21 }], 23: [function(require2, module4, exports4) {
+        "use strict";
+        var Graph = require2("@dagrejs/graphlib").Graph;
+        var slack = require2("./util").slack;
+        module4.exports = feasibleTree;
+        function feasibleTree(g) {
+          var t = new Graph({ directed: false });
+          var start = g.nodes()[0];
+          var size = g.nodeCount();
+          t.setNode(start, {});
+          var edge, delta;
+          while (tightTree(t, g) < size) {
+            edge = findMinSlackEdge(t, g);
+            delta = t.hasNode(edge.v) ? slack(g, edge) : -slack(g, edge);
+            shiftRanks(t, g, delta);
+          }
+          return t;
+        }
+        function tightTree(t, g) {
+          function dfs(v) {
+            g.nodeEdges(v).forEach((e) => {
+              var edgeV = e.v, w = v === edgeV ? e.w : edgeV;
+              if (!t.hasNode(w) && !slack(g, e)) {
+                t.setNode(w, {});
+                t.setEdge(v, w, {});
+                dfs(w);
+              }
+            });
+          }
+          t.nodes().forEach(dfs);
+          return t.nodeCount();
+        }
+        function findMinSlackEdge(t, g) {
+          const edges = g.edges();
+          return edges.reduce((acc, edge) => {
+            let edgeSlack = Number.POSITIVE_INFINITY;
+            if (t.hasNode(edge.v) !== t.hasNode(edge.w)) {
+              edgeSlack = slack(g, edge);
+            }
+            if (edgeSlack < acc[0]) {
+              return [edgeSlack, edge];
+            }
+            return acc;
+          }, [Number.POSITIVE_INFINITY, null])[1];
+        }
+        function shiftRanks(t, g, delta) {
+          t.nodes().forEach((v) => g.node(v).rank += delta);
+        }
+      }, { "./util": 26, "@dagrejs/graphlib": 29 }], 24: [function(require2, module4, exports4) {
+        "use strict";
+        var rankUtil = require2("./util");
+        var longestPath = rankUtil.longestPath;
+        var feasibleTree = require2("./feasible-tree");
+        var networkSimplex = require2("./network-simplex");
+        module4.exports = rank;
+        function rank(g) {
+          switch (g.graph().ranker) {
+            case "network-simplex":
+              networkSimplexRanker(g);
+              break;
+            case "tight-tree":
+              tightTreeRanker(g);
+              break;
+            case "longest-path":
+              longestPathRanker(g);
+              break;
+            default:
+              networkSimplexRanker(g);
+          }
+        }
+        var longestPathRanker = longestPath;
+        function tightTreeRanker(g) {
+          longestPath(g);
+          feasibleTree(g);
+        }
+        function networkSimplexRanker(g) {
+          networkSimplex(g);
+        }
+      }, { "./feasible-tree": 23, "./network-simplex": 25, "./util": 26 }], 25: [function(require2, module4, exports4) {
+        "use strict";
+        var feasibleTree = require2("./feasible-tree");
+        var slack = require2("./util").slack;
+        var initRank = require2("./util").longestPath;
+        var preorder = require2("@dagrejs/graphlib").alg.preorder;
+        var postorder = require2("@dagrejs/graphlib").alg.postorder;
+        var simplify = require2("../util").simplify;
+        module4.exports = networkSimplex;
+        networkSimplex.initLowLimValues = initLowLimValues;
+        networkSimplex.initCutValues = initCutValues;
+        networkSimplex.calcCutValue = calcCutValue;
+        networkSimplex.leaveEdge = leaveEdge;
+        networkSimplex.enterEdge = enterEdge;
+        networkSimplex.exchangeEdges = exchangeEdges;
+        function networkSimplex(g) {
+          g = simplify(g);
+          initRank(g);
+          var t = feasibleTree(g);
+          initLowLimValues(t);
+          initCutValues(t, g);
+          var e, f;
+          while (e = leaveEdge(t)) {
+            f = enterEdge(t, g, e);
+            exchangeEdges(t, g, e, f);
+          }
+        }
+        function initCutValues(t, g) {
+          var vs = postorder(t, t.nodes());
+          vs = vs.slice(0, vs.length - 1);
+          vs.forEach((v) => assignCutValue(t, g, v));
+        }
+        function assignCutValue(t, g, child) {
+          var childLab = t.node(child);
+          var parent = childLab.parent;
+          t.edge(child, parent).cutvalue = calcCutValue(t, g, child);
+        }
+        function calcCutValue(t, g, child) {
+          var childLab = t.node(child);
+          var parent = childLab.parent;
+          var childIsTail = true;
+          var graphEdge = g.edge(child, parent);
+          var cutValue = 0;
+          if (!graphEdge) {
+            childIsTail = false;
+            graphEdge = g.edge(parent, child);
+          }
+          cutValue = graphEdge.weight;
+          g.nodeEdges(child).forEach((e) => {
+            var isOutEdge = e.v === child, other = isOutEdge ? e.w : e.v;
+            if (other !== parent) {
+              var pointsToHead = isOutEdge === childIsTail, otherWeight = g.edge(e).weight;
+              cutValue += pointsToHead ? otherWeight : -otherWeight;
+              if (isTreeEdge(t, child, other)) {
+                var otherCutValue = t.edge(child, other).cutvalue;
+                cutValue += pointsToHead ? -otherCutValue : otherCutValue;
+              }
+            }
+          });
+          return cutValue;
+        }
+        function initLowLimValues(tree, root) {
+          if (arguments.length < 2) {
+            root = tree.nodes()[0];
+          }
+          dfsAssignLowLim(tree, {}, 1, root);
+        }
+        function dfsAssignLowLim(tree, visited, nextLim, v, parent) {
+          var low = nextLim;
+          var label = tree.node(v);
+          visited[v] = true;
+          tree.neighbors(v).forEach((w) => {
+            if (!Object.hasOwn(visited, w)) {
+              nextLim = dfsAssignLowLim(tree, visited, nextLim, w, v);
+            }
+          });
+          label.low = low;
+          label.lim = nextLim++;
+          if (parent) {
+            label.parent = parent;
+          } else {
+            delete label.parent;
+          }
+          return nextLim;
+        }
+        function leaveEdge(tree) {
+          return tree.edges().find((e) => tree.edge(e).cutvalue < 0);
+        }
+        function enterEdge(t, g, edge) {
+          var v = edge.v;
+          var w = edge.w;
+          if (!g.hasEdge(v, w)) {
+            v = edge.w;
+            w = edge.v;
+          }
+          var vLabel = t.node(v);
+          var wLabel = t.node(w);
+          var tailLabel = vLabel;
+          var flip = false;
+          if (vLabel.lim > wLabel.lim) {
+            tailLabel = wLabel;
+            flip = true;
+          }
+          var candidates = g.edges().filter((edge2) => {
+            return flip === isDescendant(t, t.node(edge2.v), tailLabel) && flip !== isDescendant(t, t.node(edge2.w), tailLabel);
+          });
+          return candidates.reduce((acc, edge2) => {
+            if (slack(g, edge2) < slack(g, acc)) {
+              return edge2;
+            }
+            return acc;
+          });
+        }
+        function exchangeEdges(t, g, e, f) {
+          var v = e.v;
+          var w = e.w;
+          t.removeEdge(v, w);
+          t.setEdge(f.v, f.w, {});
+          initLowLimValues(t);
+          initCutValues(t, g);
+          updateRanks(t, g);
+        }
+        function updateRanks(t, g) {
+          var root = t.nodes().find((v) => !g.node(v).parent);
+          var vs = preorder(t, root);
+          vs = vs.slice(1);
+          vs.forEach((v) => {
+            var parent = t.node(v).parent, edge = g.edge(v, parent), flipped = false;
+            if (!edge) {
+              edge = g.edge(parent, v);
+              flipped = true;
+            }
+            g.node(v).rank = g.node(parent).rank + (flipped ? edge.minlen : -edge.minlen);
+          });
+        }
+        function isTreeEdge(tree, u, v) {
+          return tree.hasEdge(u, v);
+        }
+        function isDescendant(tree, vLabel, rootLabel) {
+          return rootLabel.low <= vLabel.lim && vLabel.lim <= rootLabel.lim;
+        }
+      }, { "../util": 27, "./feasible-tree": 23, "./util": 26, "@dagrejs/graphlib": 29 }], 26: [function(require2, module4, exports4) {
+        "use strict";
+        const { applyWithChunking } = require2("../util");
+        module4.exports = { longestPath, slack };
+        function longestPath(g) {
+          var visited = {};
+          function dfs(v) {
+            var label = g.node(v);
+            if (Object.hasOwn(visited, v)) {
+              return label.rank;
+            }
+            visited[v] = true;
+            let outEdgesMinLens = g.outEdges(v).map((e) => {
+              if (e == null) {
+                return Number.POSITIVE_INFINITY;
+              }
+              return dfs(e.w) - g.edge(e).minlen;
+            });
+            var rank = applyWithChunking(Math.min, outEdgesMinLens);
+            if (rank === Number.POSITIVE_INFINITY) {
+              rank = 0;
+            }
+            return label.rank = rank;
+          }
+          g.sources().forEach(dfs);
+        }
+        function slack(g, e) {
+          return g.node(e.w).rank - g.node(e.v).rank - g.edge(e).minlen;
+        }
+      }, { "../util": 27 }], 27: [function(require2, module4, exports4) {
+        "use strict";
+        let Graph = require2("@dagrejs/graphlib").Graph;
+        module4.exports = { addBorderNode, addDummyNode, applyWithChunking, asNonCompoundGraph, buildLayerMatrix, intersectRect, mapValues, maxRank, normalizeRanks, notime, partition, pick, predecessorWeights, range, removeEmptyRanks, simplify, successorWeights, time, uniqueId, zipObject };
+        function addDummyNode(g, type, attrs, name) {
+          let v;
+          do {
+            v = uniqueId(name);
+          } while (g.hasNode(v));
+          attrs.dummy = type;
+          g.setNode(v, attrs);
+          return v;
+        }
+        function simplify(g) {
+          let simplified = new Graph().setGraph(g.graph());
+          g.nodes().forEach((v) => simplified.setNode(v, g.node(v)));
+          g.edges().forEach((e) => {
+            let simpleLabel = simplified.edge(e.v, e.w) || { weight: 0, minlen: 1 };
+            let label = g.edge(e);
+            simplified.setEdge(e.v, e.w, { weight: simpleLabel.weight + label.weight, minlen: Math.max(simpleLabel.minlen, label.minlen) });
+          });
+          return simplified;
+        }
+        function asNonCompoundGraph(g) {
+          let simplified = new Graph({ multigraph: g.isMultigraph() }).setGraph(g.graph());
+          g.nodes().forEach((v) => {
+            if (!g.children(v).length) {
+              simplified.setNode(v, g.node(v));
+            }
+          });
+          g.edges().forEach((e) => {
+            simplified.setEdge(e, g.edge(e));
+          });
+          return simplified;
+        }
+        function successorWeights(g) {
+          let weightMap = g.nodes().map((v) => {
+            let sucs = {};
+            g.outEdges(v).forEach((e) => {
+              sucs[e.w] = (sucs[e.w] || 0) + g.edge(e).weight;
+            });
+            return sucs;
+          });
+          return zipObject(g.nodes(), weightMap);
+        }
+        function predecessorWeights(g) {
+          let weightMap = g.nodes().map((v) => {
+            let preds = {};
+            g.inEdges(v).forEach((e) => {
+              preds[e.v] = (preds[e.v] || 0) + g.edge(e).weight;
+            });
+            return preds;
+          });
+          return zipObject(g.nodes(), weightMap);
+        }
+        function intersectRect(rect, point) {
+          let x = rect.x;
+          let y = rect.y;
+          let dx = point.x - x;
+          let dy = point.y - y;
+          let w = rect.width / 2;
+          let h = rect.height / 2;
+          if (!dx && !dy) {
+            throw new Error("Not possible to find intersection inside of the rectangle");
+          }
+          let sx, sy;
+          if (Math.abs(dy) * w > Math.abs(dx) * h) {
+            if (dy < 0) {
+              h = -h;
+            }
+            sx = h * dx / dy;
+            sy = h;
+          } else {
+            if (dx < 0) {
+              w = -w;
+            }
+            sx = w;
+            sy = w * dy / dx;
+          }
+          return { x: x + sx, y: y + sy };
+        }
+        function buildLayerMatrix(g) {
+          let layering = range(maxRank(g) + 1).map(() => []);
+          g.nodes().forEach((v) => {
+            let node = g.node(v);
+            let rank = node.rank;
+            if (rank !== void 0) {
+              layering[rank][node.order] = v;
+            }
+          });
+          return layering;
+        }
+        function normalizeRanks(g) {
+          let nodeRanks = g.nodes().map((v) => {
+            let rank = g.node(v).rank;
+            if (rank === void 0) {
+              return Number.MAX_VALUE;
+            }
+            return rank;
+          });
+          let min = applyWithChunking(Math.min, nodeRanks);
+          g.nodes().forEach((v) => {
+            let node = g.node(v);
+            if (Object.hasOwn(node, "rank")) {
+              node.rank -= min;
+            }
+          });
+        }
+        function removeEmptyRanks(g) {
+          let nodeRanks = g.nodes().map((v) => g.node(v).rank);
+          let offset = applyWithChunking(Math.min, nodeRanks);
+          let layers = [];
+          g.nodes().forEach((v) => {
+            let rank = g.node(v).rank - offset;
+            if (!layers[rank]) {
+              layers[rank] = [];
+            }
+            layers[rank].push(v);
+          });
+          let delta = 0;
+          let nodeRankFactor = g.graph().nodeRankFactor;
+          Array.from(layers).forEach((vs, i) => {
+            if (vs === void 0 && i % nodeRankFactor !== 0) {
+              --delta;
+            } else if (vs !== void 0 && delta) {
+              vs.forEach((v) => g.node(v).rank += delta);
+            }
+          });
+        }
+        function addBorderNode(g, prefix, rank, order) {
+          let node = { width: 0, height: 0 };
+          if (arguments.length >= 4) {
+            node.rank = rank;
+            node.order = order;
+          }
+          return addDummyNode(g, "border", node, prefix);
+        }
+        function splitToChunks(array, chunkSize = CHUNKING_THRESHOLD) {
+          const chunks = [];
+          for (let i = 0; i < array.length; i += chunkSize) {
+            const chunk = array.slice(i, i + chunkSize);
+            chunks.push(chunk);
+          }
+          return chunks;
+        }
+        const CHUNKING_THRESHOLD = 65535;
+        function applyWithChunking(fn, argsArray) {
+          if (argsArray.length > CHUNKING_THRESHOLD) {
+            const chunks = splitToChunks(argsArray);
+            return fn.apply(null, chunks.map((chunk) => fn.apply(null, chunk)));
+          } else {
+            return fn.apply(null, argsArray);
+          }
+        }
+        function maxRank(g) {
+          const nodes = g.nodes();
+          const nodeRanks = nodes.map((v) => {
+            let rank = g.node(v).rank;
+            if (rank === void 0) {
+              return Number.MIN_VALUE;
+            }
+            return rank;
+          });
+          return applyWithChunking(Math.max, nodeRanks);
+        }
+        function partition(collection, fn) {
+          let result = { lhs: [], rhs: [] };
+          collection.forEach((value) => {
+            if (fn(value)) {
+              result.lhs.push(value);
+            } else {
+              result.rhs.push(value);
+            }
+          });
+          return result;
+        }
+        function time(name, fn) {
+          let start = Date.now();
+          try {
+            return fn();
+          } finally {
+            console.log(name + " time: " + (Date.now() - start) + "ms");
+          }
+        }
+        function notime(name, fn) {
+          return fn();
+        }
+        let idCounter = 0;
+        function uniqueId(prefix) {
+          var id = ++idCounter;
+          return toString(prefix) + id;
+        }
+        function range(start, limit, step = 1) {
+          if (limit == null) {
+            limit = start;
+            start = 0;
+          }
+          let endCon = (i) => i < limit;
+          if (step < 0) {
+            endCon = (i) => limit < i;
+          }
+          const range2 = [];
+          for (let i = start; endCon(i); i += step) {
+            range2.push(i);
+          }
+          return range2;
+        }
+        function pick(source, keys) {
+          const dest = {};
+          for (const key of keys) {
+            if (source[key] !== void 0) {
+              dest[key] = source[key];
+            }
+          }
+          return dest;
+        }
+        function mapValues(obj, funcOrProp) {
+          let func = funcOrProp;
+          if (typeof funcOrProp === "string") {
+            func = (val) => val[funcOrProp];
+          }
+          return Object.entries(obj).reduce((acc, [k, v]) => {
+            acc[k] = func(v, k);
+            return acc;
+          }, {});
+        }
+        function zipObject(props, values) {
+          return props.reduce((acc, key, i) => {
+            acc[key] = values[i];
+            return acc;
+          }, {});
+        }
+      }, { "@dagrejs/graphlib": 29 }], 28: [function(require2, module4, exports4) {
+        module4.exports = "1.1.4";
+      }, {}], 29: [function(require2, module4, exports4) {
+        var lib = require2("./lib");
+        module4.exports = { Graph: lib.Graph, json: require2("./lib/json"), alg: require2("./lib/alg"), version: lib.version };
+      }, { "./lib": 45, "./lib/alg": 36, "./lib/json": 46 }], 30: [function(require2, module4, exports4) {
+        module4.exports = components;
+        function components(g) {
+          var visited = {};
+          var cmpts = [];
+          var cmpt;
+          function dfs(v) {
+            if (Object.hasOwn(visited, v)) return;
+            visited[v] = true;
+            cmpt.push(v);
+            g.successors(v).forEach(dfs);
+            g.predecessors(v).forEach(dfs);
+          }
+          g.nodes().forEach(function(v) {
+            cmpt = [];
+            dfs(v);
+            if (cmpt.length) {
+              cmpts.push(cmpt);
+            }
+          });
+          return cmpts;
+        }
+      }, {}], 31: [function(require2, module4, exports4) {
+        module4.exports = dfs;
+        function dfs(g, vs, order) {
+          if (!Array.isArray(vs)) {
+            vs = [vs];
+          }
+          var navigation = g.isDirected() ? (v) => g.successors(v) : (v) => g.neighbors(v);
+          var orderFunc = order === "post" ? postOrderDfs : preOrderDfs;
+          var acc = [];
+          var visited = {};
+          vs.forEach((v) => {
+            if (!g.hasNode(v)) {
+              throw new Error("Graph does not have node: " + v);
+            }
+            orderFunc(v, navigation, visited, acc);
+          });
+          return acc;
+        }
+        function postOrderDfs(v, navigation, visited, acc) {
+          var stack = [[v, false]];
+          while (stack.length > 0) {
+            var curr = stack.pop();
+            if (curr[1]) {
+              acc.push(curr[0]);
+            } else {
+              if (!Object.hasOwn(visited, curr[0])) {
+                visited[curr[0]] = true;
+                stack.push([curr[0], true]);
+                forEachRight(navigation(curr[0]), (w) => stack.push([w, false]));
+              }
+            }
+          }
+        }
+        function preOrderDfs(v, navigation, visited, acc) {
+          var stack = [v];
+          while (stack.length > 0) {
+            var curr = stack.pop();
+            if (!Object.hasOwn(visited, curr)) {
+              visited[curr] = true;
+              acc.push(curr);
+              forEachRight(navigation(curr), (w) => stack.push(w));
+            }
+          }
+        }
+        function forEachRight(array, iteratee) {
+          var length = array.length;
+          while (length--) {
+            iteratee(array[length], length, array);
+          }
+          return array;
+        }
+      }, {}], 32: [function(require2, module4, exports4) {
+        var dijkstra = require2("./dijkstra");
+        module4.exports = dijkstraAll;
+        function dijkstraAll(g, weightFunc, edgeFunc) {
+          return g.nodes().reduce(function(acc, v) {
+            acc[v] = dijkstra(g, v, weightFunc, edgeFunc);
+            return acc;
+          }, {});
+        }
+      }, { "./dijkstra": 33 }], 33: [function(require2, module4, exports4) {
+        var PriorityQueue = require2("../data/priority-queue");
+        module4.exports = dijkstra;
+        var DEFAULT_WEIGHT_FUNC = () => 1;
+        function dijkstra(g, source, weightFn, edgeFn) {
+          return runDijkstra(g, String(source), weightFn || DEFAULT_WEIGHT_FUNC, edgeFn || function(v) {
+            return g.outEdges(v);
+          });
+        }
+        function runDijkstra(g, source, weightFn, edgeFn) {
+          var results = {};
+          var pq = new PriorityQueue();
+          var v, vEntry;
+          var updateNeighbors = function(edge) {
+            var w = edge.v !== v ? edge.v : edge.w;
+            var wEntry = results[w];
+            var weight = weightFn(edge);
+            var distance = vEntry.distance + weight;
+            if (weight < 0) {
+              throw new Error("dijkstra does not allow negative edge weights. Bad edge: " + edge + " Weight: " + weight);
+            }
+            if (distance < wEntry.distance) {
+              wEntry.distance = distance;
+              wEntry.predecessor = v;
+              pq.decrease(w, distance);
+            }
+          };
+          g.nodes().forEach(function(v2) {
+            var distance = v2 === source ? 0 : Number.POSITIVE_INFINITY;
+            results[v2] = { distance };
+            pq.add(v2, distance);
+          });
+          while (pq.size() > 0) {
+            v = pq.removeMin();
+            vEntry = results[v];
+            if (vEntry.distance === Number.POSITIVE_INFINITY) {
+              break;
+            }
+            edgeFn(v).forEach(updateNeighbors);
+          }
+          return results;
+        }
+      }, { "../data/priority-queue": 43 }], 34: [function(require2, module4, exports4) {
+        var tarjan = require2("./tarjan");
+        module4.exports = findCycles;
+        function findCycles(g) {
+          return tarjan(g).filter(function(cmpt) {
+            return cmpt.length > 1 || cmpt.length === 1 && g.hasEdge(cmpt[0], cmpt[0]);
+          });
+        }
+      }, { "./tarjan": 41 }], 35: [function(require2, module4, exports4) {
+        module4.exports = floydWarshall;
+        var DEFAULT_WEIGHT_FUNC = () => 1;
+        function floydWarshall(g, weightFn, edgeFn) {
+          return runFloydWarshall(g, weightFn || DEFAULT_WEIGHT_FUNC, edgeFn || function(v) {
+            return g.outEdges(v);
+          });
+        }
+        function runFloydWarshall(g, weightFn, edgeFn) {
+          var results = {};
+          var nodes = g.nodes();
+          nodes.forEach(function(v) {
+            results[v] = {};
+            results[v][v] = { distance: 0 };
+            nodes.forEach(function(w) {
+              if (v !== w) {
+                results[v][w] = { distance: Number.POSITIVE_INFINITY };
+              }
+            });
+            edgeFn(v).forEach(function(edge) {
+              var w = edge.v === v ? edge.w : edge.v;
+              var d = weightFn(edge);
+              results[v][w] = { distance: d, predecessor: v };
+            });
+          });
+          nodes.forEach(function(k) {
+            var rowK = results[k];
+            nodes.forEach(function(i) {
+              var rowI = results[i];
+              nodes.forEach(function(j) {
+                var ik = rowI[k];
+                var kj = rowK[j];
+                var ij = rowI[j];
+                var altDistance = ik.distance + kj.distance;
+                if (altDistance < ij.distance) {
+                  ij.distance = altDistance;
+                  ij.predecessor = kj.predecessor;
+                }
+              });
+            });
+          });
+          return results;
+        }
+      }, {}], 36: [function(require2, module4, exports4) {
+        module4.exports = { components: require2("./components"), dijkstra: require2("./dijkstra"), dijkstraAll: require2("./dijkstra-all"), findCycles: require2("./find-cycles"), floydWarshall: require2("./floyd-warshall"), isAcyclic: require2("./is-acyclic"), postorder: require2("./postorder"), preorder: require2("./preorder"), prim: require2("./prim"), tarjan: require2("./tarjan"), topsort: require2("./topsort") };
+      }, { "./components": 30, "./dijkstra": 33, "./dijkstra-all": 32, "./find-cycles": 34, "./floyd-warshall": 35, "./is-acyclic": 37, "./postorder": 38, "./preorder": 39, "./prim": 40, "./tarjan": 41, "./topsort": 42 }], 37: [function(require2, module4, exports4) {
+        var topsort = require2("./topsort");
+        module4.exports = isAcyclic;
+        function isAcyclic(g) {
+          try {
+            topsort(g);
+          } catch (e) {
+            if (e instanceof topsort.CycleException) {
+              return false;
+            }
+            throw e;
+          }
+          return true;
+        }
+      }, { "./topsort": 42 }], 38: [function(require2, module4, exports4) {
+        var dfs = require2("./dfs");
+        module4.exports = postorder;
+        function postorder(g, vs) {
+          return dfs(g, vs, "post");
+        }
+      }, { "./dfs": 31 }], 39: [function(require2, module4, exports4) {
+        var dfs = require2("./dfs");
+        module4.exports = preorder;
+        function preorder(g, vs) {
+          return dfs(g, vs, "pre");
+        }
+      }, { "./dfs": 31 }], 40: [function(require2, module4, exports4) {
+        var Graph = require2("../graph");
+        var PriorityQueue = require2("../data/priority-queue");
+        module4.exports = prim;
+        function prim(g, weightFunc) {
+          var result = new Graph();
+          var parents = {};
+          var pq = new PriorityQueue();
+          var v;
+          function updateNeighbors(edge) {
+            var w = edge.v === v ? edge.w : edge.v;
+            var pri = pq.priority(w);
+            if (pri !== void 0) {
+              var edgeWeight = weightFunc(edge);
+              if (edgeWeight < pri) {
+                parents[w] = v;
+                pq.decrease(w, edgeWeight);
+              }
+            }
+          }
+          if (g.nodeCount() === 0) {
+            return result;
+          }
+          g.nodes().forEach(function(v2) {
+            pq.add(v2, Number.POSITIVE_INFINITY);
+            result.setNode(v2);
+          });
+          pq.decrease(g.nodes()[0], 0);
+          var init = false;
+          while (pq.size() > 0) {
+            v = pq.removeMin();
+            if (Object.hasOwn(parents, v)) {
+              result.setEdge(v, parents[v]);
+            } else if (init) {
+              throw new Error("Input graph is not connected: " + g);
+            } else {
+              init = true;
+            }
+            g.nodeEdges(v).forEach(updateNeighbors);
+          }
+          return result;
+        }
+      }, { "../data/priority-queue": 43, "../graph": 44 }], 41: [function(require2, module4, exports4) {
+        module4.exports = tarjan;
+        function tarjan(g) {
+          var index = 0;
+          var stack = [];
+          var visited = {};
+          var results = [];
+          function dfs(v) {
+            var entry = visited[v] = { onStack: true, lowlink: index, index: index++ };
+            stack.push(v);
+            g.successors(v).forEach(function(w2) {
+              if (!Object.hasOwn(visited, w2)) {
+                dfs(w2);
+                entry.lowlink = Math.min(entry.lowlink, visited[w2].lowlink);
+              } else if (visited[w2].onStack) {
+                entry.lowlink = Math.min(entry.lowlink, visited[w2].index);
+              }
+            });
+            if (entry.lowlink === entry.index) {
+              var cmpt = [];
+              var w;
+              do {
+                w = stack.pop();
+                visited[w].onStack = false;
+                cmpt.push(w);
+              } while (v !== w);
+              results.push(cmpt);
+            }
+          }
+          g.nodes().forEach(function(v) {
+            if (!Object.hasOwn(visited, v)) {
+              dfs(v);
+            }
+          });
+          return results;
+        }
+      }, {}], 42: [function(require2, module4, exports4) {
+        function topsort(g) {
+          var visited = {};
+          var stack = {};
+          var results = [];
+          function visit(node) {
+            if (Object.hasOwn(stack, node)) {
+              throw new CycleException();
+            }
+            if (!Object.hasOwn(visited, node)) {
+              stack[node] = true;
+              visited[node] = true;
+              g.predecessors(node).forEach(visit);
+              delete stack[node];
+              results.push(node);
+            }
+          }
+          g.sinks().forEach(visit);
+          if (Object.keys(visited).length !== g.nodeCount()) {
+            throw new CycleException();
+          }
+          return results;
+        }
+        class CycleException extends Error {
+          constructor() {
+            super(...arguments);
+          }
+        }
+        module4.exports = topsort;
+        topsort.CycleException = CycleException;
+      }, {}], 43: [function(require2, module4, exports4) {
+        class PriorityQueue {
+          _arr = [];
+          _keyIndices = {};
+          /**
+             * Returns the number of elements in the queue. Takes `O(1)` time.
+             */
+          size() {
+            return this._arr.length;
+          }
+          /**
+             * Returns the keys that are in the queue. Takes `O(n)` time.
+             */
+          keys() {
+            return this._arr.map(function(x) {
+              return x.key;
+            });
+          }
+          /**
+             * Returns `true` if **key** is in the queue and `false` if not.
+             */
+          has(key) {
+            return Object.hasOwn(this._keyIndices, key);
+          }
+          /**
+             * Returns the priority for **key**. If **key** is not present in the queue
+             * then this function returns `undefined`. Takes `O(1)` time.
+             *
+             * @param {Object} key
+             */
+          priority(key) {
+            var index = this._keyIndices[key];
+            if (index !== void 0) {
+              return this._arr[index].priority;
+            }
+          }
+          /**
+             * Returns the key for the minimum element in this queue. If the queue is
+             * empty this function throws an Error. Takes `O(1)` time.
+             */
+          min() {
+            if (this.size() === 0) {
+              throw new Error("Queue underflow");
+            }
+            return this._arr[0].key;
+          }
+          /**
+             * Inserts a new key into the priority queue. If the key already exists in
+             * the queue this function returns `false`; otherwise it will return `true`.
+             * Takes `O(n)` time.
+             *
+             * @param {Object} key the key to add
+             * @param {Number} priority the initial priority for the key
+             */
+          add(key, priority) {
+            var keyIndices = this._keyIndices;
+            key = String(key);
+            if (!Object.hasOwn(keyIndices, key)) {
+              var arr = this._arr;
+              var index = arr.length;
+              keyIndices[key] = index;
+              arr.push({ key, priority });
+              this._decrease(index);
+              return true;
+            }
+            return false;
+          }
+          /**
+             * Removes and returns the smallest key in the queue. Takes `O(log n)` time.
+             */
+          removeMin() {
+            this._swap(0, this._arr.length - 1);
+            var min = this._arr.pop();
+            delete this._keyIndices[min.key];
+            this._heapify(0);
+            return min.key;
+          }
+          /**
+             * Decreases the priority for **key** to **priority**. If the new priority is
+             * greater than the previous priority, this function will throw an Error.
+             *
+             * @param {Object} key the key for which to raise priority
+             * @param {Number} priority the new priority for the key
+             */
+          decrease(key, priority) {
+            var index = this._keyIndices[key];
+            if (priority > this._arr[index].priority) {
+              throw new Error("New priority is greater than current priority. Key: " + key + " Old: " + this._arr[index].priority + " New: " + priority);
+            }
+            this._arr[index].priority = priority;
+            this._decrease(index);
+          }
+          _heapify(i) {
+            var arr = this._arr;
+            var l = 2 * i;
+            var r = l + 1;
+            var largest = i;
+            if (l < arr.length) {
+              largest = arr[l].priority < arr[largest].priority ? l : largest;
+              if (r < arr.length) {
+                largest = arr[r].priority < arr[largest].priority ? r : largest;
+              }
+              if (largest !== i) {
+                this._swap(i, largest);
+                this._heapify(largest);
+              }
+            }
+          }
+          _decrease(index) {
+            var arr = this._arr;
+            var priority = arr[index].priority;
+            var parent;
+            while (index !== 0) {
+              parent = index >> 1;
+              if (arr[parent].priority < priority) {
+                break;
+              }
+              this._swap(index, parent);
+              index = parent;
+            }
+          }
+          _swap(i, j) {
+            var arr = this._arr;
+            var keyIndices = this._keyIndices;
+            var origArrI = arr[i];
+            var origArrJ = arr[j];
+            arr[i] = origArrJ;
+            arr[j] = origArrI;
+            keyIndices[origArrJ.key] = i;
+            keyIndices[origArrI.key] = j;
+          }
+        }
+        module4.exports = PriorityQueue;
+      }, {}], 44: [function(require2, module4, exports4) {
+        "use strict";
+        var DEFAULT_EDGE_NAME = "\0";
+        var GRAPH_NODE = "\0";
+        var EDGE_KEY_DELIM = "";
+        class Graph {
+          _isDirected = true;
+          _isMultigraph = false;
+          _isCompound = false;
+          // Label for the graph itself
+          _label;
+          // Defaults to be set when creating a new node
+          _defaultNodeLabelFn = () => void 0;
+          // Defaults to be set when creating a new edge
+          _defaultEdgeLabelFn = () => void 0;
+          // v -> label
+          _nodes = {};
+          // v -> edgeObj
+          _in = {};
+          // u -> v -> Number
+          _preds = {};
+          // v -> edgeObj
+          _out = {};
+          // v -> w -> Number
+          _sucs = {};
+          // e -> edgeObj
+          _edgeObjs = {};
+          // e -> label
+          _edgeLabels = {};
+          /* Number of nodes in the graph. Should only be changed by the implementation. */
+          _nodeCount = 0;
+          /* Number of edges in the graph. Should only be changed by the implementation. */
+          _edgeCount = 0;
+          _parent;
+          _children;
+          constructor(opts) {
+            if (opts) {
+              this._isDirected = Object.hasOwn(opts, "directed") ? opts.directed : true;
+              this._isMultigraph = Object.hasOwn(opts, "multigraph") ? opts.multigraph : false;
+              this._isCompound = Object.hasOwn(opts, "compound") ? opts.compound : false;
+            }
+            if (this._isCompound) {
+              this._parent = {};
+              this._children = {};
+              this._children[GRAPH_NODE] = {};
+            }
+          }
+          /* === Graph functions ========= */
+          /**
+             * Whether graph was created with 'directed' flag set to true or not.
+             */
+          isDirected() {
+            return this._isDirected;
+          }
+          /**
+             * Whether graph was created with 'multigraph' flag set to true or not.
+             */
+          isMultigraph() {
+            return this._isMultigraph;
+          }
+          /**
+             * Whether graph was created with 'compound' flag set to true or not.
+             */
+          isCompound() {
+            return this._isCompound;
+          }
+          /**
+             * Sets the label of the graph.
+             */
+          setGraph(label) {
+            this._label = label;
+            return this;
+          }
+          /**
+             * Gets the graph label.
+             */
+          graph() {
+            return this._label;
+          }
+          /* === Node functions ========== */
+          /**
+             * Sets the default node label. If newDefault is a function, it will be
+             * invoked ach time when setting a label for a node. Otherwise, this label
+             * will be assigned as default label in case if no label was specified while
+             * setting a node.
+             * Complexity: O(1).
+             */
+          setDefaultNodeLabel(newDefault) {
+            this._defaultNodeLabelFn = newDefault;
+            if (typeof newDefault !== "function") {
+              this._defaultNodeLabelFn = () => newDefault;
+            }
+            return this;
+          }
+          /**
+             * Gets the number of nodes in the graph.
+             * Complexity: O(1).
+             */
+          nodeCount() {
+            return this._nodeCount;
+          }
+          /**
+             * Gets all nodes of the graph. Note, the in case of compound graph subnodes are
+             * not included in list.
+             * Complexity: O(1).
+             */
+          nodes() {
+            return Object.keys(this._nodes);
+          }
+          /**
+             * Gets list of nodes without in-edges.
+             * Complexity: O(|V|).
+             */
+          sources() {
+            var self2 = this;
+            return this.nodes().filter((v) => Object.keys(self2._in[v]).length === 0);
+          }
+          /**
+             * Gets list of nodes without out-edges.
+             * Complexity: O(|V|).
+             */
+          sinks() {
+            var self2 = this;
+            return this.nodes().filter((v) => Object.keys(self2._out[v]).length === 0);
+          }
+          /**
+             * Invokes setNode method for each node in names list.
+             * Complexity: O(|names|).
+             */
+          setNodes(vs, value) {
+            var args = arguments;
+            var self2 = this;
+            vs.forEach(function(v) {
+              if (args.length > 1) {
+                self2.setNode(v, value);
+              } else {
+                self2.setNode(v);
+              }
+            });
+            return this;
+          }
+          /**
+             * Creates or updates the value for the node v in the graph. If label is supplied
+             * it is set as the value for the node. If label is not supplied and the node was
+             * created by this call then the default node label will be assigned.
+             * Complexity: O(1).
+             */
+          setNode(v, value) {
+            if (Object.hasOwn(this._nodes, v)) {
+              if (arguments.length > 1) {
+                this._nodes[v] = value;
+              }
+              return this;
+            }
+            this._nodes[v] = arguments.length > 1 ? value : this._defaultNodeLabelFn(v);
+            if (this._isCompound) {
+              this._parent[v] = GRAPH_NODE;
+              this._children[v] = {};
+              this._children[GRAPH_NODE][v] = true;
+            }
+            this._in[v] = {};
+            this._preds[v] = {};
+            this._out[v] = {};
+            this._sucs[v] = {};
+            ++this._nodeCount;
+            return this;
+          }
+          /**
+             * Gets the label of node with specified name.
+             * Complexity: O(|V|).
+             */
+          node(v) {
+            return this._nodes[v];
+          }
+          /**
+             * Detects whether graph has a node with specified name or not.
+             */
+          hasNode(v) {
+            return Object.hasOwn(this._nodes, v);
+          }
+          /**
+             * Remove the node with the name from the graph or do nothing if the node is not in
+             * the graph. If the node was removed this function also removes any incident
+             * edges.
+             * Complexity: O(1).
+             */
+          removeNode(v) {
+            var self2 = this;
+            if (Object.hasOwn(this._nodes, v)) {
+              var removeEdge = (e) => self2.removeEdge(self2._edgeObjs[e]);
+              delete this._nodes[v];
+              if (this._isCompound) {
+                this._removeFromParentsChildList(v);
+                delete this._parent[v];
+                this.children(v).forEach(function(child) {
+                  self2.setParent(child);
+                });
+                delete this._children[v];
+              }
+              Object.keys(this._in[v]).forEach(removeEdge);
+              delete this._in[v];
+              delete this._preds[v];
+              Object.keys(this._out[v]).forEach(removeEdge);
+              delete this._out[v];
+              delete this._sucs[v];
+              --this._nodeCount;
+            }
+            return this;
+          }
+          /**
+             * Sets node p as a parent for node v if it is defined, or removes the
+             * parent for v if p is undefined. Method throws an exception in case of
+             * invoking it in context of noncompound graph.
+             * Average-case complexity: O(1).
+             */
+          setParent(v, parent) {
+            if (!this._isCompound) {
+              throw new Error("Cannot set parent in a non-compound graph");
+            }
+            if (parent === void 0) {
+              parent = GRAPH_NODE;
+            } else {
+              parent += "";
+              for (var ancestor = parent; ancestor !== void 0; ancestor = this.parent(ancestor)) {
+                if (ancestor === v) {
+                  throw new Error("Setting " + parent + " as parent of " + v + " would create a cycle");
+                }
+              }
+              this.setNode(parent);
+            }
+            this.setNode(v);
+            this._removeFromParentsChildList(v);
+            this._parent[v] = parent;
+            this._children[parent][v] = true;
+            return this;
+          }
+          _removeFromParentsChildList(v) {
+            delete this._children[this._parent[v]][v];
+          }
+          /**
+             * Gets parent node for node v.
+             * Complexity: O(1).
+             */
+          parent(v) {
+            if (this._isCompound) {
+              var parent = this._parent[v];
+              if (parent !== GRAPH_NODE) {
+                return parent;
+              }
+            }
+          }
+          /**
+             * Gets list of direct children of node v.
+             * Complexity: O(1).
+             */
+          children(v = GRAPH_NODE) {
+            if (this._isCompound) {
+              var children = this._children[v];
+              if (children) {
+                return Object.keys(children);
+              }
+            } else if (v === GRAPH_NODE) {
+              return this.nodes();
+            } else if (this.hasNode(v)) {
+              return [];
+            }
+          }
+          /**
+             * Return all nodes that are predecessors of the specified node or undefined if node v is not in
+             * the graph. Behavior is undefined for undirected graphs - use neighbors instead.
+             * Complexity: O(|V|).
+             */
+          predecessors(v) {
+            var predsV = this._preds[v];
+            if (predsV) {
+              return Object.keys(predsV);
+            }
+          }
+          /**
+             * Return all nodes that are successors of the specified node or undefined if node v is not in
+             * the graph. Behavior is undefined for undirected graphs - use neighbors instead.
+             * Complexity: O(|V|).
+             */
+          successors(v) {
+            var sucsV = this._sucs[v];
+            if (sucsV) {
+              return Object.keys(sucsV);
+            }
+          }
+          /**
+             * Return all nodes that are predecessors or successors of the specified node or undefined if
+             * node v is not in the graph.
+             * Complexity: O(|V|).
+             */
+          neighbors(v) {
+            var preds = this.predecessors(v);
+            if (preds) {
+              const union = new Set(preds);
+              for (var succ of this.successors(v)) {
+                union.add(succ);
+              }
+              return Array.from(union.values());
+            }
+          }
+          isLeaf(v) {
+            var neighbors;
+            if (this.isDirected()) {
+              neighbors = this.successors(v);
+            } else {
+              neighbors = this.neighbors(v);
+            }
+            return neighbors.length === 0;
+          }
+          /**
+             * Creates new graph with nodes filtered via filter. Edges incident to rejected node
+             * are also removed. In case of compound graph, if parent is rejected by filter,
+             * than all its children are rejected too.
+             * Average-case complexity: O(|E|+|V|).
+             */
+          filterNodes(filter) {
+            var copy = new this.constructor({ directed: this._isDirected, multigraph: this._isMultigraph, compound: this._isCompound });
+            copy.setGraph(this.graph());
+            var self2 = this;
+            Object.entries(this._nodes).forEach(function([v, value]) {
+              if (filter(v)) {
+                copy.setNode(v, value);
+              }
+            });
+            Object.values(this._edgeObjs).forEach(function(e) {
+              if (copy.hasNode(e.v) && copy.hasNode(e.w)) {
+                copy.setEdge(e, self2.edge(e));
+              }
+            });
+            var parents = {};
+            function findParent(v) {
+              var parent = self2.parent(v);
+              if (parent === void 0 || copy.hasNode(parent)) {
+                parents[v] = parent;
+                return parent;
+              } else if (parent in parents) {
+                return parents[parent];
+              } else {
+                return findParent(parent);
+              }
+            }
+            if (this._isCompound) {
+              copy.nodes().forEach((v) => copy.setParent(v, findParent(v)));
+            }
+            return copy;
+          }
+          /* === Edge functions ========== */
+          /**
+             * Sets the default edge label or factory function. This label will be
+             * assigned as default label in case if no label was specified while setting
+             * an edge or this function will be invoked each time when setting an edge
+             * with no label specified and returned value * will be used as a label for edge.
+             * Complexity: O(1).
+             */
+          setDefaultEdgeLabel(newDefault) {
+            this._defaultEdgeLabelFn = newDefault;
+            if (typeof newDefault !== "function") {
+              this._defaultEdgeLabelFn = () => newDefault;
+            }
+            return this;
+          }
+          /**
+             * Gets the number of edges in the graph.
+             * Complexity: O(1).
+             */
+          edgeCount() {
+            return this._edgeCount;
+          }
+          /**
+             * Gets edges of the graph. In case of compound graph subgraphs are not considered.
+             * Complexity: O(|E|).
+             */
+          edges() {
+            return Object.values(this._edgeObjs);
+          }
+          /**
+             * Establish an edges path over the nodes in nodes list. If some edge is already
+             * exists, it will update its label, otherwise it will create an edge between pair
+             * of nodes with label provided or default label if no label provided.
+             * Complexity: O(|nodes|).
+             */
+          setPath(vs, value) {
+            var self2 = this;
+            var args = arguments;
+            vs.reduce(function(v, w) {
+              if (args.length > 1) {
+                self2.setEdge(v, w, value);
+              } else {
+                self2.setEdge(v, w);
+              }
+              return w;
+            });
+            return this;
+          }
+          /**
+             * Creates or updates the label for the edge (v, w) with the optionally supplied
+             * name. If label is supplied it is set as the value for the edge. If label is not
+             * supplied and the edge was created by this call then the default edge label will
+             * be assigned. The name parameter is only useful with multigraphs.
+             */
+          setEdge() {
+            var v, w, name, value;
+            var valueSpecified = false;
+            var arg0 = arguments[0];
+            if (typeof arg0 === "object" && arg0 !== null && "v" in arg0) {
+              v = arg0.v;
+              w = arg0.w;
+              name = arg0.name;
+              if (arguments.length === 2) {
+                value = arguments[1];
+                valueSpecified = true;
+              }
+            } else {
+              v = arg0;
+              w = arguments[1];
+              name = arguments[3];
+              if (arguments.length > 2) {
+                value = arguments[2];
+                valueSpecified = true;
+              }
+            }
+            v = "" + v;
+            w = "" + w;
+            if (name !== void 0) {
+              name = "" + name;
+            }
+            var e = edgeArgsToId(this._isDirected, v, w, name);
+            if (Object.hasOwn(this._edgeLabels, e)) {
+              if (valueSpecified) {
+                this._edgeLabels[e] = value;
+              }
+              return this;
+            }
+            if (name !== void 0 && !this._isMultigraph) {
+              throw new Error("Cannot set a named edge when isMultigraph = false");
+            }
+            this.setNode(v);
+            this.setNode(w);
+            this._edgeLabels[e] = valueSpecified ? value : this._defaultEdgeLabelFn(v, w, name);
+            var edgeObj = edgeArgsToObj(this._isDirected, v, w, name);
+            v = edgeObj.v;
+            w = edgeObj.w;
+            Object.freeze(edgeObj);
+            this._edgeObjs[e] = edgeObj;
+            incrementOrInitEntry(this._preds[w], v);
+            incrementOrInitEntry(this._sucs[v], w);
+            this._in[w][e] = edgeObj;
+            this._out[v][e] = edgeObj;
+            this._edgeCount++;
+            return this;
+          }
+          /**
+             * Gets the label for the specified edge.
+             * Complexity: O(1).
+             */
+          edge(v, w, name) {
+            var e = arguments.length === 1 ? edgeObjToId(this._isDirected, arguments[0]) : edgeArgsToId(this._isDirected, v, w, name);
+            return this._edgeLabels[e];
+          }
+          /**
+             * Gets the label for the specified edge and converts it to an object.
+             * Complexity: O(1)
+             */
+          edgeAsObj() {
+            const edge = this.edge(...arguments);
+            if (typeof edge !== "object") {
+              return { label: edge };
+            }
+            return edge;
+          }
+          /**
+             * Detects whether the graph contains specified edge or not. No subgraphs are considered.
+             * Complexity: O(1).
+             */
+          hasEdge(v, w, name) {
+            var e = arguments.length === 1 ? edgeObjToId(this._isDirected, arguments[0]) : edgeArgsToId(this._isDirected, v, w, name);
+            return Object.hasOwn(this._edgeLabels, e);
+          }
+          /**
+             * Removes the specified edge from the graph. No subgraphs are considered.
+             * Complexity: O(1).
+             */
+          removeEdge(v, w, name) {
+            var e = arguments.length === 1 ? edgeObjToId(this._isDirected, arguments[0]) : edgeArgsToId(this._isDirected, v, w, name);
+            var edge = this._edgeObjs[e];
+            if (edge) {
+              v = edge.v;
+              w = edge.w;
+              delete this._edgeLabels[e];
+              delete this._edgeObjs[e];
+              decrementOrRemoveEntry(this._preds[w], v);
+              decrementOrRemoveEntry(this._sucs[v], w);
+              delete this._in[w][e];
+              delete this._out[v][e];
+              this._edgeCount--;
+            }
+            return this;
+          }
+          /**
+             * Return all edges that point to the node v. Optionally filters those edges down to just those
+             * coming from node u. Behavior is undefined for undirected graphs - use nodeEdges instead.
+             * Complexity: O(|E|).
+             */
+          inEdges(v, u) {
+            var inV = this._in[v];
+            if (inV) {
+              var edges = Object.values(inV);
+              if (!u) {
+                return edges;
+              }
+              return edges.filter((edge) => edge.v === u);
+            }
+          }
+          /**
+             * Return all edges that are pointed at by node v. Optionally filters those edges down to just
+             * those point to w. Behavior is undefined for undirected graphs - use nodeEdges instead.
+             * Complexity: O(|E|).
+             */
+          outEdges(v, w) {
+            var outV = this._out[v];
+            if (outV) {
+              var edges = Object.values(outV);
+              if (!w) {
+                return edges;
+              }
+              return edges.filter((edge) => edge.w === w);
+            }
+          }
+          /**
+             * Returns all edges to or from node v regardless of direction. Optionally filters those edges
+             * down to just those between nodes v and w regardless of direction.
+             * Complexity: O(|E|).
+             */
+          nodeEdges(v, w) {
+            var inEdges = this.inEdges(v, w);
+            if (inEdges) {
+              return inEdges.concat(this.outEdges(v, w));
+            }
+          }
+        }
+        function incrementOrInitEntry(map, k) {
+          if (map[k]) {
+            map[k]++;
+          } else {
+            map[k] = 1;
+          }
+        }
+        function decrementOrRemoveEntry(map, k) {
+          if (!--map[k]) {
+            delete map[k];
+          }
+        }
+        function edgeArgsToId(isDirected, v_, w_, name) {
+          var v = "" + v_;
+          var w = "" + w_;
+          if (!isDirected && v > w) {
+            var tmp = v;
+            v = w;
+            w = tmp;
+          }
+          return v + EDGE_KEY_DELIM + w + EDGE_KEY_DELIM + (name === void 0 ? DEFAULT_EDGE_NAME : name);
+        }
+        function edgeArgsToObj(isDirected, v_, w_, name) {
+          var v = "" + v_;
+          var w = "" + w_;
+          if (!isDirected && v > w) {
+            var tmp = v;
+            v = w;
+            w = tmp;
+          }
+          var edgeObj = { v, w };
+          if (name) {
+            edgeObj.name = name;
+          }
+          return edgeObj;
+        }
+        function edgeObjToId(isDirected, edgeObj) {
+          return edgeArgsToId(isDirected, edgeObj.v, edgeObj.w, edgeObj.name);
+        }
+        module4.exports = Graph;
+      }, {}], 45: [function(require2, module4, exports4) {
+        module4.exports = { Graph: require2("./graph"), version: require2("./version") };
+      }, { "./graph": 44, "./version": 47 }], 46: [function(require2, module4, exports4) {
+        var Graph = require2("./graph");
+        module4.exports = { write, read };
+        function write(g) {
+          var json = { options: { directed: g.isDirected(), multigraph: g.isMultigraph(), compound: g.isCompound() }, nodes: writeNodes(g), edges: writeEdges(g) };
+          if (g.graph() !== void 0) {
+            json.value = structuredClone(g.graph());
+          }
+          return json;
+        }
+        function writeNodes(g) {
+          return g.nodes().map(function(v) {
+            var nodeValue = g.node(v);
+            var parent = g.parent(v);
+            var node = { v };
+            if (nodeValue !== void 0) {
+              node.value = nodeValue;
+            }
+            if (parent !== void 0) {
+              node.parent = parent;
+            }
+            return node;
+          });
+        }
+        function writeEdges(g) {
+          return g.edges().map(function(e) {
+            var edgeValue = g.edge(e);
+            var edge = { v: e.v, w: e.w };
+            if (e.name !== void 0) {
+              edge.name = e.name;
+            }
+            if (edgeValue !== void 0) {
+              edge.value = edgeValue;
+            }
+            return edge;
+          });
+        }
+        function read(json) {
+          var g = new Graph(json.options).setGraph(json.value);
+          json.nodes.forEach(function(entry) {
+            g.setNode(entry.v, entry.value);
+            if (entry.parent) {
+              g.setParent(entry.v, entry.parent);
+            }
+          });
+          json.edges.forEach(function(entry) {
+            g.setEdge({ v: entry.v, w: entry.w, name: entry.name }, entry.value);
+          });
+          return g;
+        }
+      }, { "./graph": 44 }], 47: [function(require2, module4, exports4) {
+        module4.exports = "2.2.4";
+      }, {}] }, {}, [1])(1);
+    });
+  }
+});
 
-		this.tagsEl.empty();
-		this.tagsSection.toggle(tags.length > 0);
-		for (const t of tags) {
-			const out = state.xtags.has(t);
-			const chip = this.tagsEl.createDiv({ cls: 'canvas-board-chip', text: '#' + t, attr: { 'aria-label': `click to ${out ? 'show' : 'hide'} · shift-click to select` } });
-			chip.toggleClass('is-out', out);
-			chip.addEventListener('click', e => e.shiftKey ? select(n => plugin.cardTagSet(n).has(t)) : toggle(state.xtags, t));
-		}
+// src/apm/loadSettings.js
+var require_loadSettings = __commonJS({
+  "src/apm/loadSettings.js"(exports2, module2) {
+    var { DEFAULTS } = require_constants2();
+    var unitOf = require_unitOf();
+    function loadSettings(stored, legacy) {
+      const s = Object.assign({}, DEFAULTS, stored || legacy || {});
+      if (s.unit !== unitOf(s.windowMinutes)) Object.assign(s, { pb: 0, pbDate: "", unit: unitOf(s.windowMinutes) });
+      return s;
+    }
+    module2.exports = loadSettings;
+  }
+});
 
-		this.foldedEl.empty();
-		this.foldedSection.toggle(folds.size > 0);
-		// Color dot, first line as title, the rest muted below, and how many cards the fold hides.
-		for (const [id, dir] of folds) {
-			const node = canvas.nodes.get(id);
-			if (!node) continue;
-			const row = this.foldedEl.createDiv({ cls: 'canvas-board-pane-row canvas-board-pane-card', attr: { 'aria-label': 'Click to unfold the whole branch · shift-click to select the card' } });
-			row.createSpan({ cls: 'canvas-board-dot', attr: { style: plugin.dotStyle(node.getData().color) } });
-			const text = row.createDiv({ cls: 'canvas-board-pane-card-text' });
-			const [title, ...rest] = plugin.cb.plainLines(plugin.cardText(node));
-			text.createDiv({ cls: 'canvas-board-pane-card-title', text: title || '(empty)' });
-			if (rest.length) text.createDiv({ cls: 'canvas-board-pane-card-rest', text: rest.join(' · ') });
-			row.createSpan({ cls: 'canvas-board-pane-card-count', text: `· ${plugin.branchLevels(canvas, id, dir).flat().length} folded` });
-			row.addEventListener('click', e => e.shiftKey ? select(n => n.id === id) : plugin.unfold(canvas, [id], Infinity));
-		}
-	}
+// src/plugin/claudeBin.js
+var require_claudeBin = __commonJS({
+  "src/plugin/claudeBin.js"(exports2, module2) {
+    var fs = require("fs");
+    var os = require("os");
+    var path = require("path");
+    function claudeBin(setting) {
+      if (setting) return setting;
+      const local = path.join(os.homedir(), ".local", "bin", process.platform === "win32" ? "claude.exe" : "claude");
+      return fs.existsSync(local) ? local : "claude";
+    }
+    module2.exports = claudeBin;
+  }
+});
 
-	destroy() {
-		this.el.remove();
-	}
-}
+// src/plugin/onPath.js
+var require_onPath = __commonJS({
+  "src/plugin/onPath.js"(exports2, module2) {
+    var fs = require("fs");
+    var path = require("path");
+    var onPath = (bin) => String(process.env.PATH || "").split(path.delimiter).some((d) => d && fs.existsSync(path.join(d, bin)));
+    module2.exports = onPath;
+  }
+});
 
-class CanvasBoardSettings extends PluginSettingTab {
-	constructor(app, plugin) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
+// src/plugin/defaultLaunch.js
+var require_defaultLaunch = __commonJS({
+  "src/plugin/defaultLaunch.js"(exports2, module2) {
+    var { LINUX_TERMINALS } = require_constants();
+    var onPath = require_onPath();
+    function defaultLaunch({ vault, board, claude }) {
+      const prompt = `/canvas-board ${board}`;
+      if (process.platform === "win32") return ["wt.exe", ["-w", "canvas-board", "new-tab", "-d", vault, "--title", `pass ${board}`, claude, prompt]];
+      if (process.platform === "darwin") return ["osascript", [
+        "-e",
+        "on run argv",
+        "-e",
+        'tell application "Terminal"',
+        "-e",
+        "activate",
+        "-e",
+        'do script "cd " & quoted form of item 1 of argv & " && " & quoted form of item 2 of argv & " " & quoted form of item 3 of argv',
+        "-e",
+        "end tell",
+        "-e",
+        "end run",
+        vault,
+        claude,
+        prompt
+      ]];
+      const found = LINUX_TERMINALS.find(([bin]) => onPath(bin));
+      return found ? [found[0], found[1](vault, [claude, prompt])] : null;
+    }
+    module2.exports = defaultLaunch;
+  }
+});
 
-	display() {
-		const { containerEl } = this;
-		containerEl.empty();
-		const text = (name, desc, key) => new Setting(containerEl).setName(name).setDesc(desc).addText(t => t
-			.setPlaceholder(DEFAULTS[key])
-			.setValue(this.plugin.settings[key])
-			.onChange(async v => { this.plugin.settings[key] = v.trim() || DEFAULTS[key]; await this.plugin.saveData(this.plugin.settings); }));
-		const heading = name => new Setting(containerEl).setName(name).setHeading();
-		new Setting(containerEl).setName('Hotkeys').setDesc('Every canvas board command can have a key; buttons and menu items show it.').addButton(b => b
-			.setButtonText('Open hotkeys')
-			.onClick(() => {
-				this.app.setting.openTabById('hotkeys');
-				const tab = this.app.setting.activeTab;
-				if (tab && tab.searchComponent) { tab.searchComponent.setValue(this.plugin.manifest.name); if (tab.setQuery) tab.setQuery(this.plugin.manifest.name); }
-			}));
-		heading('Board');
-		new Setting(containerEl).setName('Starter board').setDesc('A board with the color legend and first steps: the default board if it does not exist yet, else "Starter board.canvas".').addButton(b => b
-			.setButtonText('Create')
-			.onClick(() => this.plugin.createStarterBoard()));
-		text('Default board', 'Board used by "Run pass" when the active tab is not a canvas, and by "Open the board" (ribbon).', 'defaultBoard');
-		text('Card count warning', 'The status bar card count turns to the warning color past this many cards (0: never).', 'cardWarning');
-		text('Stale after (days)', 'A yellow card whose note is untouched this many days gets a warning badge with its age; the roll-up adds "· Nd" from the same value (0: never).', 'staleDays');
-		text('Agent notes folder', 'Where the agent creates the notes and plan canvases for cards. Changing it does not move anything: rename the folder in Obsidian first, so links follow.', 'notesFolder');
-		new Setting(containerEl).setName('Archive').setDesc('Where "Archive selected cards" puts the notes: a "<board> archive" folder next to each board, or one folder for all boards. Changing it does not move notes already archived; restore works from any folder.').addDropdown(dd => dd
-			.addOption('board', 'Next to each board')
-			.addOption('global', 'One folder for all boards')
-			.setValue(this.plugin.settings.archiveMode)
-			.onChange(async v => { this.plugin.settings.archiveMode = v; await this.plugin.saveData(this.plugin.settings); this.display(); }));
-		if (this.plugin.settings.archiveMode === 'global') text('Archive folder', 'The folder for all boards\' archive notes.', 'archiveFolder');
-		heading('Workflow').setDesc('What each color does and its label, shown in tooltips, the filter pane and the color commands. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.');
-		const go = parseColors(this.plugin.settings.passColors);
-		for (const [name, meaning] of WORKFLOW) {
-			const num = COLOR_NUM[name];
-			const row = new Setting(containerEl).setName(num ? name : 'uncolored').setDesc(meaning);
-			row.nameEl.prepend(createSpan({ cls: 'canvas-board-dot canvas-board-workflow-dot', attr: { style: this.plugin.dotStyle(num) } }));
-			row.addText(t => t
-				.setPlaceholder(COLORS.find(c => c[0] === name)[3])
-				.setValue((this.plugin.settings.colorLabels || {})[name] || '')
-				.onChange(v => this.plugin.setColorLabel(name, v.trim())));
-			if (!num) row.addToggle(t => t // uncolored never triggers the agent: same pill for the layout, locked
-				.setTooltip('Never triggers the agent')
-				.setValue(false)
-				.setDisabled(true));
-			else row.addToggle(t => t
-				.setTooltip('Triggers the agent')
-				.setValue(go.has(num))
-				.onChange(async on => {
-					if (on) go.add(num); else go.delete(num);
-					this.plugin.settings.passColors = WORKFLOW.map(([n]) => n).filter(n => go.has(COLOR_NUM[n])).join(' ');
-					await this.plugin.saveData(this.plugin.settings);
-				}));
-		}
-		heading('Pass');
-		text('Claude path', 'Empty: ~/.local/bin/claude (claude.exe on Windows) if it exists, else claude on PATH.', 'claudePath');
-		text('Terminal command', 'Starts the pass. Empty: Windows Terminal, macOS Terminal, or the first known terminal on Linux (gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm, foot, xterm). Otherwise {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
-		// The instructions the agent follows on a pass, edited here; the file stays where Claude Code finds the skill.
-		const skillFile = this.plugin.skillPath();
-		new Setting(containerEl).setName('Agent instructions').setDesc('What the agent does on a pass. Saved when the field loses focus, to .claude/skills/canvas-board/SKILL.md (where Claude Code reads it; any agent can be pointed at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin\'s version.').addButton(b => b
-			.setButtonText('Reset')
-			.setWarning()
-			.onClick(() => { this.plugin.syncSkill(path.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir), true); this.display(); }));
-		const editor = containerEl.createEl('textarea', { cls: 'canvas-board-skill-editor', attr: { spellcheck: 'false', rows: '24' } });
-		try { editor.value = fs.readFileSync(skillFile, 'utf8'); } catch (e) { editor.placeholder = 'No instructions file yet: Reset writes the plugin\'s version.'; }
-		editor.addEventListener('change', () => {
-			try {
-				fs.mkdirSync(path.dirname(skillFile), { recursive: true });
-				fs.writeFileSync(skillFile, editor.value);
-				new Notice('Kanvas board: agent instructions saved');
-			} catch (e) {
-				new Notice(`Kanvas board: could not save the agent instructions (${e.message})`);
-			}
-		});
-		heading('APM counter').setDesc('Canvas cards touched in a rolling window, in the status bar while a canvas is the active tab.');
-		const apm = this.plugin.apm;
-		const a = apm.settings;
-		new Setting(containerEl)
-			.setName('Personal best')
-			.setDesc(a.pb ? `${a.pb} cards in ${a.windowMinutes} min${a.pbDate ? `, set ${a.pbDate}` : ''}.` : 'None yet.')
-			.addButton(b => b.setButtonText('Reset').setWarning().onClick(async () => { await apm.resetPb(); this.display(); }));
-		new Setting(containerEl)
-			.setName('Window (minutes)')
-			.setDesc('Cards are counted over this rolling window. Changing it resets the personal best: the numbers are not comparable.')
-			.addText(t => {
-				t.setValue(String(a.windowMinutes));
-				t.inputEl.addEventListener('change', async () => {
-					const n = Number(t.getValue());
-					if (!(n > 0) || n === a.windowMinutes) return;
-					await apm.setWindow(n);
-					this.display();
-				});
-			});
-		new Setting(containerEl)
-			.setName('Alert below')
-			.setDesc('Percent of the personal best under which the counter turns red and pulses. Not in the first window of a session.')
-			.addSlider(sl => sl.setLimits(5, 50, 5).setValue(a.lowPercent).setDynamicTooltip().onChange(async v => {
-				a.lowPercent = v;
-				await this.plugin.saveData(this.plugin.settings);
-				apm.refresh();
-			}));
-		new Setting(containerEl)
-			.setName('Idle after (minutes)')
-			.setDesc('Without an action for this long, the alert stops and the counter dims. It also dims while Obsidian is not focused.')
-			.addText(t => t.setValue(String(a.idleMinutes)).onChange(async v => {
-				const n = Number(v);
-				if (!(n > 0)) return;
-				a.idleMinutes = n;
-				await this.plugin.saveData(this.plugin.settings);
-				apm.refresh();
-			}));
-		heading('Layout');
-		new Setting(containerEl).setName('Layout direction').setDesc('Tidy layout and agent-made plan canvases: the card a branch starts from comes first, following arrows in the fold direction ("depends on" prerequisites too). Shift-click the Tidy layout button, or commands "Tidy layout direction: …", switch it on the fly.').addDropdown(dd => dd
-			.addOptions({ TB: 'Top to bottom', LR: 'Left to right', BT: 'Bottom to top', RL: 'Right to left' })
-			.setValue(this.plugin.settings.layoutDirection)
-			.onChange(v => this.plugin.setLayoutDirection(v)));
-		heading('View');
-		new Setting(containerEl).setName('Fold direction').setDesc('Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Tidy layout reads branches the same way. Commands "Fold direction: …" switch it on the fly.').addDropdown(dd => dd
-			.addOptions({ out: 'Outgoing', in: 'Incoming' })
-			.setValue(this.plugin.settings.foldDirection)
-			.onChange(async v => { this.plugin.settings.foldDirection = v; await this.plugin.saveData(this.plugin.settings); }));
-		new Setting(containerEl).setName('Hide cards under hidden tags').setDesc('Hiding a tag in the filter pane also hides the branch of each card that has it, in the fold direction.').addToggle(t => t
-			.setValue(this.plugin.settings.hideTagBranches)
-			.onChange(async v => {
-				this.plugin.settings.hideTagBranches = v;
-				await this.plugin.saveData(this.plugin.settings);
-				for (const canvas of this.plugin.panes.keys()) this.plugin.refreshView(canvas);
-			}));
-	}
-}
+// src/plugin/FilterPane.js
+var require_FilterPane = __commonJS({
+  "src/plugin/FilterPane.js"(exports2, module2) {
+    var { COLORS } = require_constants();
+    var { Notice, setIcon } = require("obsidian");
+    var FilterPane = class {
+      constructor(plugin, canvas) {
+        this.plugin = plugin;
+        this.canvas = canvas;
+        this.isOpen = false;
+        this.key = "";
+        const el = this.el = canvas.wrapperEl.createDiv({ cls: "canvas-board-pane" });
+        for (const ev of ["pointerdown", "mousedown", "wheel", "dblclick", "contextmenu"]) el.addEventListener(ev, (e) => e.stopPropagation());
+        const head = el.createDiv({ cls: "canvas-board-pane-head" });
+        const btn = head.createDiv({ cls: "clickable-icon", attr: { "aria-label": plugin.keyedLabel("Filter cards", "filter"), "data-tooltip-position": "right" } });
+        setIcon(btn, "filter");
+        btn.addEventListener("click", () => this.toggle());
+        this.badge = head.createSpan({ cls: "canvas-board-pane-badge" });
+        this.body = el.createDiv({ cls: "canvas-board-pane-body" });
+        const v = () => plugin.viewState(canvas);
+        const apply = () => plugin.refreshView(canvas);
+        const section = (title, reset) => {
+          const s = this.body.createDiv({ cls: "canvas-board-pane-section" });
+          const h = s.createDiv({ cls: "canvas-board-pane-heading" });
+          h.createSpan({ text: title });
+          if (reset) {
+            const r = h.createSpan({ cls: "clickable-icon canvas-board-pane-reset", attr: { "aria-label": "Reset" } });
+            setIcon(r, "rotate-ccw");
+            r.addEventListener("click", () => {
+              reset();
+              apply();
+            });
+          }
+          return s;
+        };
+        this.colorsEl = section("Colors", () => v().xcolors.clear()).createDiv({ cls: "canvas-board-chips" });
+        this.tagsSection = section("Tags", () => v().xtags.clear());
+        this.tagsEl = this.tagsSection.createDiv({ cls: "canvas-board-chips" });
+        this.foldedSection = section("Folded", () => plugin.setFolds(canvas, new Map([...plugin.folds(canvas).keys()].map((id) => [id, null]))));
+        this.foldedEl = this.foldedSection.createDiv({ cls: "canvas-board-pane-list" });
+        const foot = this.body.createDiv({ cls: "canvas-board-pane-foot" });
+        const all = foot.createDiv({ cls: "clickable-icon", attr: { "aria-label": "Unhide all (clear filter and folds)" } });
+        setIcon(all, "eye");
+        all.addEventListener("click", () => plugin.showAll(canvas));
+        this.toggle(false);
+      }
+      tags() {
+        const tags = /* @__PURE__ */ new Set();
+        for (const node of this.canvas.nodes.values()) for (const t of this.plugin.cardTagSet(node)) tags.add(t);
+        return tags;
+      }
+      toggle(open = !this.isOpen) {
+        this.isOpen = open;
+        this.el.toggleClass("is-open", open);
+        this.key = "";
+        this.update();
+      }
+      // Redraws the chips and lists only when something changed (called every 2 s), never the text fields.
+      update() {
+        const { plugin, canvas } = this;
+        const v = plugin.viewState(canvas, false);
+        const counts = {};
+        for (const n of canvas.nodes.values()) {
+          const d = n.getData();
+          if (d.type !== "group") counts[d.color || ""] = (counts[d.color || ""] || 0) + 1;
+        }
+        const folds = plugin.folds(canvas);
+        const active = plugin.filtering(v) || folds.size > 0;
+        this.badge.setText(active ? plugin.viewLabel(canvas) : "");
+        this.badge.toggle(!this.isOpen && active);
+        if (!this.isOpen) return;
+        const state = plugin.viewState(canvas);
+        const tags = [.../* @__PURE__ */ new Set([...this.tags(), ...state.xtags])].sort();
+        const foldedCards = [...folds.keys()].map((id) => canvas.nodes.get(id)).filter(Boolean).map((n) => [n.getData().color, plugin.cardText(n)]);
+        const key = JSON.stringify([counts, [...state.xcolors], tags, [...state.xtags], [...folds], foldedCards, state.hidden.size]);
+        if (key === this.key) return;
+        this.key = key;
+        const apply = () => plugin.refreshView(canvas);
+        const toggle = (set, x) => {
+          if (set.has(x)) set.delete(x);
+          else set.add(x);
+          apply();
+        };
+        const select = (keep) => {
+          if (!plugin.selectMore(canvas, [...canvas.selection], keep)) new Notice("Kanvas board: no visible card to select");
+        };
+        this.colorsEl.empty();
+        for (const [name, color] of COLORS) {
+          const out = state.xcolors.has(color);
+          const chip = this.colorsEl.createDiv({ cls: "canvas-board-swatch", attr: { "aria-label": `${plugin.colorLabel(name)} \xB7 ${counts[color] || 0} cards \xB7 click to ${out ? "show" : "hide"} \xB7 shift-click to select` } });
+          chip.toggleClass("is-out", out);
+          chip.createSpan({ cls: "canvas-board-dot", attr: { style: color ? `background: var(--canvas-color-${color})` : "" } });
+          chip.addEventListener("click", (e) => e.shiftKey ? select((n) => (n.getData().color || "") === color) : toggle(state.xcolors, color));
+        }
+        this.tagsEl.empty();
+        this.tagsSection.toggle(tags.length > 0);
+        for (const t of tags) {
+          const out = state.xtags.has(t);
+          const chip = this.tagsEl.createDiv({ cls: "canvas-board-chip", text: "#" + t, attr: { "aria-label": `click to ${out ? "show" : "hide"} \xB7 shift-click to select` } });
+          chip.toggleClass("is-out", out);
+          chip.addEventListener("click", (e) => e.shiftKey ? select((n) => plugin.cardTagSet(n).has(t)) : toggle(state.xtags, t));
+        }
+        this.foldedEl.empty();
+        this.foldedSection.toggle(folds.size > 0);
+        for (const [id, dir] of folds) {
+          const node = canvas.nodes.get(id);
+          if (!node) continue;
+          const row = this.foldedEl.createDiv({ cls: "canvas-board-pane-row canvas-board-pane-card", attr: { "aria-label": "Click to unfold the whole branch \xB7 shift-click to select the card" } });
+          row.createSpan({ cls: "canvas-board-dot", attr: { style: plugin.dotStyle(node.getData().color) } });
+          const text = row.createDiv({ cls: "canvas-board-pane-card-text" });
+          const [title, ...rest] = plugin.cb.plainLines(plugin.cardText(node));
+          text.createDiv({ cls: "canvas-board-pane-card-title", text: title || "(empty)" });
+          if (rest.length) text.createDiv({ cls: "canvas-board-pane-card-rest", text: rest.join(" \xB7 ") });
+          row.createSpan({ cls: "canvas-board-pane-card-count", text: `\xB7 ${plugin.branchLevels(canvas, id, dir).flat().length} folded` });
+          row.addEventListener("click", (e) => e.shiftKey ? select((n) => n.id === id) : plugin.unfold(canvas, [id], Infinity));
+        }
+      }
+      destroy() {
+        this.el.remove();
+      }
+    };
+    module2.exports = FilterPane;
+  }
+});
+
+// src/plugin/clearFrames.js
+var require_clearFrames = __commonJS({
+  "src/plugin/clearFrames.js"(exports2, module2) {
+    function clearFrames(root) {
+      for (const frame of root.querySelectorAll(".canvas-board-find-text")) {
+        const parent = frame.parentNode;
+        frame.replaceWith(...frame.childNodes);
+        parent.normalize();
+      }
+    }
+    module2.exports = clearFrames;
+  }
+});
+
+// src/plugin/matchOffsets.js
+var require_matchOffsets = __commonJS({
+  "src/plugin/matchOffsets.js"(exports2, module2) {
+    function matchOffsets(text, query) {
+      const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+      return Array.from(text.matchAll(re), (m) => m.index);
+    }
+    module2.exports = matchOffsets;
+  }
+});
+
+// src/plugin/frameText.js
+var require_frameText = __commonJS({
+  "src/plugin/frameText.js"(exports2, module2) {
+    var matchOffsets = require_matchOffsets();
+    function frameText(root, query) {
+      const doc = root.ownerDocument;
+      const walker = doc.createTreeWalker(root, 4);
+      const texts = [];
+      while (walker.nextNode()) texts.push(walker.currentNode);
+      const frames = [];
+      for (const node of texts) {
+        if (node.parentElement.closest(".cm-editor, input, textarea")) continue;
+        const here = [];
+        for (const at of matchOffsets(node.data, query).reverse()) {
+          const hit = node.splitText(at);
+          hit.splitText(query.length);
+          const frame = doc.createElement("span");
+          frame.className = "canvas-board-find-text";
+          hit.replaceWith(frame);
+          frame.append(hit);
+          here.unshift(frame);
+        }
+        frames.push(...here);
+      }
+      return frames;
+    }
+    module2.exports = frameText;
+  }
+});
+
+// src/plugin/FindBar.js
+var require_FindBar = __commonJS({
+  "src/plugin/FindBar.js"(exports2, module2) {
+    var { Notice, Scope, setIcon } = require("obsidian");
+    var clearFrames = require_clearFrames();
+    var frameText = require_frameText();
+    var FindBar = class {
+      constructor(plugin, canvas) {
+        this.plugin = plugin;
+        this.canvas = canvas;
+        this.matches = [];
+        this.index = -1;
+        this.framed = [];
+        this.observer = new MutationObserver(() => {
+          window.clearTimeout(this.frameTimer);
+          this.frameTimer = window.setTimeout(() => this.frame(), 100);
+        });
+        const el = this.el = canvas.wrapperEl.createDiv({ cls: "document-search-container canvas-board-find" });
+        for (const ev of ["pointerdown", "mousedown", "wheel", "dblclick", "contextmenu"]) el.addEventListener(ev, (e) => e.stopPropagation());
+        const box = el.createDiv({ cls: "document-search" });
+        const field = this.field = box.createDiv({ cls: "search-input-container document-search-input" });
+        this.input = field.createEl("input", { type: "search", attr: { placeholder: "Find\u2026", spellcheck: "false" } });
+        this.countEl = field.createDiv({ cls: "document-search-count" });
+        const buttons = box.createDiv({ cls: "document-search-buttons" });
+        const button = (icon, label, fn) => {
+          const b = buttons.createEl("button", { cls: "document-search-button clickable-icon", attr: { "aria-label": label } });
+          setIcon(b, icon);
+          b.addEventListener("click", fn);
+        };
+        button("arrow-up", "Previous (Shift+Enter)", () => this.step(-1));
+        button("arrow-down", "Next (Enter)", () => this.step(1));
+        const all = buttons.createEl("button", { cls: "document-search-button", text: "All", attr: { "aria-label": "Select all matches (Alt+Enter)" } });
+        all.addEventListener("click", () => this.selectAll());
+        const close = box.createDiv({ cls: "document-search-close-button clickable-icon", attr: { "aria-label": "Close (Escape)" } });
+        setIcon(close, "x");
+        close.addEventListener("click", () => this.close());
+        this.scope = new Scope(plugin.app.scope);
+        this.input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && e.altKey) {
+            e.preventDefault();
+            this.selectAll();
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            this.step(e.shiftKey ? -1 : 1);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            this.close();
+          }
+        });
+        this.input.addEventListener("focus", () => plugin.app.keymap.pushScope(this.scope));
+        this.input.addEventListener("blur", () => plugin.app.keymap.popScope(this.scope));
+        this.input.addEventListener("input", () => this.search());
+        el.hide();
+      }
+      open() {
+        this.el.show();
+        this.input.focus();
+        this.input.select();
+        if (this.input.value) this.search();
+      }
+      close() {
+        this.mark([]);
+        this.el.hide();
+        this.input.blur();
+      }
+      search() {
+        const q = this.input.value.trim().toLowerCase();
+        const p = this.plugin;
+        this.matches = !q ? [] : [...this.canvas.nodes.values()].filter((n) => p.cardText(n).toLowerCase().includes(q)).sort((a, b) => a.y - b.y || a.x - b.x);
+        this.index = this.matches.length ? 0 : -1;
+        this.mark(this.matches);
+        this.show();
+      }
+      step(d) {
+        if (!this.matches.length) return;
+        this.index = (this.index + d + this.matches.length) % this.matches.length;
+        this.show();
+      }
+      // Every match selected (so it can be moved, colored...) and in view; Enter goes back to one at a time.
+      selectAll() {
+        const { canvas, plugin, matches } = this;
+        if (!matches.length) return;
+        if (matches.some((n) => plugin.isHidden(canvas, n))) {
+          plugin.showAll(canvas);
+          new Notice("Kanvas board: filter and folds cleared to show the cards");
+        }
+        for (const n of matches) n.nodeEl.addClass("is-current");
+        canvas.updateSelection(() => {
+          canvas.selection.clear();
+          for (const n of matches) canvas.selection.add(n);
+        });
+        canvas.zoomToSelection();
+        this.countEl.setText(`all ${matches.length}`);
+        this.input.focus();
+      }
+      mark(nodes) {
+        for (const n of this.canvas.nodes.values()) n.nodeEl.removeClass("canvas-board-find-match", "is-current");
+        for (const n of nodes) n.nodeEl.addClass("canvas-board-find-match");
+        this.frame(nodes);
+      }
+      // Frames the query in the given cards (default: the same ones again) and watches for cards rendering.
+      frame(nodes = this.framed) {
+        const root = (n) => n.contentEl || n.nodeEl;
+        this.observer.disconnect();
+        for (const n of this.framed) clearFrames(root(n));
+        this.framed = nodes;
+        const q = this.input.value.trim();
+        for (const n of nodes) {
+          const frames = frameText(root(n), q);
+          if (n === this.revealing && frames[0]) {
+            this.reveal(frames[0]);
+            this.revealing = null;
+          }
+        }
+        if (nodes.length) this.observer.observe(this.canvas.wrapperEl, { childList: true, subtree: true });
+      }
+      // Scrolls a long card to its first match. By hand: scrollIntoView would also scroll the canvas itself.
+      reveal(frame) {
+        const box = frame.closest(".markdown-preview-view");
+        if (!box) return;
+        const at = frame.getBoundingClientRect(), view = box.getBoundingClientRect();
+        const zoom = view.height / box.offsetHeight || 1;
+        box.scrollTop += (at.top - view.top) / zoom - box.clientHeight / 2;
+      }
+      show() {
+        const { canvas, plugin } = this;
+        const q = this.input.value.trim();
+        this.countEl.setText(!q ? "" : this.matches.length ? `${this.index + 1} / ${this.matches.length}` : "No results");
+        this.field.toggleClass("mod-no-match", !!q && !this.matches.length);
+        const node = this.matches[this.index];
+        if (!node) return;
+        for (const n of this.matches) n.nodeEl.toggleClass("is-current", n === node);
+        if (plugin.isHidden(canvas, node)) {
+          plugin.showAll(canvas);
+          new Notice("Kanvas board: filter and folds cleared to show the card");
+        }
+        canvas.selectOnly(node);
+        canvas.zoomToSelection();
+        this.revealing = node;
+        this.frame();
+        this.input.focus();
+      }
+      destroy() {
+        this.mark([]);
+        window.clearTimeout(this.frameTimer);
+        this.plugin.app.keymap.popScope(this.scope);
+        this.el.remove();
+      }
+    };
+    module2.exports = FindBar;
+  }
+});
+
+// src/plugin/NameSuggest.js
+var require_NameSuggest = __commonJS({
+  "src/plugin/NameSuggest.js"(exports2, module2) {
+    var { AbstractInputSuggest } = require("obsidian");
+    var NameSuggest = class extends AbstractInputSuggest {
+      constructor(app, inputEl, names, onPick) {
+        super(app, inputEl);
+        this.names = names;
+        this.onPick = onPick;
+      }
+      getSuggestions(q) {
+        q = q.trim().toLowerCase();
+        return this.names.filter((n) => n.toLowerCase().includes(q)).sort((a, b) => a.localeCompare(b));
+      }
+      renderSuggestion(name, el) {
+        el.setText(name);
+        el.createSpan({ cls: "canvas-board-key", text: "overwrite" });
+      }
+      selectSuggestion(name) {
+        this.onPick(name);
+        this.close();
+      }
+    };
+    module2.exports = NameSuggest;
+  }
+});
+
+// src/plugin/NamePrompt.js
+var require_NamePrompt = __commonJS({
+  "src/plugin/NamePrompt.js"(exports2, module2) {
+    var { Modal, Notice, Setting } = require("obsidian");
+    var NameSuggest = require_NameSuggest();
+    var NamePrompt = class extends Modal {
+      constructor(app, title, onSubmit, opts = {}) {
+        super(app);
+        this.title = title;
+        this.onSubmit = onSubmit;
+        this.opts = opts;
+      }
+      onOpen() {
+        this.setTitle(this.title);
+        const { suggestions, overwrite } = this.opts;
+        let value = "";
+        let button, suggest, picked = false;
+        const clean = (v) => v.trim().replace(/[\\/:#^|[\]]/g, "");
+        const nameOf = (v) => suggestions && suggestions.some((s) => s.toLowerCase() === v.trim().toLowerCase()) ? v.trim() : clean(v);
+        const refresh = () => {
+          if (!button) return;
+          const over = !!(overwrite && value.trim() && overwrite(nameOf(value)));
+          button.setButtonText(over ? "Overwrite" : "Create");
+          button.buttonEl.toggleClass("mod-warning", over);
+          button.buttonEl.toggleClass("mod-cta", !over);
+        };
+        const submit = () => {
+          const name = nameOf(value);
+          if (!name) return;
+          this.close();
+          Promise.resolve(this.onSubmit(name)).catch((e) => new Notice(`Kanvas board: ${e.message}`));
+        };
+        new Setting(this.contentEl).addText((t) => {
+          t.onChange((v) => {
+            value = v;
+            refresh();
+          });
+          if (suggestions && suggestions.length) suggest = new NameSuggest(this.app, t.inputEl, suggestions, (v) => {
+            t.setValue(v);
+            value = v;
+            refresh();
+            picked = true;
+            setTimeout(() => {
+              picked = false;
+            }, 0);
+          });
+          t.inputEl.addEventListener("keydown", (e) => {
+            if (e.key !== "Enter" || picked || suggest && suggest.suggestEl && suggest.suggestEl.isConnected) return;
+            e.preventDefault();
+            submit();
+          });
+          setTimeout(() => t.inputEl.focus(), 0);
+        }).addButton((b) => {
+          button = b;
+          b.setButtonText("Create").setCta().onClick(submit);
+        });
+      }
+      onClose() {
+        this.contentEl.empty();
+      }
+    };
+    module2.exports = NamePrompt;
+  }
+});
+
+// src/plugin/nextTurn.js
+var require_nextTurn = __commonJS({
+  "src/plugin/nextTurn.js"(exports2, module2) {
+    var nextTurn = (current, target) => current + ((target - current) % 360 + 540) % 360 - 180;
+    module2.exports = nextTurn;
+  }
+});
+
+// src/plugin/Picker.js
+var require_Picker = __commonJS({
+  "src/plugin/Picker.js"(exports2, module2) {
+    var { FuzzySuggestModal, Notice } = require("obsidian");
+    var Picker = class extends FuzzySuggestModal {
+      constructor(app, placeholder, items, label, onChoose) {
+        super(app);
+        this.setPlaceholder(placeholder);
+        this.items = items;
+        this.label = label;
+        this.onChoose = onChoose;
+      }
+      getItems() {
+        return this.items;
+      }
+      getItemText(item) {
+        return this.label(item);
+      }
+      onChooseItem(item) {
+        Promise.resolve(this.onChoose(item)).catch((e) => new Notice(`Kanvas board: ${e.message}`));
+      }
+    };
+    module2.exports = Picker;
+  }
+});
+
+// src/plugin/UnpackChoice.js
+var require_UnpackChoice = __commonJS({
+  "src/plugin/UnpackChoice.js"(exports2, module2) {
+    var { Modal, Setting } = require("obsidian");
+    var UnpackChoice = class extends Modal {
+      constructor(app, file, links, onPick) {
+        super(app);
+        this.file = file;
+        this.links = links;
+        this.onPick = onPick;
+      }
+      onOpen() {
+        const k = this.links.length;
+        this.setTitle(`${this.file.basename} is linked from ${k} other place${k > 1 ? "s" : ""}`);
+        const ul = this.contentEl.createEl("ul");
+        for (const l of this.links.slice(0, 8)) ul.createEl("li", { text: l.id ? `${l.label} (${l.path})` : l.path });
+        if (k > 8) ul.createEl("li", { text: `and ${k - 8} more` });
+        const s = new Setting(this.contentEl);
+        const pick = (mode) => {
+          this.close();
+          this.onPick(mode);
+        };
+        s.addButton((b) => b.setButtonText("Unpack into a group, redirect links").setCta().onClick(() => pick("group")));
+        s.addButton((b) => b.setButtonText("Keep the file (copy)").onClick(() => pick("copy")));
+        s.addButton((b) => b.setButtonText("Break links and trash").setWarning().onClick(() => pick("dissolve")));
+        s.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()));
+      }
+      onClose() {
+        this.contentEl.empty();
+      }
+    };
+    module2.exports = UnpackChoice;
+  }
+});
+
+// src/plugin/CanvasBoardPlugin.js
+var require_CanvasBoardPlugin = __commonJS({
+  "src/plugin/CanvasBoardPlugin.js"(exports2, module2) {
+    var { COLORS, COLOR_NUM, DEFAULTS, LAYOUT_DIRS, WORKFLOW } = require_constants();
+    var { Notice, Plugin, setIcon } = require("obsidian");
+    var { spawn } = require("child_process");
+    var ApmCounter = require_ApmCounter();
+    var boardLibrary = require_boardLibrary();
+    var CanvasBoardSettings = require_CanvasBoardSettings();
+    var dagre = require_dagre_min();
+    var loadSettings = require_loadSettings();
+    var claudeBin = require_claudeBin();
+    var defaultLaunch = require_defaultLaunch();
+    var FilterPane = require_FilterPane();
+    var FindBar = require_FindBar();
+    var fs = require("fs");
+    var NamePrompt = require_NamePrompt();
+    var nextTurn = require_nextTurn();
+    var parseColors = require_parseColors();
+    var path = require("path");
+    var Picker = require_Picker();
+    var UnpackChoice = require_UnpackChoice();
+    var CanvasBoardPlugin = class extends Plugin {
+      async onload() {
+        this.settings = Object.assign({}, DEFAULTS, await this.loadData());
+        this.addSettingTab(new CanvasBoardSettings(this.app, this));
+        const dir = path.join(this.app.vault.adapter.basePath, this.manifest.dir);
+        const cb = boardLibrary;
+        const { applyOps, layoutOps } = cb;
+        this.cb = cb;
+        let legacyApm;
+        if (!this.settings.apm) {
+          try {
+            legacyApm = JSON.parse(fs.readFileSync(path.join(dir, "..", "apm-counter", "data.json"), "utf8"));
+          } catch (e) {
+          }
+        }
+        this.settings.apm = loadSettings(this.settings.apm, legacyApm);
+        this.apm = new ApmCounter(this, this.settings.apm, () => this.saveData(this.settings));
+        this.apm.load();
+        this.register(() => this.apm.unload());
+        this.api = {
+          read: (board) => {
+            const canvas = this.openCanvas(board);
+            return canvas ? JSON.stringify(canvas.getData()) : null;
+          },
+          // Changing a card's type needs setData() without the card, then with it, to keep its id.
+          apply: async (board, ops) => {
+            const canvas = this.openCanvas(board);
+            if (!canvas) return null;
+            const d = canvas.getData();
+            const retyped = applyOps(d, ops);
+            if (retyped.length) canvas.setData({ ...d, nodes: d.nodes.filter((n) => !retyped.includes(n.id)) });
+            canvas.setData(d);
+            canvas.requestSave();
+            await new Promise((r) => setTimeout(r, 2500));
+            return "obsidian";
+          }
+        };
+        this.syncSkill(dir);
+        this.addCommand({
+          id: "reset-skill",
+          name: "Reset agent skill to the plugin's version (overwrites your edits)",
+          callback: () => this.syncSkill(dir, true)
+        });
+        for (const [name, color, key] of COLORS) {
+          this.addCommand({
+            id: `color-${key}`,
+            name: this.colorCommandName(name),
+            checkCallback: (checking) => {
+              const canvas = this.activeCanvas();
+              if (!canvas || canvas.selection.size === 0) return false;
+              if (!checking) {
+                for (const node of canvas.selection) node.setColor(color);
+                canvas.requestSave();
+              }
+              return true;
+            }
+          });
+        }
+        this.addCommand({
+          id: "tidy-layout",
+          name: "Tidy layout (selected cards)",
+          checkCallback: (checking) => {
+            const canvas = this.activeCanvas();
+            if (!canvas) return false;
+            if (!checking) {
+              if (canvas.selection.size < 2) {
+                new Notice("Tidy layout: select the cards to tidy first (2 or more; Ctrl+A for the whole canvas).");
+                return true;
+              }
+              const ids = [...canvas.selection].map((n) => n.id);
+              const d = canvas.getData();
+              this.edit(canvas, layoutOps(d, { ids, dir: this.settings.layoutDirection, dagre, flow: this.settings.foldDirection }), d);
+            }
+            return true;
+          }
+        });
+        this.addCommand({
+          id: "tidy-direction-next",
+          name: "Tidy layout direction: next",
+          callback: () => this.cycleLayoutDirection()
+        });
+        for (const [dir2, { name }] of Object.entries(LAYOUT_DIRS))
+          this.addCommand({
+            id: `tidy-direction-${dir2.toLowerCase()}`,
+            name: `Tidy layout direction: ${name}`,
+            checkCallback: (checking) => {
+              if (this.settings.layoutDirection === dir2) return false;
+              if (!checking) this.setLayoutDirection(dir2);
+              return true;
+            }
+          });
+        const actions = this.actions = [];
+        const runAction = this.runAction = (run, canvas, sel) => Promise.resolve(run(canvas, sel)).catch((e) => new Notice(`Kanvas board: ${e.message}`));
+        const canvasCommand = (id, name, menu, test, run) => {
+          actions.push({ id, menu, test, run });
+          this.addCommand({
+            id,
+            name,
+            checkCallback: (checking) => {
+              const canvas = this.activeCanvas();
+              if (!canvas || !test(canvas, [...canvas.selection])) return false;
+              if (!checking) runAction(run, canvas, [...canvas.selection]);
+              return true;
+            }
+          });
+        };
+        const isText = (n) => n.getData().type === "text";
+        canvasCommand("collapse", "Pack into subcanvas", ["Pack into subcanvas", "package"], (c, sel) => sel.length > 0, (canvas, sel) => new NamePrompt(this.app, "Subcanvas name", async (name) => {
+          const board = this.activeFile();
+          const dir2 = board.parent && board.parent.path !== "/" ? board.parent.path + "/" : "";
+          const file = this.freePath(dir2, name, ".canvas");
+          const { ops, sub } = cb.collapseOps(canvas.getData(), sel.map((n) => n.id), file, name);
+          await this.app.vault.create(file, JSON.stringify(sub, null, "	"));
+          this.edit(canvas, ops);
+          this.undoNotice(canvas, `packed ${sel.length} card${sel.length > 1 ? "s" : ""} into ${file}`, [file]);
+        }).open());
+        const linked = (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]);
+        canvasCommand("expand", "Unpack subcanvas (dissolve)", ["Unpack subcanvas (dissolve)", "package-open"], linked, async (canvas, [node]) => {
+          const file = this.linkedCanvas(node);
+          const links = await this.subcanvasLinks(file, canvas, node.id);
+          if (!links.length) return this.unpack(canvas, node, file, "dissolve");
+          new UnpackChoice(this.app, file, links, (mode) => this.unpack(canvas, node, file, mode, links).catch((e) => new Notice(`Kanvas board: ${e.message}`))).open();
+        });
+        canvasCommand("unpack-copy", "Unpack subcanvas (copy)", ["Unpack subcanvas (copy)", "copy"], linked, (canvas, [node]) => this.unpack(canvas, node, this.linkedCanvas(node), "copy"));
+        canvasCommand("merge", "Merge selected cards", ["Merge cards", "merge"], (c, sel) => sel.length > 1 && sel.every(isText), (canvas, sel) => this.edit(canvas, cb.mergeOps(canvas.getData(), sel.map((n) => n.id))));
+        for (const [by, label] of [["paragraph", "paragraph"], ["bullet", "top-level bullet"], ["h1", "heading 1"], ["h2", "heading 2"], ["h3", "heading 3"]])
+          canvasCommand(`split-${by}`, `Split card by ${label}`, by === "bullet" ? ["Split by top-level bullet", "split"] : null, (c, sel) => sel.length === 1 && isText(sel[0]) && !sel[0].isEditing, (canvas, [node]) => this.edit(canvas, cb.splitOps(canvas.getData(), node.id, by)));
+        canvasCommand("extract", "Extract current selection to a new card", ["Extract current selection to a new card", "text-select"], (c, sel) => sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]), (canvas, [node]) => {
+          const editor = this.cardEditor(node);
+          const part = editor.getSelection();
+          if (!part.trim()) throw new Error("select some text in the card first");
+          const from = editor.posToOffset(editor.getCursor("from"));
+          const before = editor.getValue();
+          editor.replaceSelection("");
+          node.blur();
+          const d = canvas.getData();
+          const n = d.nodes.find((x) => x.id === node.id);
+          if (n) n.text = before;
+          this.edit(canvas, cb.extractOps(d, node.id, part, from), d);
+        });
+        canvasCommand("archive", "Archive selected cards", ["Archive", "archive"], (c, sel) => sel.length > 0, async (canvas, sel) => {
+          const board = this.activeFile().path;
+          const d = canvas.getData();
+          const dir2 = cb.archiveDir(board, this.settings);
+          if (!this.app.vault.getAbstractFileByPath(dir2)) await this.app.vault.createFolder(dir2);
+          const notes = [];
+          for (const node of sel) {
+            const a = cb.archiveNote(d, node.id, board, window.moment().format("YYYY-MM-DD"), this.cardContexts(node, board));
+            notes.push(this.freePath(dir2 + "/", a.name, ".md"));
+            await this.app.vault.create(notes[notes.length - 1], a.content);
+          }
+          this.edit(canvas, sel.map((n) => ({ op: "remove", id: n.id })));
+          this.undoNotice(canvas, `archived ${sel.length} card${sel.length > 1 ? "s" : ""}`, notes);
+        });
+        const canFold = (c, n) => !this.foldOf(n) && this.branchLinks(c, this.settings.foldDirection).has(n.id);
+        canvasCommand("fold", "Fold branch", ["Fold branch", "chevrons-down-up"], (c, sel) => sel.some((n) => canFold(c, n)), (canvas, sel) => this.setFolds(canvas, new Map(sel.filter((n) => canFold(canvas, n)).map((n) => [n.id, this.settings.foldDirection]))));
+        for (const [levels, id, name, menu] of [
+          [1, "unfold", "Unfold branch 1 level", ["Unfold 1 level", "chevron-down"]],
+          [2, "unfold-2", "Unfold branch 2 levels", null],
+          [3, "unfold-3", "Unfold branch 3 levels", null],
+          [Infinity, "unfold-all", "Unfold whole branch", ["Unfold whole branch", "chevrons-up-down"]]
+        ])
+          canvasCommand(id, name, menu, (c, sel) => sel.some((n) => this.unfoldTargets(c, n.id).length), (canvas, sel) => this.unfold(canvas, [...new Set(sel.flatMap((n) => this.unfoldTargets(canvas, n.id)))], levels));
+        for (const [dir2, label] of [["out", "outgoing (cards it points to)"], ["in", "incoming (cards pointing to it)"]])
+          this.addCommand({
+            id: `fold-direction-${dir2}`,
+            name: `Fold direction: ${label}`,
+            checkCallback: (checking) => {
+              if (this.settings.foldDirection === dir2) return false;
+              if (!checking) {
+                this.settings.foldDirection = dir2;
+                this.saveData(this.settings);
+                new Notice(`Kanvas board: fold direction ${label}`);
+              }
+              return true;
+            }
+          });
+        const templates = () => this.app.vault.getFiles().filter((f) => f.extension === "canvas" && f.path.startsWith(cb.TEMPLATE_DIR + "/"));
+        const templateName = (f) => f.path.slice(cb.TEMPLATE_DIR.length + 1, -".canvas".length);
+        canvasCommand("template-save", "Save selected cards as a template", ["Save as template", "layout-template"], (c, sel) => sel.length > 0, (canvas) => {
+          const existing = new Map(templates().map((f) => [templateName(f).toLowerCase(), f]));
+          new NamePrompt(this.app, "Template name", async (name) => {
+            const content = JSON.stringify((({ nodes, edges }) => ({ nodes, edges }))(canvas.getSelectionData()), null, "	");
+            const old = existing.get(name.toLowerCase());
+            if (old) {
+              await this.app.vault.modify(old, content);
+              new Notice(`Kanvas board: template ${old.path} overwritten`);
+              return;
+            }
+            if (!this.app.vault.getAbstractFileByPath(cb.TEMPLATE_DIR)) await this.app.vault.createFolder(cb.TEMPLATE_DIR);
+            const file = this.freePath(cb.TEMPLATE_DIR + "/", name, ".canvas");
+            await this.app.vault.create(file, content);
+            new Notice(`Kanvas board: template saved to ${file}`);
+          }, { suggestions: [...existing.values()].map(templateName), overwrite: (v) => existing.has(v.toLowerCase()) }).open();
+        });
+        const cards = (sel) => sel.filter((n) => !n.from && n.getData().type !== "group");
+        const selectMore = this.selectMore = (canvas, sel, keep) => {
+          const add = [...canvas.nodes.values()].filter((n) => n.getData().type !== "group" && !this.isHidden(canvas, n) && keep(n));
+          canvas.updateSelection(() => {
+            canvas.selection.clear();
+            for (const n of [...sel, ...add]) canvas.selection.add(n);
+          });
+          return add.length;
+        };
+        const childIds = (c, sel) => new Set(cards(sel).flatMap((n) => this.branchLevels(c, n.id, this.settings.foldDirection).flat()));
+        canvasCommand(
+          "select-children",
+          "Select children (all levels down, in the fold direction)",
+          ["Select children", "list-tree"],
+          (c, sel) => [...childIds(c, sel)].some((id) => c.nodes.get(id) && !this.isHidden(c, c.nodes.get(id)) && !c.selection.has(c.nodes.get(id))),
+          (canvas, sel) => {
+            const ids = childIds(canvas, sel);
+            selectMore(canvas, sel, (n) => ids.has(n.id));
+          }
+        );
+        const tagsOf = (sel) => new Set(cards(sel).flatMap((n) => [...this.cardTagSet(n)]));
+        canvasCommand("select-same-tag", "Select cards with the same tag", ["Select same tag", "tag"], (c, sel) => tagsOf(sel).size > 0, (canvas, sel) => {
+          const tags = tagsOf(sel);
+          selectMore(canvas, sel, (n) => [...this.cardTagSet(n)].some((t) => tags.has(t)));
+        });
+        canvasCommand("select-same-color", "Select cards with the same color", ["Select same color", "palette"], (c, sel) => cards(sel).length > 0, (canvas, sel) => {
+          const colors = new Set(cards(sel).map((n) => n.getData().color || ""));
+          selectMore(canvas, sel, (n) => colors.has(n.getData().color || ""));
+        });
+        this.addCommand({
+          id: "template-insert",
+          name: "Insert cards from template",
+          checkCallback: (checking) => {
+            const canvas = this.activeCanvas();
+            if (!canvas) return false;
+            if (!checking) {
+              const files = this.app.vault.getFiles().filter((f) => f.extension === "canvas" && f.path.startsWith(cb.TEMPLATE_DIR + "/"));
+              if (!files.length) new Notice(`Kanvas board: no template in ${cb.TEMPLATE_DIR} (Save selected cards as a template)`);
+              else new Picker(this.app, "Template", files, (f) => f.basename, (f) => this.insertTemplate(canvas, f)).open();
+            }
+            return true;
+          }
+        });
+        this.views = /* @__PURE__ */ new WeakMap();
+        this.panes = /* @__PURE__ */ new Map();
+        this.finds = /* @__PURE__ */ new Map();
+        this.addCommand({
+          id: "find",
+          name: "Search current canvas",
+          checkCallback: (checking) => {
+            const canvas = this.activeCanvas();
+            if (!canvas) return false;
+            if (!checking) {
+              let f = this.finds.get(canvas);
+              if (!f) {
+                f = new FindBar(this, canvas);
+                this.finds.set(canvas, f);
+              }
+              f.open();
+            }
+            return true;
+          }
+        });
+        this.addCommand({
+          id: "filter",
+          name: "Toggle filter pane",
+          checkCallback: (checking) => {
+            const canvas = this.activeCanvas();
+            if (!canvas) return false;
+            if (!checking) this.pane(canvas).toggle();
+            return true;
+          }
+        });
+        this.addCommand({
+          id: "show-all",
+          name: "Unhide all",
+          checkCallback: (checking) => {
+            const canvas = this.activeCanvas();
+            if (!canvas || !this.viewLabel(canvas)) return false;
+            if (!checking) this.showAll(canvas);
+            return true;
+          }
+        });
+        const addActions = (menu, canvas, sel) => {
+          for (const a of actions) if (a.menu && a.test(canvas, sel))
+            menu.addItem((item) => item.setTitle(this.keyedTitle(a.menu[0], a.id)).setIcon(a.menu[1]).setSection("canvas-board").onClick(() => runAction(a.run, canvas, sel)));
+        };
+        this.registerEvent(this.app.workspace.on("canvas:selection-menu", (menu, canvas) => addActions(menu, canvas, [...canvas.selection])));
+        this.registerEvent(this.app.workspace.on("canvas:node-menu", (menu, node) => addActions(menu, node.canvas, node.canvas.selection.has(node) ? [...node.canvas.selection] : [node])));
+        this.registerEvent(this.app.workspace.on("editor-menu", (menu, editor) => {
+          const canvas = this.activeCanvas();
+          const node = canvas && [...canvas.selection].find((n) => n.isEditing && this.cardEditor(n) === editor);
+          if (node) addActions(menu, canvas, [node]);
+        }));
+        const isArchived = (file) => {
+          const fm = file && file.extension === "md" && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
+          return !!(fm && fm["archived-from"]);
+        };
+        this.addCommand({
+          id: "restore",
+          name: "Restore archived card (from its archive note)",
+          checkCallback: (checking) => {
+            const file = this.app.workspace.getActiveFile();
+            if (!isArchived(file)) return false;
+            if (!checking) this.restore(file).catch((e) => new Notice(`Kanvas board: ${e.message}`));
+            return true;
+          }
+        });
+        this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
+          if (isArchived(file)) menu.addItem((item) => item.setTitle("Restore archived card").setIcon("archive-restore").setSection("canvas-board").onClick(() => this.restore(file).catch((e) => new Notice(`Kanvas board: ${e.message}`))));
+        }));
+        this.addCommand({
+          id: "run-pass",
+          name: "Run pass (recheck the board)",
+          callback: () => this.runPass()
+        });
+        this.addCommand({
+          id: "open-board",
+          name: "Open the board",
+          callback: () => this.openBoard()
+        });
+        this.addCommand({
+          id: "create-starter-board",
+          name: "Create a starter board (color legend and first cards)",
+          callback: () => this.createStarterBoard()
+        });
+        this.addRibbonIcon("kanban-square", "Open the board (Kanvas board)", () => this.openBoard());
+        this.countEl = this.addStatusBarItem();
+        this.viewEl = this.addStatusBarItem();
+        this.viewEl.addClass("mod-clickable");
+        this.viewEl.onClickEvent(() => {
+          const c = this.activeCanvas();
+          if (c) this.pane(c).toggle(true);
+        });
+        const tick = () => {
+          this.updateCount();
+          const open = /* @__PURE__ */ new Set();
+          for (const l of this.app.workspace.getLeavesOfType("canvas")) {
+            const canvas = l.view.canvas;
+            if (!canvas || !canvas.wrapperEl) continue;
+            open.add(canvas);
+            this.decorate(l.view);
+            this.refreshView(canvas);
+            this.pane(canvas).update();
+          }
+          for (const [canvas, pane] of this.panes) if (!open.has(canvas)) {
+            pane.destroy();
+            this.panes.delete(canvas);
+          }
+          for (const [canvas, f] of this.finds) if (!open.has(canvas)) {
+            f.destroy();
+            this.finds.delete(canvas);
+          }
+        };
+        this.registerEvent(this.app.workspace.on("active-leaf-change", tick));
+        this.registerInterval(window.setInterval(tick, 2e3));
+        tick();
+        this.register(() => {
+          for (const pane of this.panes.values()) pane.destroy();
+          this.panes.clear();
+          for (const f of this.finds.values()) f.destroy();
+          this.finds.clear();
+          for (const l of this.app.workspace.getLeavesOfType("canvas")) {
+            const canvas = l.view.canvas;
+            this.undecorate(l.view);
+            if (!this.views.has(canvas)) continue;
+            delete canvas.updateSelection;
+            delete canvas.applyHistory;
+            this.paint(canvas, /* @__PURE__ */ new Set(), /* @__PURE__ */ new Map());
+          }
+        });
+      }
+      // --- Presentation: where the commands show on screen ---------------------------------------------------------
+      // Control bar and selection toolbar are undocumented canvas DOM (.canvas-controls, canvas.menu.render), like
+      // folds and the filter pane: an Obsidian update may drop those buttons, the commands stay. Header action and
+      // ribbon icon are documented API. See "Obsidian internals" in README.md.
+      // Label of a color: the one edited in Settings > Workflow, else the default.
+      colorLabel(name) {
+        return (this.settings.colorLabels || {})[name] || COLORS.find((c) => c[0] === name)[3];
+      }
+      colorCommandName(name) {
+        return `Color selected cards: ${name} (${this.colorLabel(name)})`;
+      }
+      // An edited label also renames its command in the palette and the hotkey list. The id, and so the key, stays.
+      async setColorLabel(name, label) {
+        const labels = this.settings.colorLabels = { ...this.settings.colorLabels };
+        if (label) labels[name] = label;
+        else delete labels[name];
+        await this.saveData(this.settings);
+        const row = COLORS.find((c) => c[0] === name);
+        const cmd = this.app.commands && this.app.commands.commands[`${this.manifest.id}:color-${row[2]}`];
+        if (cmd) cmd.name = `${this.manifest.name}: ${this.colorCommandName(name)}`;
+        for (const canvas of this.panes.keys()) this.refreshView(canvas);
+      }
+      // Hotkey of a plugin command as Obsidian prints it ("Alt + ↑"), or ''.
+      hotkey(id) {
+        const hm = this.app.hotkeyManager;
+        try {
+          return hm && hm.printHotkeyForCommand && hm.printHotkeyForCommand(`${this.manifest.id}:${id}`) || "";
+        } catch (e) {
+          return "";
+        }
+      }
+      // Tooltip with its key, the way the canvas's own buttons show it ("Zoom to selection\n(Shift + 2)").
+      keyedLabel(label, id) {
+        const k = this.hotkey(id);
+        return k ? `${label}
+(${k})` : label;
+      }
+      // Menu item title with its key, muted, after the label.
+      keyedTitle(label, id) {
+        const k = this.hotkey(id);
+        if (!k) return label;
+        return createFragment((f) => {
+          f.appendText(label);
+          f.createSpan({ cls: "canvas-board-key", text: k });
+        });
+      }
+      // A notice with an Undo button: one canvas undo step and the files the action made go to the trash. Only while
+      // the board has not changed since (else the undo would take back something else).
+      // `restore` ({ path, content }) brings a trashed file back on undo (unpack). Redirected links are not undone.
+      undoNotice(canvas, msg, files = [], restore = null) {
+        const h = canvas.history;
+        const at = h ? h.current : null;
+        const frag = createFragment((f) => {
+          f.appendText(`Kanvas board: ${msg} `);
+          const b = f.createEl("button", { cls: "canvas-board-notice-undo", text: "Undo" });
+          b.addEventListener("click", async () => {
+            if (!h || h.current !== at) {
+              new Notice("Kanvas board: the board changed since, use Ctrl+Z");
+              return;
+            }
+            canvas.undo();
+            for (const p of files) {
+              const file = this.app.vault.getAbstractFileByPath(p);
+              if (file) await this.app.fileManager.trashFile(file);
+            }
+            if (restore && !this.app.vault.getAbstractFileByPath(restore.path)) await this.app.vault.create(restore.path, restore.content);
+          });
+        });
+        new Notice(frag, 8e3);
+      }
+      async openBoard() {
+        const board = this.settings.defaultBoard;
+        const leaf = this.app.workspace.getLeavesOfType("canvas").find((l) => l.view.file && l.view.file.path === board);
+        if (leaf) {
+          this.app.workspace.setActiveLeaf(leaf, { focus: true });
+          return;
+        }
+        const file = this.app.vault.getAbstractFileByPath(board);
+        if (!file) {
+          new Notice(createFragment((f) => {
+            f.appendText(`Kanvas board: ${board} not found (setting "Default board"). `);
+            const b = f.createEl("button", { cls: "canvas-board-notice-undo", text: "Create a starter board" });
+            b.addEventListener("click", () => this.createStarterBoard());
+          }), 1e4);
+          return;
+        }
+        await this.app.workspace.getLeaf(false).openFile(file);
+      }
+      // Onboarding: the default board when it does not exist yet, else "Starter board.canvas" (numbered when taken).
+      // A legend group (one card per color: its label and what it does, from Settings > Workflow) and a group of
+      // first steps, one of them a wish to color cyan and run a pass on. Opens it.
+      async createStarterBoard() {
+        const vault = this.app.vault;
+        let board = this.settings.defaultBoard;
+        if (vault.getAbstractFileByPath(board)) {
+          const dir = path.posix.dirname(board) === "." ? "" : `${path.posix.dirname(board)}/`;
+          let n = 1;
+          do
+            board = `${dir}Starter board${n > 1 ? ` ${n}` : ""}.canvas`;
+          while (vault.getAbstractFileByPath(board) && ++n);
+        }
+        const id = () => Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+        const nodes = [];
+        const edges = [];
+        const W = 400;
+        nodes.push({ id: id(), type: "group", label: "How the colors work", x: -40, y: -80, width: W + 80, height: WORKFLOW.length * 100 + 100 });
+        const DOT = { cyan: "\u{1F535}", purple: "\u{1F7E3}", orange: "\u{1F7E0}", yellow: "\u{1F7E1}", red: "\u{1F534}", green: "\u{1F7E2}", none: "\u26AA" };
+        WORKFLOW.forEach(([name, meaning], i) => {
+          nodes.push({ id: id(), type: "text", text: `${DOT[name]} **${this.colorLabel(name)}** (${COLOR_NUM[name] ? name : "uncolored"})
+${meaning}`, x: 0, y: i * 100, width: W, height: 80 });
+        });
+        const steps = [
+          "**1. Write a wish**\nOne card, one thing you want done, in your own words. Uncolored cards are ideas: the agent never touches them.",
+          "**2. Color it**\nCyan: the agent carries it to done. Purple: one step (a brief, then a plan), then it hands back. Color hotkeys: Settings > Kanvas board > Hotkeys.",
+          '**3. Run a pass**\nCommand "Kanvas board: Run pass". A terminal opens with the agent on this board; it turns the cards it takes orange.',
+          "**4. Answer**\nYellow: a question or a review for you, in the card's note. Answer there, color the card cyan or purple again, run the next pass."
+        ];
+        const x0 = W + 160;
+        nodes.push({ id: id(), type: "group", label: "First steps", x: x0 - 40, y: -80, width: W + 80, height: steps.length * 160 + 280 });
+        let prev;
+        steps.forEach((text, i) => {
+          const card = { id: id(), type: "text", text, x: x0, y: i * 160, width: W, height: 130 };
+          nodes.push(card);
+          if (prev) edges.push({ id: id(), fromNode: prev, fromSide: "bottom", toNode: card.id, toSide: "top" });
+          prev = card.id;
+        });
+        nodes.push({ id: id(), type: "text", text: "Try it: color this card cyan, then run a pass.\n\nWrite a short note that explains this board in my own words.", x: x0, y: steps.length * 160 + 20, width: W, height: 130 });
+        try {
+          const dir = path.posix.dirname(board);
+          if (dir !== "." && !vault.getAbstractFileByPath(dir)) await vault.createFolder(dir);
+          const file = await vault.create(board, JSON.stringify({ nodes, edges }, null, "	"));
+          await this.app.workspace.getLeaf(false).openFile(file);
+          new Notice(`Kanvas board: starter board created (${board})`);
+        } catch (e) {
+          new Notice(`Kanvas board: could not create the starter board (${e.message})`);
+        }
+      }
+      async setLayoutDirection(dir) {
+        this.settings.layoutDirection = dir;
+        await this.saveData(this.settings);
+        for (const leaf of this.app.workspace.getLeavesOfType("canvas")) this.decorate(leaf.view);
+        new Notice(`Kanvas board: tidy layout ${LAYOUT_DIRS[dir].name}`);
+      }
+      cycleLayoutDirection() {
+        const dirs = Object.keys(LAYOUT_DIRS);
+        return this.setLayoutDirection(dirs[(dirs.indexOf(this.settings.layoutDirection) + 1) % dirs.length]);
+      }
+      // Runs a plugin command on this canvas view (made active first: a click on its buttons may not focus it).
+      runOn(view, id) {
+        const leaf = this.app.workspace.getLeavesOfType("canvas").find((l) => l.view === view);
+        if (leaf && this.app.workspace.activeLeaf !== leaf) this.app.workspace.setActiveLeaf(leaf, { focus: true });
+        this.app.commands.executeCommandById(`${this.manifest.id}:${id}`);
+      }
+      // Buttons on a canvas view, added once (tick runs every 2 s and adds back what the canvas redrew away).
+      decorate(view) {
+        const canvas = view.canvas;
+        if (!view.canvasBoardAction && view.addAction)
+          view.canvasBoardAction = view.addAction("play", "Run pass", () => this.runPass());
+        if (view.canvasBoardAction) view.canvasBoardAction.setAttr("aria-label", this.keyedLabel("Run pass", "run-pass"));
+        const controls = canvas.wrapperEl && canvas.wrapperEl.querySelector(".canvas-controls");
+        if (controls) {
+          let group = controls.querySelector(".canvas-board-controls");
+          if (!group) {
+            group = createDiv({ cls: "canvas-control-group mod-raised canvas-board-controls" });
+            const help = controls.lastElementChild;
+            controls.insertBefore(group, help);
+            for (const [id, label, icon] of [["find", "Search current canvas", "search"], ["filter", "Filter cards", "filter"], ["tidy-layout", "Tidy layout", "network"]]) {
+              const b = group.createDiv({ cls: "canvas-control-item", attr: { "data-command": id, "data-label": label, "data-tooltip-position": "left" } });
+              setIcon(b, icon);
+              b.addEventListener("click", (e) => {
+                if (id === "tidy-layout" && e.shiftKey) this.cycleLayoutDirection();
+                else this.runOn(view, id);
+              });
+            }
+          }
+          for (const b of group.children) b.setAttr("aria-label", this.keyedLabel(b.dataset.label, b.dataset.command));
+          const tidy = group.querySelector('[data-command="tidy-layout"]');
+          const dir = LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
+          if (tidy) {
+            this.tidyTurn = nextTurn(this.tidyTurn ?? dir.turn, dir.turn);
+            tidy.style.setProperty("--canvas-board-tidy-turn", `${this.tidyTurn}deg`);
+            tidy.setAttr("aria-label", this.keyedLabel(`Tidy layout: ${dir.name}
+Shift-click: next direction`, "tidy-layout"));
+          }
+        }
+        const menu = canvas.menu;
+        if (menu && menu.render && !menu.canvasBoardRender) {
+          const orig = menu.canvasBoardRender = menu.render;
+          const plugin = this;
+          menu.render = function(...a) {
+            const r = orig.apply(this, a);
+            try {
+              plugin.menuButtons(canvas);
+            } catch (e) {
+              console.error("canvas-board: selection toolbar", e);
+            }
+            return r;
+          };
+          menu.canvasBoardObserver = new MutationObserver(() => {
+            for (const item of menu.menuEl.querySelectorAll(".canvas-color-picker-item:not(.canvas-color-picker-custom)")) {
+              const c = (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || "";
+              const row = COLORS.find((x) => x[1] === c);
+              if (row) item.setAttrs({ "aria-label": this.keyedLabel(this.colorLabel(row[0]), `color-${row[2]}`), "data-tooltip-position": "top" });
+            }
+          });
+          menu.canvasBoardObserver.observe(menu.menuEl, { childList: true, subtree: true });
+        }
+      }
+      menuButtons(canvas) {
+        const el = canvas.menu.menuEl;
+        const sel = [...canvas.selection];
+        if (!sel.length || !el.childElementCount || el.querySelector(".canvas-board-menu-btn")) return;
+        for (const id of ["fold", "unfold", "archive"]) {
+          const a = this.actions.find((x) => x.id === id);
+          if (!a || !a.test(canvas, sel)) continue;
+          const b = el.createEl("button", { cls: "clickable-icon canvas-board-menu-btn", attr: { "aria-label": this.keyedLabel(a.menu[0], id), "data-tooltip-position": "top" } });
+          setIcon(b, a.menu[1]);
+          b.addEventListener("click", () => this.runAction(a.run, canvas, [...canvas.selection]));
+        }
+      }
+      undecorate(view) {
+        const canvas = view.canvas;
+        if (view.canvasBoardAction) {
+          view.canvasBoardAction.remove();
+          delete view.canvasBoardAction;
+        }
+        if (canvas.wrapperEl) for (const el of canvas.wrapperEl.querySelectorAll(".canvas-board-controls, .canvas-board-menu-btn")) el.remove();
+        const menu = canvas.menu;
+        if (menu && menu.canvasBoardRender) {
+          menu.render = menu.canvasBoardRender;
+          delete menu.canvasBoardRender;
+          menu.canvasBoardObserver.disconnect();
+          delete menu.canvasBoardObserver;
+        }
+      }
+      // Filter state of an open canvas. `create` false only reads (an empty state, not stored).
+      viewState(canvas, create = true) {
+        const empty = () => ({ xcolors: /* @__PURE__ */ new Set(), xtags: /* @__PURE__ */ new Set(), hidden: /* @__PURE__ */ new Set() });
+        let v = this.views.get(canvas);
+        if (v || !create) return v || empty();
+        v = empty();
+        this.views.set(canvas, v);
+        const plugin = this;
+        const orig = canvas.updateSelection;
+        canvas.updateSelection = function(fn) {
+          const r = orig.call(this, () => {
+            fn();
+            for (const x of [...this.selection]) if (v.hidden.has(x.id) || x.from && (v.hidden.has(x.from.node.id) || v.hidden.has(x.to.node.id))) this.selection.delete(x);
+          });
+          plugin.updateCount();
+          return r;
+        };
+        const history = canvas.applyHistory;
+        if (history) canvas.applyHistory = function(...a) {
+          const r = history.apply(this, a);
+          plugin.refreshView(this);
+          return r;
+        };
+        return v;
+      }
+      isHidden(canvas, node) {
+        return this.viewState(canvas, false).hidden.has(node.id);
+      }
+      // Clears the filter and unfolds every card (one undo step for the folds).
+      showAll(canvas) {
+        const v = this.viewState(canvas, false);
+        v.xcolors.clear();
+        v.xtags.clear();
+        const folds = this.folds(canvas);
+        if (folds.size) this.setFolds(canvas, new Map([...folds.keys()].map((id) => [id, null])));
+        else this.refreshView(canvas);
+      }
+      // A fold is stored on the card as "canvasBoard": {"folded": "in" | "out"} (the fold direction). JSON Canvas
+      // 1.0 has no such field; other readers ignore it and show every card. Obsidian keeps it (node.unknownData).
+      foldOf(node) {
+        const cb = node.getData().canvasBoard;
+        return cb && cb.folded || null;
+      }
+      folds(canvas) {
+        const m = /* @__PURE__ */ new Map();
+        for (const n of canvas.nodes.values()) {
+          const dir = this.foldOf(n);
+          if (dir) m.set(n.id, dir);
+        }
+        return m;
+      }
+      // `changes`: card id → direction to fold, or null to unfold. One canvas edit, one undo step.
+      setFolds(canvas, changes) {
+        if (!changes.size) return;
+        const d = canvas.getData();
+        for (const n of d.nodes) {
+          if (!changes.has(n.id)) continue;
+          const cb = { ...n.canvasBoard || {} };
+          const dir = changes.get(n.id);
+          if (dir) cb.folded = dir;
+          else delete cb.folded;
+          if (Object.keys(cb).length) n.canvasBoard = cb;
+          else delete n.canvasBoard;
+        }
+        this.edit(canvas, [], d);
+        this.refreshView(canvas);
+      }
+      pane(canvas) {
+        let p = this.panes.get(canvas);
+        if (!p) {
+          p = new FilterPane(this, canvas);
+          this.panes.set(canvas, p);
+        }
+        return p;
+      }
+      // Card id → ids one edge away, following edges out (from → to) or in (to → from).
+      branchLinks(canvas, dir) {
+        const links = /* @__PURE__ */ new Map();
+        for (const e of canvas.edges.values()) {
+          const [a, b] = dir === "in" ? [e.to.node.id, e.from.node.id] : [e.from.node.id, e.to.node.id];
+          if (a !== b) links.set(a, (links.get(a) || []).concat(b));
+        }
+        return links;
+      }
+      // Ids below a folded card, level by level (level 1 first).
+      branchLevels(canvas, root, dir) {
+        const links = this.branchLinks(canvas, dir);
+        const seen = /* @__PURE__ */ new Set([root]);
+        const levels = [];
+        let level = [root];
+        while (level.length) {
+          const next = [];
+          for (const id of level) for (const x of links.get(id) || []) if (!seen.has(x)) {
+            seen.add(x);
+            next.push(x);
+          }
+          if (next.length) levels.push(next);
+          level = next;
+        }
+        return levels;
+      }
+      // The cards an unfold on `id` applies to: the card itself if folded, else the nearest folded cards of its open
+      // branch (in the fold direction, not past another fold), so pressing unfold again opens the next level.
+      unfoldTargets(canvas, id) {
+        const node = canvas.nodes.get(id);
+        if (!node) return [];
+        if (this.foldOf(node)) return [id];
+        const links = this.branchLinks(canvas, this.settings.foldDirection);
+        const seen = /* @__PURE__ */ new Set([id]);
+        const found = [];
+        let level = [id];
+        while (level.length) {
+          const next = [];
+          for (const x of level) for (const y of links.get(x) || []) {
+            if (seen.has(y)) continue;
+            seen.add(y);
+            const n = canvas.nodes.get(y);
+            if (n && this.foldOf(n)) found.push(y);
+            else next.push(y);
+          }
+          level = next;
+        }
+        return found;
+      }
+      // Shows `levels` levels of each folded branch; the cards at the last shown level that lead further get folded.
+      unfold(canvas, ids, levels) {
+        const changes = /* @__PURE__ */ new Map();
+        for (const id of ids) {
+          const node = canvas.nodes.get(id);
+          const dir = node && this.foldOf(node);
+          if (!dir) continue;
+          changes.set(id, null);
+          const below = this.branchLevels(canvas, id, dir);
+          const links = this.branchLinks(canvas, dir);
+          if (levels < below.length) {
+            for (const x of below[levels - 1]) if ((links.get(x) || []).length) changes.set(x, dir);
+          }
+        }
+        this.setFolds(canvas, changes);
+      }
+      // Tags of a card (no #): the `#tags` in its own text, never those of the notes it links. Exact match only:
+      // #tag1 is not #tag10.
+      cardTagSet(node) {
+        const tags = /* @__PURE__ */ new Set();
+        for (const m of (node.getData().text || "").matchAll(/(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g)) if (!/^\d+$/.test(m[1])) tags.add(m[1]);
+        return tags;
+      }
+      // Every color and tag shows by default; a hidden color, or any hidden tag, hides the card.
+      matches(node, v) {
+        if (v.xcolors.has(node.getData().color || "")) return false;
+        if (!v.xtags.size) return true;
+        const tags = this.cardTagSet(node);
+        return ![...v.xtags].some((t) => tags.has(t));
+      }
+      filtering(v) {
+        return !!(v.xcolors.size || v.xtags.size);
+      }
+      // Hidden = not matching the filter (groups always show), or below a folded card. With the setting "Hide cards
+      // under hidden tags", a card hidden by a tag also hides its branch, as a fold in the fold direction would.
+      refreshView(canvas) {
+        const v = this.viewState(canvas);
+        const hidden = /* @__PURE__ */ new Set();
+        if (this.filtering(v)) {
+          for (const node of canvas.nodes.values()) if (node.getData().type !== "group" && !this.matches(node, v)) hidden.add(node.id);
+        }
+        if (v.xtags.size && this.settings.hideTagBranches)
+          for (const node of canvas.nodes.values()) {
+            const tags = this.cardTagSet(node);
+            if (![...v.xtags].some((t) => tags.has(t))) continue;
+            for (const id of this.branchLevels(canvas, node.id, this.settings.foldDirection).flat())
+              if (canvas.nodes.get(id) && canvas.nodes.get(id).getData().type !== "group") hidden.add(id);
+          }
+        const folded = /* @__PURE__ */ new Map();
+        for (const [root, dir] of this.folds(canvas)) {
+          const below = this.branchLevels(canvas, root, dir).flat();
+          folded.set(root, below.length);
+          for (const id of below) hidden.add(id);
+        }
+        v.hidden = hidden;
+        this.paint(canvas, hidden, folded);
+        if ([...canvas.selection].some((x) => hidden.has(x.id))) canvas.updateSelection(() => {
+        });
+        if (canvas === this.activeCanvas()) this.updateViewLabel(canvas);
+        const pane = this.panes.get(canvas);
+        if (pane) pane.update();
+      }
+      // Hides the `hidden` cards and their edges; `folded` (id → count) gets the "· N folded" badge, a click on it
+      // unfolds one level.
+      paint(canvas, hidden, folded) {
+        for (const node of canvas.nodes.values()) {
+          node.nodeEl.toggleClass("canvas-board-hidden", hidden.has(node.id));
+          let badge = node.nodeEl.querySelector(":scope > .canvas-board-folded");
+          if (!folded.has(node.id)) {
+            if (badge) badge.remove();
+            continue;
+          }
+          if (!badge) {
+            badge = node.nodeEl.createDiv({ cls: "canvas-board-folded", attr: { "data-tooltip-position": "bottom" } });
+            for (const ev of ["pointerdown", "mousedown", "dblclick"]) badge.addEventListener(ev, (e) => e.stopPropagation());
+            badge.addEventListener("click", (e) => {
+              e.stopPropagation();
+              this.unfold(canvas, [node.id], 1);
+            });
+          }
+          badge.setText(`\xB7 ${folded.get(node.id)} folded`);
+          badge.setAttr("aria-label", this.keyedLabel("Unfold 1 level", "unfold"));
+        }
+        this.paintStale(canvas);
+        for (const e of canvas.edges.values()) {
+          const off = hidden.has(e.from.node.id) || hidden.has(e.to.node.id);
+          for (const el of [e.lineGroupEl, e.lineEndGroupEl, e.labelElement && e.labelElement.wrapperEl]) if (el) el.classList.toggle("canvas-board-hidden", off);
+        }
+      }
+      // Yellow (needs me) cards whose note was not touched for "Stale after" days: a warning badge (the icon of
+      // `- [!]`) with the time since the note last changed. Cards without a note have no date: no badge.
+      paintStale(canvas) {
+        const days = Number(this.settings.staleDays) || 0;
+        const board = canvas.view && canvas.view.file ? canvas.view.file.path : "";
+        for (const node of canvas.nodes.values()) {
+          const d = node.getData();
+          let age = -1;
+          if (days > 0 && d.color === "3") {
+            let file = null;
+            if (d.type === "file") file = this.app.vault.getAbstractFileByPath(d.file);
+            else if (d.type === "text") {
+              const m = /\[\[([^\]|#]+)/.exec(d.text || "");
+              if (m) file = this.app.metadataCache.getFirstLinkpathDest(m[1].trim(), board);
+            }
+            if (file && file.stat) age = Math.floor((Date.now() - file.stat.mtime) / 864e5);
+          }
+          let badge = node.nodeEl.querySelector(":scope > .canvas-board-stale");
+          if (age < days || age < 0) {
+            if (badge) badge.remove();
+            continue;
+          }
+          if (!badge) {
+            badge = node.nodeEl.createDiv({ cls: "canvas-board-stale", attr: { "data-tooltip-position": "top" } });
+            setIcon(badge.createSpan({ cls: "canvas-board-stale-icon" }), "triangle-alert");
+            badge.createSpan({ cls: "canvas-board-stale-text" });
+          }
+          const label = age < 1 ? "today" : `${age}d`;
+          if (badge.dataset.age !== label) {
+            badge.dataset.age = label;
+            badge.querySelector(".canvas-board-stale-text").setText(label);
+            badge.setAttr("aria-label", `Waiting on you \xB7 note untouched for ${age} day${age === 1 ? "" : "s"} (stale after ${days})`);
+          }
+        }
+      }
+      // Status bar and closed pane: only how many cards are hidden (filter and folds); the pane says by what.
+      viewLabel(canvas) {
+        const n = this.viewState(canvas, false).hidden.size;
+        return n ? `${n} card${n > 1 ? "s" : ""} hidden` : "";
+      }
+      updateViewLabel(canvas) {
+        const label = canvas ? this.viewLabel(canvas) : "";
+        this.viewEl.setText(label);
+        this.viewEl.toggle(!!label);
+      }
+      cardText(node) {
+        const d = node.getData();
+        return String((d.type === "text" ? d.text : d.type === "file" ? d.file : d.type === "link" ? d.url : d.label) || "");
+      }
+      // Background of a color dot: a preset canvas color ('1'…'6'), a custom hex, or none.
+      dotStyle(color) {
+        return !color ? "" : `background: ${color.startsWith("#") ? color : `var(--canvas-color-${color})`}`;
+      }
+      // Template cards are centered on the visible canvas, whatever is selected; they end up selected.
+      async insertTemplate(canvas, file) {
+        const tpl = JSON.parse(await this.app.vault.read(file));
+        const nodes = tpl.nodes || [];
+        const b = canvas.getViewportBBox();
+        const w = nodes.length ? Math.max(...nodes.map((n) => n.x + n.width)) - Math.min(...nodes.map((n) => n.x)) : 0;
+        const h = nodes.length ? Math.max(...nodes.map((n) => n.y + n.height)) - Math.min(...nodes.map((n) => n.y)) : 0;
+        const at = { x: Math.round((b.minX + b.maxX - w) / 2), y: Math.round((b.minY + b.maxY - h) / 2) };
+        const ops = this.cb.templateOps(tpl, at);
+        this.edit(canvas, ops);
+        const added = ops.filter((o) => o.op === "add").map((o) => canvas.nodes.get(o.node.id)).filter(Boolean);
+        canvas.updateSelection(() => {
+          canvas.selection.clear();
+          for (const n of added) canvas.selection.add(n);
+        });
+      }
+      updateCount() {
+        const canvas = this.activeCanvas();
+        this.updateViewLabel(canvas);
+        if (!canvas) {
+          this.countEl.setText("");
+          this.countEl.hide();
+          return;
+        }
+        const cards = [...canvas.nodes.values()].map((n) => n.getData()).filter((n) => n.type !== "group");
+        const names = { "": "none", 1: "red", 2: "orange", 3: "yellow", 4: "green", 5: "cyan", 6: "purple" };
+        const byColor = {};
+        for (const n of cards) {
+          const c = names[n.color || ""] || "custom";
+          byColor[c] = (byColor[c] || 0) + 1;
+        }
+        const max = Number(this.settings.cardWarning) || 0;
+        const over = max > 0 && cards.length > max;
+        const sel = [...canvas.selection].filter((x) => !x.from).length;
+        this.countEl.empty();
+        this.countEl.createSpan({ text: `${cards.length} cards`, cls: over ? "canvas-board-over" : "" });
+        if (sel) this.countEl.appendText(` \xB7 ${sel} selected`);
+        this.countEl.setAttr("aria-label", (over ? `over ${max} \xB7 ` : "") + Object.entries(byColor).map(([c, k]) => `${c} ${k}`).join(" \xB7 "));
+        this.countEl.setAttr("data-tooltip-position", "top");
+        this.countEl.show();
+      }
+      // The plugin folder holds the skill's default; the vault copy is written only when missing (then it is the
+      // user's, plugin updates never overwrite it) or on "Reset agent skill" (`force`).
+      skillPath() {
+        return path.join(this.app.vault.adapter.basePath, ".claude", "skills", "canvas-board", "SKILL.md");
+      }
+      syncSkill(dir, force = false) {
+        const src = path.join(dir, "skill", "SKILL.md");
+        const dest = this.skillPath();
+        try {
+          if (!force && fs.existsSync(dest)) return;
+          fs.mkdirSync(path.dirname(dest), { recursive: true });
+          fs.copyFileSync(src, dest);
+          if (force) new Notice("Kanvas board: agent skill reset to the plugin's version");
+        } catch (e) {
+          console.error("canvas-board: skill sync failed", e);
+          if (force) new Notice(`Kanvas board: skill reset failed (${e.message})`);
+        }
+      }
+      // One undo step: the state before is pushed (unless the history already ends with it), then the edited data
+      // is set, which pushes it, so Ctrl+Z and Ctrl+Y each take one step. `d` is passed when the caller already changed it (extract).
+      edit(canvas, ops, d = canvas.getData()) {
+        const before = canvas.getData();
+        const retyped = this.cb.applyOps(d, ops);
+        const h = canvas.history;
+        const last = h && h.data && h.data[h.current];
+        const same = (x) => JSON.stringify(x, (k, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort()) : v);
+        if (canvas.pushHistory && (!last || same(last) !== same(before))) canvas.pushHistory(before);
+        if (retyped.length) canvas.setData({ ...d, nodes: d.nodes.filter((n) => !retyped.includes(n.id)) });
+        canvas.setData(d);
+        canvas.requestSave(false);
+      }
+      activeFile() {
+        const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
+        return view && view.file;
+      }
+      freePath(dir, name, ext) {
+        for (let k = 1; ; k++) {
+          const p = `${dir}${name}${k > 1 ? " " + k : ""}${ext}`;
+          if (!this.app.vault.getAbstractFileByPath(p)) return p;
+        }
+      }
+      // Cards (on any canvas) and notes that link `file`, except card `skipId` on `canvas`: [{ path, id?, label }].
+      async subcanvasLinks(file, canvas, skipId) {
+        const out = [];
+        const here = this.canvasFile(canvas);
+        const hits = (from) => (target) => {
+          const f = this.app.metadataCache.getFirstLinkpathDest(target, from);
+          return !!f && f.path === file.path;
+        };
+        for (const f of this.app.vault.getFiles().filter((f2) => f2.extension === "canvas" && f2.path !== file.path)) {
+          const open = f.path === here ? canvas : this.openCanvas(f.path);
+          let d;
+          try {
+            d = open ? open.getData() : JSON.parse(await this.app.vault.cachedRead(f) || "{}");
+          } catch (e) {
+            continue;
+          }
+          for (const n of d.nodes || []) {
+            if (f.path === here && n.id === skipId) continue;
+            const hit = n.type === "file" ? n.file === file.path : n.type === "text" && this.cb.relinkText(n.text, hits(f.path), () => "\0") !== n.text;
+            if (hit) out.push({ path: f.path, id: n.id, label: (n.text || n.file || "").split("\n")[0] });
+          }
+        }
+        const resolved = this.app.metadataCache.resolvedLinks;
+        for (const src in resolved) if (src !== file.path && !src.endsWith(".canvas") && resolved[src][file.path]) out.push({ path: src, label: src });
+        return out;
+      }
+      canvasFile(canvas) {
+        const leaf = this.app.workspace.getLeavesOfType("canvas").find((l) => l.view.canvas === canvas);
+        return leaf && leaf.view.file ? leaf.view.file.path : null;
+      }
+      // mode: dissolve (file to trash, other links break), copy (file kept), group (cards in a group named after the
+      // file, other links redirected: cards on this board get an edge to the group, other cards and notes link this board).
+      async unpack(canvas, node, file, mode, links = []) {
+        const sub = JSON.parse(await this.app.vault.read(file) || "{}");
+        const content = JSON.stringify({ nodes: sub.nodes || [], edges: sub.edges || [] }, null, "	");
+        const label = (((node.getData().text || "").match(/\|([^\]]+)\]\]/) || [])[1] || file.basename).trim();
+        const ops = this.cb.expandOps(canvas.getData(), node.id, { nodes: sub.nodes || [], edges: sub.edges || [] }, mode === "group" ? { group: label } : {});
+        const here = this.canvasFile(canvas);
+        const isSub = (from) => (target) => {
+          const f = this.app.metadataCache.getFirstLinkpathDest(target, from);
+          return !!f && f.path === file.path;
+        };
+        if (mode === "group") {
+          const [a, b] = this.cb.SIDES[this.settings.layoutDirection] || this.cb.SIDES.TB;
+          for (const l of links.filter((l2) => l2.path === here)) {
+            const n2 = canvas.getData().nodes.find((x) => x.id === l.id);
+            if (!n2) continue;
+            ops.push({ op: "set", id: n2.id, text: n2.type === "text" ? this.cb.relinkText(n2.text, isSub(here), (t) => t) : label });
+            ops.push({ op: "edge", edge: { id: [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join(""), fromNode: n2.id, fromSide: a, toNode: ops.group, toSide: b } });
+          }
+        }
+        this.edit(canvas, ops);
+        if (mode === "group") {
+          const to = (t) => `[[${here}|${t}]]`;
+          for (const p of [...new Set(links.filter((l) => l.path !== here).map((l) => l.path))]) {
+            const f = this.app.vault.getAbstractFileByPath(p);
+            if (!f) continue;
+            if (p.endsWith(".canvas")) {
+              const relink = (d) => {
+                for (const n2 of d.nodes || []) {
+                  if (n2.type === "file" && n2.file === file.path) n2.file = here;
+                  else if (n2.type === "text") n2.text = this.cb.relinkText(n2.text, isSub(p), to);
+                }
+              };
+              const open = this.openCanvas(p);
+              if (open) {
+                const d = open.getData();
+                relink(d);
+                open.setData(d);
+                open.requestSave();
+              } else await this.app.vault.process(f, (t) => {
+                const d = JSON.parse(t || "{}");
+                relink(d);
+                return JSON.stringify(d, null, "	");
+              });
+            } else await this.app.vault.process(f, (t) => this.cb.relinkText(t, isSub(p), to));
+          }
+        }
+        if (mode !== "copy") await this.app.fileManager.trashFile(file);
+        const n = (sub.nodes || []).length, k = links.length, s = (x) => x > 1 ? "s" : "";
+        const what = {
+          dissolve: `unpacked ${n} card${s(n)}, ${file.path} trashed` + (k ? ` (${k} link${s(k)} now broken)` : ""),
+          copy: `unpacked ${n} card${s(n)}, ${file.path} kept`,
+          group: `unpacked ${n} card${s(n)} into a group, ${k} link${s(k)} redirected`
+        }[mode];
+        this.undoNotice(canvas, what, [], mode === "copy" ? null : { path: file.path, content });
+      }
+      linkedCanvas(node) {
+        const d = node.getData();
+        const target = d.type === "file" ? d.file : ((d.text || "").match(/\[\[([^\]|#]+\.canvas)/) || [])[1];
+        if (!target || !target.endsWith(".canvas")) return null;
+        return this.app.vault.getAbstractFileByPath(target) || this.app.metadataCache.getFirstLinkpathDest(target.trim(), "");
+      }
+      cardEditor(node) {
+        const child = node.child;
+        return child && (child.editMode && child.editMode.editor || child.editor) || null;
+      }
+      // Context of the note a card links (its `context:` list), so its archive note keeps the same context.
+      cardContexts(node, board) {
+        const d = node.getData();
+        const target = d.type === "file" ? d.file : ((d.text || "").match(/\[\[([^\]|#]+)/) || [])[1];
+        const file = target && this.app.metadataCache.getFirstLinkpathDest(target.trim(), board);
+        const fm = file && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
+        const c = fm && fm.context ? [].concat(fm.context).map(String) : [];
+        return c.length ? c : void 0;
+      }
+      async restore(note) {
+        const src = await this.app.vault.read(note);
+        const { board } = this.cb.restoreOps({ nodes: [], edges: [] }, src);
+        const file = this.app.vault.getAbstractFileByPath(board) || this.app.metadataCache.getFirstLinkpathDest(board, note.path);
+        if (!file) throw new Error(`board ${board} not found`);
+        const canvas = this.openCanvas(file.path);
+        if (canvas) this.edit(canvas, this.cb.restoreOps(canvas.getData(), src).ops);
+        else await this.app.vault.process(file, (text) => {
+          const d = JSON.parse(text);
+          d.nodes = d.nodes || [];
+          d.edges = d.edges || [];
+          this.cb.applyOps(d, this.cb.restoreOps(d, src).ops);
+          return JSON.stringify(d, null, "	");
+        });
+        await this.app.fileManager.trashFile(note);
+        new Notice(`Kanvas board: card restored on ${file.path}`);
+      }
+      openCanvas(board) {
+        const leaf = this.app.workspace.getLeavesOfType("canvas").find((l) => l.view.file && l.view.file.path === board);
+        return leaf ? leaf.view.canvas : null;
+      }
+      activeCanvas() {
+        const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
+        return view && view.getViewType() === "canvas" ? view.canvas : null;
+      }
+      // True if the board, or a plan canvas linked from one of its cards, has a card in `go` (setting "Workflow").
+      async hasGoCards(board, go) {
+        const read = async (p) => {
+          const file = this.app.vault.getAbstractFileByPath(p);
+          if (!file) return [];
+          try {
+            return JSON.parse(await this.app.vault.cachedRead(file)).nodes || [];
+          } catch (e) {
+            return [];
+          }
+        };
+        const isGo = (n) => go.has(n.color);
+        const open = this.openCanvas(board);
+        const nodes = open ? open.getData().nodes : await read(board);
+        if (nodes.some(isGo)) return true;
+        for (const n of nodes) {
+          for (const m of (n.text || "").matchAll(/\[\[([^\]|#]+\.canvas)/g)) {
+            const dest = this.app.metadataCache.getFirstLinkpathDest(m[1].trim(), board);
+            if (dest && (await read(dest.path)).some(isGo)) return true;
+          }
+        }
+        return false;
+      }
+      async runPass() {
+        const vault = this.app.vault.adapter.basePath;
+        const claude = claudeBin(this.settings.claudePath);
+        const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
+        const board = view && view.getViewType() === "canvas" && view.file ? view.file.path : this.settings.defaultBoard;
+        const go = parseColors(this.settings.passColors);
+        if (!go.size) {
+          new Notice(createFragment((f) => {
+            f.appendText("Kanvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. ");
+            const b = f.createEl("button", { cls: "canvas-board-notice-undo", text: "Open settings" });
+            b.addEventListener("click", () => {
+              this.app.setting.open();
+              this.app.setting.openTabById(this.manifest.id);
+            });
+          }), 1e4);
+          return;
+        }
+        if (!await this.hasGoCards(board, go)) {
+          const names = Object.keys(COLOR_NUM).filter((k) => go.has(COLOR_NUM[k]));
+          new Notice(`Kanvas board: nothing to do on ${board} (no ${names.join(" or ")} card)`);
+          return;
+        }
+        const vars = { vault, board, claude };
+        const template = String(this.settings.terminal || "").trim();
+        const launch = template ? (([c, ...a]) => [c, a])((template.match(/"[^"]*"|\S+/g) || []).map((a) => a.replace(/^"|"$/g, "").replace(/\{(vault|board|claude)\}/g, (_, k) => vars[k]))) : defaultLaunch(vars);
+        if (!launch) {
+          new Notice('Kanvas board: no terminal found to start the pass. Set "Terminal command" in the plugin settings.', 1e4);
+          return;
+        }
+        const [cmd, cmdArgs] = launch;
+        try {
+          const child = spawn(cmd, cmdArgs, { cwd: vault, detached: true, stdio: "ignore" });
+          child.on("error", (e) => new Notice(`Kanvas board: could not start the pass (${e.message})`));
+          child.unref();
+          new Notice(`Kanvas board: pass started on ${board}`);
+        } catch (e) {
+          new Notice(`Kanvas board: could not start the pass (${e.message})`);
+        }
+      }
+    };
+    module2.exports = CanvasBoardPlugin;
+  }
+});
+
+// src/plugin/main.js
+module.exports = require_CanvasBoardPlugin();
