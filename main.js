@@ -444,6 +444,11 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			name: 'Open the board',
 			callback: () => this.openBoard(),
 		});
+		this.addCommand({
+			id: 'create-starter-board',
+			name: 'Create a starter board (color legend and first cards)',
+			callback: () => this.createStarterBoard(),
+		});
 		this.addRibbonIcon('kanban-square', 'Open the board (Canvas board)', () => this.openBoard());
 
 		// Card count of the active canvas in the status bar: boards get hard to manage past a threshold.
@@ -554,8 +559,64 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const leaf = this.app.workspace.getLeavesOfType('canvas').find(l => l.view.file && l.view.file.path === board);
 		if (leaf) { this.app.workspace.setActiveLeaf(leaf, { focus: true }); return; }
 		const file = this.app.vault.getAbstractFileByPath(board);
-		if (!file) { new Notice(`Canvas board: ${board} not found (setting "Default board")`); return; }
+		if (!file) {
+			new Notice(createFragment(f => {
+				f.appendText(`Canvas board: ${board} not found (setting "Default board"). `);
+				const b = f.createEl('button', { cls: 'canvas-board-notice-undo', text: 'Create a starter board' });
+				b.addEventListener('click', () => this.createStarterBoard());
+			}), 10000);
+			return;
+		}
 		await this.app.workspace.getLeaf(false).openFile(file);
+	}
+
+	// Onboarding: the default board when it does not exist yet, else "Starter board.canvas" (numbered when taken).
+	// A legend group (one card per color: its label and what it does, from Settings > Workflow) and a group of
+	// first steps, one of them a wish to color cyan and run a pass on. Opens it.
+	async createStarterBoard() {
+		const vault = this.app.vault;
+		let board = this.settings.defaultBoard;
+		if (vault.getAbstractFileByPath(board)) {
+			const dir = path.posix.dirname(board) === '.' ? '' : `${path.posix.dirname(board)}/`;
+			let n = 1;
+			do board = `${dir}Starter board${n > 1 ? ` ${n}` : ''}.canvas`; while (vault.getAbstractFileByPath(board) && ++n);
+		}
+		const id = () => Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+		const nodes = [];
+		const edges = [];
+		const W = 400;
+		nodes.push({ id: id(), type: 'group', label: 'How the colors work', x: -40, y: -80, width: W + 80, height: WORKFLOW.length * 100 + 100 });
+		// Legend cards stay uncolored (a colored one would be state: a pass would take the cyan and purple ones),
+		// an emoji dot stands for the color.
+		const DOT = { cyan: '🔵', purple: '🟣', orange: '🟠', yellow: '🟡', red: '🔴', green: '🟢', none: '⚪' };
+		WORKFLOW.forEach(([name, meaning], i) => {
+			nodes.push({ id: id(), type: 'text', text: `${DOT[name]} **${this.colorLabel(name)}** (${COLOR_NUM[name] ? name : 'uncolored'})\n${meaning}`, x: 0, y: i * 100, width: W, height: 80 });
+		});
+		const steps = [
+			'**1. Write a wish**\nOne card, one thing you want done, in your own words. Uncolored cards are ideas: the agent never touches them.',
+			'**2. Color it**\nCyan: the agent carries it to done. Purple: one step (a brief, then a plan), then it hands back. Color hotkeys: Settings > Canvas board > Hotkeys.',
+			'**3. Run a pass**\nCommand "Canvas board: Run pass". A terminal opens with the agent on this board; it turns the cards it takes orange.',
+			'**4. Answer**\nYellow: a question or a review for you, in the card\'s note. Answer there, color the card cyan or purple again, run the next pass.',
+		];
+		const x0 = W + 160;
+		nodes.push({ id: id(), type: 'group', label: 'First steps', x: x0 - 40, y: -80, width: W + 80, height: steps.length * 160 + 280 });
+		let prev;
+		steps.forEach((text, i) => {
+			const card = { id: id(), type: 'text', text, x: x0, y: i * 160, width: W, height: 130 };
+			nodes.push(card);
+			if (prev) edges.push({ id: id(), fromNode: prev, fromSide: 'bottom', toNode: card.id, toSide: 'top' });
+			prev = card.id;
+		});
+		nodes.push({ id: id(), type: 'text', text: 'Try it: color this card cyan, then run a pass.\n\nWrite a short note that explains this board in my own words.', x: x0, y: steps.length * 160 + 20, width: W, height: 130 });
+		try {
+			const dir = path.posix.dirname(board);
+			if (dir !== '.' && !vault.getAbstractFileByPath(dir)) await vault.createFolder(dir);
+			const file = await vault.create(board, JSON.stringify({ nodes, edges }, null, '\t'));
+			await this.app.workspace.getLeaf(false).openFile(file);
+			new Notice(`Canvas board: starter board created (${board})`);
+		} catch (e) {
+			new Notice(`Canvas board: could not create the starter board (${e.message})`);
+		}
 	}
 
 	async setLayoutDirection(dir) {
@@ -1633,6 +1694,9 @@ class CanvasBoardSettings extends PluginSettingTab {
 				if (tab && tab.searchComponent) { tab.searchComponent.setValue('Canvas board'); if (tab.setQuery) tab.setQuery('Canvas board'); }
 			}));
 		heading('Board');
+		new Setting(containerEl).setName('Starter board').setDesc('A board with the color legend and first steps: the default board if it does not exist yet, else "Starter board.canvas".').addButton(b => b
+			.setButtonText('Create')
+			.onClick(() => this.plugin.createStarterBoard()));
 		text('Default board', 'Board used by "Run pass" when the active tab is not a canvas, and by "Open the board" (ribbon).', 'defaultBoard');
 		text('Card count warning', 'The status bar card count turns to the warning color past this many cards (0: never).', 'cardWarning');
 		text('Stale after (days)', 'A yellow card whose note is untouched this many days gets a warning badge with its age; the roll-up adds "· Nd" from the same value (0: never).', 'staleDays');
