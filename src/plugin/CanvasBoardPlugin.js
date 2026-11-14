@@ -443,7 +443,7 @@ class CanvasBoardPlugin extends Plugin {
     for (const item of swatches) {
       const color =
         (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || '';
-      const row = COLORS.find((x) => x[1] === color);
+      const row = COLORS.find((colorRow) => colorRow[1] === color);
       if (!row) continue;
       item.setAttrs({
         'aria-label': this.keyedLabel(
@@ -466,7 +466,7 @@ class CanvasBoardPlugin extends Plugin {
       return;
     }
     for (const id of ['fold', 'unfold', 'archive']) {
-      const action = this.actions.find((x) => x.id === id);
+      const action = this.actions.find((candidate) => candidate.id === id);
       if (!action || !action.test(canvas, selection)) continue;
       const button = element.createEl('button', {
         cls: 'clickable-icon canvas-board-menu-btn',
@@ -523,14 +523,14 @@ class CanvasBoardPlugin extends Plugin {
     canvas.updateSelection = function (callback) {
       const result = original.call(this, () => {
         callback();
-        for (const x of [...this.selection]) {
+        for (const selected of [...this.selection]) {
           if (
-            state.hidden.has(x.id) ||
-            (x.from &&
-              (state.hidden.has(x.from.node.id) ||
-                state.hidden.has(x.to.node.id)))
+            state.hidden.has(selected.id) ||
+            (selected.from &&
+              (state.hidden.has(selected.from.node.id) ||
+                state.hidden.has(selected.to.node.id)))
           ) {
-            this.selection.delete(x);
+            this.selection.delete(selected);
           }
         }
       });
@@ -715,7 +715,7 @@ class CanvasBoardPlugin extends Plugin {
     }
     state.hidden = hidden;
     this.paint(canvas, hidden, folded);
-    if ([...canvas.selection].some((x) => hidden.has(x.id))) {
+    if ([...canvas.selection].some((selected) => hidden.has(selected.id))) {
       canvas.updateSelection(() => {});
     }
     if (canvas === this.activeCanvas()) this.updateViewLabel(canvas);
@@ -944,7 +944,9 @@ class CanvasBoardPlugin extends Plugin {
     const max = Number(this.settings.cardWarning) || 0;
     const isOverLimit = max > 0 && cards.length > max;
     // cards and groups, not edges
-    const selectedCount = [...canvas.selection].filter((x) => !x.from).length;
+    const selectedCount = [...canvas.selection].filter(
+      (item) => !item.from,
+    ).length;
     // Only the card count takes the warning color, not the selected count.
     this.countEl.empty();
     this.countEl.createSpan({
@@ -1013,8 +1015,8 @@ class CanvasBoardPlugin extends Plugin {
     const retyped = this.boardLibrary.applyOps(canvasData, operations);
     const history = canvas.history;
     const last = history && history.data && history.data[history.current];
-    const same = (x) =>
-      JSON.stringify(x, (key, value) =>
+    const same = (data) =>
+      JSON.stringify(data, (key, value) =>
         value && typeof value === 'object' && !Array.isArray(value)
           ? Object.fromEntries(Object.entries(value).sort())
           : value,

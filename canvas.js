@@ -733,8 +733,8 @@ var require_place = __commonJS({
     function place(canvasData, { near, width, height }) {
       const nearNode = canvasData.nodes.find((node) => node.id === near);
       if (!nearNode) throw new Error("no node " + near);
-      const overlaps = (x, y) => canvasData.nodes.some(
-        (node) => x < node.x + node.width + 20 && x + width + 20 > node.x && y < node.y + node.height + 20 && y + height + 20 > node.y
+      const overlaps = (left, top) => canvasData.nodes.some(
+        (node) => left < node.x + node.width + 20 && left + width + 20 > node.x && top < node.y + node.height + 20 && top + height + 20 > node.y
       );
       for (let step = 0; step < 20; step++) {
         const right = {
@@ -771,8 +771,20 @@ var require_addCommand = __commonJS({
         cli2.option("--height") || fitHeight(cli2.option("--text"), width)
       );
       const near = cli2.option("--near");
-      const { x, y } = place(readBoard(cli2.board), { near, width, height });
-      const node = { id: newId(), type: "text", text, x, y, width, height };
+      const { x: left, y: top } = place(readBoard(cli2.board), {
+        near,
+        width,
+        height
+      });
+      const node = {
+        id: newId(),
+        type: "text",
+        text,
+        x: left,
+        y: top,
+        width,
+        height
+      };
       const color = colorArg(cli2.option("--color"));
       if (color) node.color = color;
       writeOps(cli2.board, [{ op: "add", node }]);
@@ -3979,12 +3991,12 @@ var require_dagrePlacement = __commonJS({
 var require_bounds = __commonJS({
   "src/board/bounds.js"(exports2, module2) {
     var bounds = (nodes) => {
-      const x = Math.min(...nodes.map((node) => node.x)), y = Math.min(...nodes.map((node) => node.y));
+      const left = Math.min(...nodes.map((node) => node.x)), top = Math.min(...nodes.map((node) => node.y));
       return {
-        x,
-        y,
-        w: Math.max(...nodes.map((node) => node.x + node.width)) - x,
-        h: Math.max(...nodes.map((node) => node.y + node.height)) - y
+        x: left,
+        y: top,
+        width: Math.max(...nodes.map((node) => node.x + node.width)) - left,
+        height: Math.max(...nodes.map((node) => node.y + node.height)) - top
       };
     };
     module2.exports = bounds;
@@ -4015,8 +4027,12 @@ var require_nearestFreeOffset = __commonJS({
       const before = bounds(moving);
       const after = bounds(placed);
       const center = {
-        x: Math.round((2 * before.x + before.w - 2 * after.x - after.w) / 2),
-        y: Math.round((2 * before.y + before.h - 2 * after.y - after.h) / 2)
+        x: Math.round(
+          (2 * before.x + before.width - 2 * after.x - after.width) / 2
+        ),
+        y: Math.round(
+          (2 * before.y + before.height - 2 * after.y - after.height) / 2
+        )
       };
       const axis = ACROSS_ROWS.has(direction) ? "y" : "x";
       const offset = { ...center };
@@ -4143,8 +4159,8 @@ var require_collapseOps = __commonJS({
         id: newId(),
         type: "text",
         text: `[[${file}|${label}]]`,
-        x: Math.round(box.x + (box.w - cardWidth) / 2),
-        y: Math.round(box.y + (box.h - cardHeight) / 2),
+        x: Math.round(box.x + (box.width - cardWidth) / 2),
+        y: Math.round(box.y + (box.height - cardHeight) / 2),
         width: cardWidth,
         height: cardHeight
       };
@@ -4220,18 +4236,18 @@ var require_groupAround = __commonJS({
     var newId = require_newId();
     var PADDING = 30;
     function groupAround(nodes, label) {
-      const x = Math.min(...nodes.map((node) => node.x)) - PADDING;
-      const y = Math.min(...nodes.map((node) => node.y)) - PADDING;
+      const left = Math.min(...nodes.map((node) => node.x)) - PADDING;
+      const top = Math.min(...nodes.map((node) => node.y)) - PADDING;
       const right = Math.max(...nodes.map((node) => node.x + node.width));
       const bottom = Math.max(...nodes.map((node) => node.y + node.height));
       return {
         id: newId(),
         type: "group",
         label,
-        x,
-        y,
-        width: right + PADDING - x,
-        height: bottom + PADDING - y
+        x: left,
+        y: top,
+        width: right + PADDING - left,
+        height: bottom + PADDING - top
       };
     }
     module2.exports = groupAround;
@@ -4248,8 +4264,8 @@ var require_centeredFreeOffset = __commonJS({
     function centeredFreeOffset(nodes, card, others) {
       const box = bounds(nodes);
       const offset = {
-        x: Math.round(card.x + (card.width - box.w) / 2) - box.x,
-        y: Math.round(card.y + (card.height - box.h) / 2) - box.y
+        x: Math.round(card.x + (card.width - box.width) / 2) - box.x,
+        y: Math.round(card.y + (card.height - box.height) / 2) - box.y
       };
       for (let step = 0; step < MAX_STEPS; step++) {
         if (!overlapsAny(nodes, others, offset)) break;
@@ -4645,11 +4661,17 @@ var require_splitOps = __commonJS({
       }
       const pieces = splitText(card.text || "", separator);
       if (pieces.length < 2) throw new Error(`nothing to split by ${separator}`);
-      let y = card.y;
+      let top = card.y;
       return pieces.map((text, index) => {
         const height = fitHeight(text, card.width);
-        const node = { ...card, id: index ? newId() : card.id, text, y, height };
-        y += height + 20;
+        const node = {
+          ...card,
+          id: index ? newId() : card.id,
+          text,
+          y: top,
+          height
+        };
+        top += height + 20;
         return index ? { op: "add", node } : { op: "set", id, text, height };
       });
     }
@@ -4687,18 +4709,18 @@ var require_extractOps = __commonJS({
       const left = (card.text.slice(0, offset) + card.text.slice(offset + part.length)).replace(/\n{3,}/g, "\n\n").trim();
       const text = part.trim();
       const height = fitHeight(text, card.width);
-      let y = card.y;
+      let top = card.y;
       while (canvasData.nodes.some(
-        (node2) => node2.x === card.x + card.width + 40 && node2.y === y
+        (node2) => node2.x === card.x + card.width + 40 && node2.y === top
       )) {
-        y += 40;
+        top += 40;
       }
       const node = {
         id: newId(),
         type: "text",
         text,
         x: card.x + card.width + 40,
-        y,
+        y: top,
         width: card.width,
         height
       };

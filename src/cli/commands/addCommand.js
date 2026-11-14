@@ -14,8 +14,20 @@ function addCommand(cli) {
     cli.option('--height') || fitHeight(cli.option('--text'), width),
   );
   const near = cli.option('--near');
-  const { x, y } = place(readBoard(cli.board), { near, width, height });
-  const node = { id: newId(), type: 'text', text, x, y, width, height };
+  const { x: left, y: top } = place(readBoard(cli.board), {
+    near,
+    width,
+    height,
+  });
+  const node = {
+    id: newId(),
+    type: 'text',
+    text,
+    x: left,
+    y: top,
+    width,
+    height,
+  };
   const color = colorArg(cli.option('--color'));
   if (color) node.color = color;
   writeOps(cli.board, [{ op: 'add', node }]);

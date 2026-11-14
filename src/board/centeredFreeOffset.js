@@ -8,8 +8,8 @@ const MAX_STEPS = 200;
 function centeredFreeOffset(nodes, card, others) {
   const box = bounds(nodes);
   const offset = {
-    x: Math.round(card.x + (card.width - box.w) / 2) - box.x,
-    y: Math.round(card.y + (card.height - box.h) / 2) - box.y,
+    x: Math.round(card.x + (card.width - box.width) / 2) - box.x,
+    y: Math.round(card.y + (card.height - box.height) / 2) - box.y,
   };
   for (let step = 0; step < MAX_STEPS; step++) {
     if (!overlapsAny(nodes, others, offset)) break;

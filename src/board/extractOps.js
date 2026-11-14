@@ -23,20 +23,20 @@ function extractOps(canvasData, { id, part, from }) {
   // Right next to the card even if it overlaps another (seen beats tidy), on
   // top of the stack (added last); stepped down only so repeated extracts don't
   // hide each other exactly.
-  let y = card.y;
+  let top = card.y;
   while (
     canvasData.nodes.some(
-      (node) => node.x === card.x + card.width + 40 && node.y === y,
+      (node) => node.x === card.x + card.width + 40 && node.y === top,
     )
   ) {
-    y += 40;
+    top += 40;
   }
   const node = {
     id: newId(),
     type: 'text',
     text,
     x: card.x + card.width + 40,
-    y,
+    y: top,
     width: card.width,
     height,
   };
