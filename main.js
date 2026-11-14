@@ -355,12 +355,12 @@ var require_archiveNote = __commonJS({
 var require_bounds = __commonJS({
   "src/board/bounds.js"(exports2, module2) {
     var bounds = (nodes) => {
-      const x = Math.min(...nodes.map((node) => node.x)), y = Math.min(...nodes.map((node) => node.y));
+      const left = Math.min(...nodes.map((node) => node.x)), top = Math.min(...nodes.map((node) => node.y));
       return {
-        x,
-        y,
-        w: Math.max(...nodes.map((node) => node.x + node.width)) - x,
-        h: Math.max(...nodes.map((node) => node.y + node.height)) - y
+        x: left,
+        y: top,
+        width: Math.max(...nodes.map((node) => node.x + node.width)) - left,
+        height: Math.max(...nodes.map((node) => node.y + node.height)) - top
       };
     };
     module2.exports = bounds;
@@ -419,8 +419,8 @@ var require_collapseOps = __commonJS({
         id: newId(),
         type: "text",
         text: `[[${file}|${label}]]`,
-        x: Math.round(box.x + (box.w - cardWidth) / 2),
-        y: Math.round(box.y + (box.h - cardHeight) / 2),
+        x: Math.round(box.x + (box.width - cardWidth) / 2),
+        y: Math.round(box.y + (box.height - cardHeight) / 2),
         width: cardWidth,
         height: cardHeight
       };
@@ -449,18 +449,18 @@ var require_groupAround = __commonJS({
     var newId = require_newId();
     var PADDING = 30;
     function groupAround(nodes, label) {
-      const x = Math.min(...nodes.map((node) => node.x)) - PADDING;
-      const y = Math.min(...nodes.map((node) => node.y)) - PADDING;
+      const left = Math.min(...nodes.map((node) => node.x)) - PADDING;
+      const top = Math.min(...nodes.map((node) => node.y)) - PADDING;
       const right = Math.max(...nodes.map((node) => node.x + node.width));
       const bottom = Math.max(...nodes.map((node) => node.y + node.height));
       return {
         id: newId(),
         type: "group",
         label,
-        x,
-        y,
-        width: right + PADDING - x,
-        height: bottom + PADDING - y
+        x: left,
+        y: top,
+        width: right + PADDING - left,
+        height: bottom + PADDING - top
       };
     }
     module2.exports = groupAround;
@@ -489,8 +489,8 @@ var require_centeredFreeOffset = __commonJS({
     function centeredFreeOffset(nodes, card, others) {
       const box = bounds(nodes);
       const offset = {
-        x: Math.round(card.x + (card.width - box.w) / 2) - box.x,
-        y: Math.round(card.y + (card.height - box.h) / 2) - box.y
+        x: Math.round(card.x + (card.width - box.width) / 2) - box.x,
+        y: Math.round(card.y + (card.height - box.height) / 2) - box.y
       };
       for (let step = 0; step < MAX_STEPS; step++) {
         if (!overlapsAny(nodes, others, offset)) break;
@@ -619,18 +619,18 @@ var require_extractOps = __commonJS({
       const left = (card.text.slice(0, offset) + card.text.slice(offset + part.length)).replace(/\n{3,}/g, "\n\n").trim();
       const text = part.trim();
       const height = fitHeight(text, card.width);
-      let y = card.y;
+      let top = card.y;
       while (canvasData.nodes.some(
-        (node2) => node2.x === card.x + card.width + 40 && node2.y === y
+        (node2) => node2.x === card.x + card.width + 40 && node2.y === top
       )) {
-        y += 40;
+        top += 40;
       }
       const node = {
         id: newId(),
         type: "text",
         text,
         x: card.x + card.width + 40,
-        y,
+        y: top,
         width: card.width,
         height
       };
@@ -702,8 +702,12 @@ var require_nearestFreeOffset = __commonJS({
       const before = bounds(moving);
       const after = bounds(placed);
       const center = {
-        x: Math.round((2 * before.x + before.w - 2 * after.x - after.w) / 2),
-        y: Math.round((2 * before.y + before.h - 2 * after.y - after.h) / 2)
+        x: Math.round(
+          (2 * before.x + before.width - 2 * after.x - after.width) / 2
+        ),
+        y: Math.round(
+          (2 * before.y + before.height - 2 * after.y - after.height) / 2
+        )
       };
       const axis = ACROSS_ROWS.has(direction) ? "y" : "x";
       const offset = { ...center };
@@ -1002,11 +1006,17 @@ var require_splitOps = __commonJS({
       }
       const pieces = splitText(card.text || "", separator);
       if (pieces.length < 2) throw new Error(`nothing to split by ${separator}`);
-      let y = card.y;
+      let top = card.y;
       return pieces.map((text, index) => {
         const height = fitHeight(text, card.width);
-        const node = { ...card, id: index ? newId() : card.id, text, y, height };
-        y += height + 20;
+        const node = {
+          ...card,
+          id: index ? newId() : card.id,
+          text,
+          y: top,
+          height
+        };
+        top += height + 20;
         return index ? { op: "add", node } : { op: "set", id, text, height };
       });
     }
@@ -4570,7 +4580,9 @@ var require_registerExtractCommand = __commonJS({
             editor.replaceSelection("");
             node.blur();
             const canvasData = canvas.getData();
-            const savedNode = canvasData.nodes.find((x) => x.id === node.id);
+            const savedNode = canvasData.nodes.find(
+              (savedCard) => savedCard.id === node.id
+            );
             if (savedNode) savedNode.text = before;
             plugin.edit(
               canvas,
@@ -7242,7 +7254,7 @@ Shift-click: next direction`,
         );
         for (const item of swatches) {
           const color = (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || "";
-          const row = COLORS.find((x) => x[1] === color);
+          const row = COLORS.find((colorRow) => colorRow[1] === color);
           if (!row) continue;
           item.setAttrs({
             "aria-label": this.keyedLabel(
@@ -7260,7 +7272,7 @@ Shift-click: next direction`,
           return;
         }
         for (const id of ["fold", "unfold", "archive"]) {
-          const action = this.actions.find((x) => x.id === id);
+          const action = this.actions.find((candidate) => candidate.id === id);
           if (!action || !action.test(canvas, selection)) continue;
           const button = element.createEl("button", {
             cls: "clickable-icon canvas-board-menu-btn",
@@ -7312,9 +7324,9 @@ Shift-click: next direction`,
         canvas.updateSelection = function(callback) {
           const result = original.call(this, () => {
             callback();
-            for (const x of [...this.selection]) {
-              if (state.hidden.has(x.id) || x.from && (state.hidden.has(x.from.node.id) || state.hidden.has(x.to.node.id))) {
-                this.selection.delete(x);
+            for (const selected of [...this.selection]) {
+              if (state.hidden.has(selected.id) || selected.from && (state.hidden.has(selected.from.node.id) || state.hidden.has(selected.to.node.id))) {
+                this.selection.delete(selected);
               }
             }
           });
@@ -7481,7 +7493,7 @@ Shift-click: next direction`,
         }
         state.hidden = hidden;
         this.paint(canvas, hidden, folded);
-        if ([...canvas.selection].some((x) => hidden.has(x.id))) {
+        if ([...canvas.selection].some((selected) => hidden.has(selected.id))) {
           canvas.updateSelection(() => {
           });
         }
@@ -7662,7 +7674,9 @@ Shift-click: next direction`,
         }
         const max = Number(this.settings.cardWarning) || 0;
         const isOverLimit = max > 0 && cards.length > max;
-        const selectedCount = [...canvas.selection].filter((x) => !x.from).length;
+        const selectedCount = [...canvas.selection].filter(
+          (item) => !item.from
+        ).length;
         this.countEl.empty();
         this.countEl.createSpan({
           text: `${cards.length} cards`,
@@ -7722,8 +7736,8 @@ Shift-click: next direction`,
         const retyped = this.boardLibrary.applyOps(canvasData, operations);
         const history = canvas.history;
         const last = history && history.data && history.data[history.current];
-        const same = (x) => JSON.stringify(
-          x,
+        const same = (data) => JSON.stringify(
+          data,
           (key, value) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort()) : value
         );
         if (canvas.pushHistory && (!last || same(last) !== same(before))) {

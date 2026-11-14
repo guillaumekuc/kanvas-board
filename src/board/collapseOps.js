@@ -26,8 +26,8 @@ function collapseOps(canvasData, { ids, file, label }) {
     id: newId(),
     type: 'text',
     text: `[[${file}|${label}]]`,
-    x: Math.round(box.x + (box.w - cardWidth) / 2),
-    y: Math.round(box.y + (box.h - cardHeight) / 2),
+    x: Math.round(box.x + (box.width - cardWidth) / 2),
+    y: Math.round(box.y + (box.height - cardHeight) / 2),
     width: cardWidth,
     height: cardHeight,
   };

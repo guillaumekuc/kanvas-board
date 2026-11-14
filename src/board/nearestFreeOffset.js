@@ -12,8 +12,12 @@ function nearestFreeOffset(placed, { moving, fixed, direction }) {
   const before = bounds(moving);
   const after = bounds(placed);
   const center = {
-    x: Math.round((2 * before.x + before.w - 2 * after.x - after.w) / 2),
-    y: Math.round((2 * before.y + before.h - 2 * after.y - after.h) / 2),
+    x: Math.round(
+      (2 * before.x + before.width - 2 * after.x - after.width) / 2,
+    ),
+    y: Math.round(
+      (2 * before.y + before.height - 2 * after.y - after.height) / 2,
+    ),
   };
   const axis = ACROSS_ROWS.has(direction) ? 'y' : 'x';
   const offset = { ...center };

@@ -11,11 +11,17 @@ function splitOps(canvasData, id, separator = 'paragraph') {
   }
   const pieces = splitText(card.text || '', separator);
   if (pieces.length < 2) throw new Error(`nothing to split by ${separator}`);
-  let y = card.y;
+  let top = card.y;
   return pieces.map((text, index) => {
     const height = fitHeight(text, card.width);
-    const node = { ...card, id: index ? newId() : card.id, text, y, height };
-    y += height + 20;
+    const node = {
+      ...card,
+      id: index ? newId() : card.id,
+      text,
+      y: top,
+      height,
+    };
+    top += height + 20;
     return index ? { op: 'add', node } : { op: 'set', id, text, height };
   });
 }

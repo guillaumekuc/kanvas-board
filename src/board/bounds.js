@@ -1,11 +1,11 @@
 const bounds = (nodes) => {
-  const x = Math.min(...nodes.map((node) => node.x)),
-    y = Math.min(...nodes.map((node) => node.y));
+  const left = Math.min(...nodes.map((node) => node.x)),
+    top = Math.min(...nodes.map((node) => node.y));
   return {
-    x,
-    y,
-    w: Math.max(...nodes.map((node) => node.x + node.width)) - x,
-    h: Math.max(...nodes.map((node) => node.y + node.height)) - y,
+    x: left,
+    y: top,
+    width: Math.max(...nodes.map((node) => node.x + node.width)) - left,
+    height: Math.max(...nodes.map((node) => node.y + node.height)) - top,
   };
 };
 
