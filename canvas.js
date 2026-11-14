@@ -520,7 +520,7 @@ var require_check = __commonJS({
           const isPlanNote = Boolean(note && note.startsWith(folder));
           const found = [
             ...isScoped ? cardIssues(node, depth) : [],
-            ...isScoped && isPlanNote ? noteIssues(readOrNull(note), node.color) : [],
+            ...isScoped && isPlanNote ? noteIssues(readOrNull(note) || "", node.color) : [],
             ...isPlanNote && isStaleOrange(node, note) ? [STALE] : []
           ];
           const text = (node.text || node.file || "").split("\n")[0];
@@ -539,6 +539,39 @@ var require_check = __commonJS({
   }
 });
 
+// src/workflow/ageSuffixOperation.js
+var require_ageSuffixOperation = __commonJS({
+  "src/workflow/ageSuffixOperation.js"(exports2, module2) {
+    function ageSuffixOperation(card, days) {
+      const isAging = card.color === "3" && card.note && card.text !== void 0 && !card.inside;
+      if (!isAging) return null;
+      const base = card.text.replace(/ · \d+d$/, "");
+      const isStale = days > 0 && card.note.ageDays >= days;
+      const text = isStale ? `${base} \xB7 ${card.note.ageDays}d` : base;
+      return text === card.text ? null : { op: "set", id: card.id, text };
+    }
+    module2.exports = ageSuffixOperation;
+  }
+});
+
+// src/workflow/colorCounts.js
+var require_colorCounts = __commonJS({
+  "src/workflow/colorCounts.js"(exports2, module2) {
+    var RED = "1";
+    var YELLOW = "3";
+    var GREEN = "4";
+    function colorCounts(colors) {
+      const count = (color) => colors.filter((each) => each === color).length;
+      return {
+        red: count(RED),
+        yellow: count(YELLOW),
+        allGreen: colors.length > 0 && count(GREEN) === colors.length
+      };
+    }
+    module2.exports = colorCounts;
+  }
+});
+
 // src/workflow/desiredColor.js
 var require_desiredColor = __commonJS({
   "src/workflow/desiredColor.js"(exports2, module2) {
@@ -554,6 +587,30 @@ var require_desiredColor = __commonJS({
       return card.color || null;
     }
     module2.exports = desiredColor;
+  }
+});
+
+// src/workflow/nestedCardUpdate.js
+var require_nestedCardUpdate = __commonJS({
+  "src/workflow/nestedCardUpdate.js"(exports2, module2) {
+    var desiredColor = require_desiredColor();
+    function nestedCardUpdate(card, inner, goColorSet) {
+      const color = desiredColor(card, inner, goColorSet);
+      const waiting = inner.red + inner.yellow;
+      const text = card.text === void 0 ? void 0 : card.text.replace(/ · \d+ inside| · \d+d$/g, "") + (waiting ? ` \xB7 ${waiting} inside` : "");
+      const isTextChanged = text !== card.text;
+      if (color === card.color && !isTextChanged) {
+        return { color: card.color, operation: null };
+      }
+      const operation = {
+        op: "set",
+        id: card.id,
+        color: color === null ? "" : color
+      };
+      if (isTextChanged) operation.text = text;
+      return { color, operation };
+    }
+    module2.exports = nestedCardUpdate;
   }
 });
 
@@ -816,64 +873,34 @@ var require_writeOps = __commonJS({
 // src/workflow/rollup.js
 var require_rollup = __commonJS({
   "src/workflow/rollup.js"(exports2, module2) {
-    var desiredColor = require_desiredColor();
+    var ageSuffixOperation = require_ageSuffixOperation();
+    var colorCounts = require_colorCounts();
     var goColors = require_goColors();
+    var nestedCardUpdate = require_nestedCardUpdate();
     var staleDays = require_staleDays();
     var tree = require_tree2();
     var writeOps2 = require_writeOps();
     function rollup2(board) {
       const goColorSet = goColors();
-      const boardTree = tree(board);
+      const days = staleDays();
       const changes = [];
       const walk = (node) => {
         const operations = [];
-        let red = 0, yellow = 0, cards = 0, green = 0;
-        for (const card of node.cards) {
-          let color = card.color;
-          if (card.inside) {
-            const inner = walk(card.inside);
-            const want = desiredColor(card, inner, goColorSet);
-            let text = card.text;
-            if (text !== void 0) {
-              text = text.replace(/ · \d+ inside| · \d+d$/g, "");
-              if (inner.red + inner.yellow) {
-                text += ` \xB7 ${inner.red + inner.yellow} inside`;
-              }
-            }
-            if (want !== color || text !== void 0 && text !== card.text) {
-              operations.push({
-                op: "set",
-                id: card.id,
-                color: want === null ? "" : want,
-                ...text !== card.text ? { text } : {}
-              });
-              color = want;
-            }
-          }
-          if (color === "1") red++;
-          if (color === "3") yellow++;
-          cards++;
-          if (color === "4") green++;
-        }
-        for (const card of node.cards) {
-          if (card.color !== "3" || !card.note || card.text === void 0 || card.inside) {
-            continue;
-          }
-          const base = card.text.replace(/ · \d+d$/, "");
-          const days = staleDays();
-          const text = days > 0 && card.note.ageDays >= days ? `${base} \xB7 ${card.note.ageDays}d` : base;
-          if (text !== card.text) operations.push({ op: "set", id: card.id, text });
-        }
+        const colors = node.cards.map((card) => {
+          if (!card.inside) return card.color;
+          const update = nestedCardUpdate(card, walk(card.inside), goColorSet);
+          if (update.operation) operations.push(update.operation);
+          return update.color;
+        });
+        const ages = node.cards.map((card) => ageSuffixOperation(card, days));
+        operations.push(...ages.filter(Boolean));
         if (operations.length) {
-          changes.push({
-            board: node.board,
-            via: writeOps2(node.board, operations),
-            operations
-          });
+          const via = writeOps2(node.board, operations);
+          changes.push({ board: node.board, via, operations });
         }
-        return { red, yellow, allGreen: cards > 0 && green === cards };
+        return colorCounts(colors);
       };
-      walk(boardTree);
+      walk(tree(board));
       return changes;
     }
     module2.exports = rollup2;
