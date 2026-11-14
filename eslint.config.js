@@ -34,6 +34,10 @@ module.exports = [
       'no-implicit-globals': 'error',
       'no-global-assign': 'error',
       'style/no-module-state': 'error',
+      // From Codebase taste decisions (User, round 1): <= 3 parameters, 80 columns, semicolons
+      'max-params': ['error', 3],
+      'max-len': ['error', { code: 80, ignoreUrls: true }],
+      semi: ['error', 'always'],
     },
   },
 ];
