@@ -39,7 +39,7 @@ const { execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..'); // <vault>/.obsidian/plugins/canvas-board
 const DEFAULT_BOARD = 'Board.canvas';
-const SKIP_DIRS = new Set(['.git', '.obsidian', '.trash', '_secrets', 'node_modules']);
+const SKIP_DIRS = new Set(['.git', '.obsidian', '.trash', 'node_modules']); // plus data.json `skipFolders` (folder names), see findFile
 const COLORS = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
 
 const args = process.argv.slice(2);
@@ -372,9 +372,10 @@ let fileIndex = null;
 function findFile(name) {
   if (!fileIndex) {
     fileIndex = new Map();
+    const skip = new Set([...SKIP_DIRS, ...(settings().skipFolders || [])]);
     const walk = dir => {
       for (const e of fs.readdirSync(abs(dir), { withFileTypes: true })) {
-        if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) walk(path.posix.join(dir, e.name)); continue; }
+        if (e.isDirectory()) { if (!skip.has(e.name)) walk(path.posix.join(dir, e.name)); continue; }
         const rel = path.posix.join(dir, e.name);
         const key = e.name.endsWith('.md') ? e.name.slice(0, -3) : e.name;
         if (!fileIndex.has(key)) fileIndex.set(key, rel);
