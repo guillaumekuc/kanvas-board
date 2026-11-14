@@ -23,7 +23,7 @@ const COLORS = [
 
 // {vault} {board} {claude} are replaced; quoted parts stay one argument.
 const DEFAULTS = {
-	defaultBoard: 'Plans.canvas',
+	defaultBoard: 'Board.canvas',
 	claudePath: '',
 	layoutDirection: 'TB', // TB, LR, BT or RL
 	colorLabels: {}, // color name → label, when edited (Settings > Workflow)
@@ -33,9 +33,9 @@ const DEFAULTS = {
 	foldDirection: 'out', // fold hides the cards a card points to (out) or the cards pointing to it (in)
 	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
 	passColors: 'cyan purple', // cards that start a pass (and that tree --active takes, see workflow.js); empty = never
-	notesFolder: 'Projects/_assets/bot-tasks', // where the agent keeps the notes it makes for cards (read by workflow.js and the skill)
+	notesFolder: 'Board notes', // where the agent keeps the notes it makes for cards (read by workflow.js and the skill)
 	archiveMode: 'board', // board: archive notes in "<board> archive/" next to each board; global: all in archiveFolder
-	archiveFolder: 'Projects/_assets/canvas-board/archive', // the one archive folder when archiveMode is global
+	archiveFolder: 'Board notes/Archive', // the one archive folder when archiveMode is global
 };
 const COLOR_NUM = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
 const parseColors = s => new Set(String(s || '').split(/[\s,]+/).filter(Boolean).map(c => COLOR_NUM[c.toLowerCase()] || c).filter(c => /^[1-6]$/.test(c)));
