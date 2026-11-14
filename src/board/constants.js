@@ -3,7 +3,14 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..', '..'); // <vault>/.obsidian/plugins/canvas-board
 const DEFAULT_BOARD = 'Board.canvas';
 const SKIP_DIRS = new Set(['.git', '.obsidian', '.trash', 'node_modules']); // plus data.json `skipFolders` (folder names), see findFile
-const COLORS = { red: '1', orange: '2', yellow: '3', green: '4', cyan: '5', purple: '6' };
+const COLORS = {
+  red: '1',
+  orange: '2',
+  yellow: '3',
+  green: '4',
+  cyan: '5',
+  purple: '6',
+};
 // --- Refactor operations ------------------------------------------------------------------------------
 // Pure: they return ops (and the other file's content when there is one); the CLI and the plugin write them.
 
@@ -20,9 +27,28 @@ const ARCHIVE_DIR = 'Board notes/Archive'; // the folder for all boards (setting
 // --- Obsidian CLI -----------------------------------------------------------------------------------
 
 // On PATH first (the CLI registers it there), then the default install of each platform.
-const OBSIDIAN = ['obsidian', 'C:\\Program Files\\Obsidian\\Obsidian.com', '/Applications/Obsidian.app/Contents/MacOS/Obsidian'];
+const OBSIDIAN = [
+  'obsidian',
+  'C:\\Program Files\\Obsidian\\Obsidian.com',
+  '/Applications/Obsidian.app/Contents/MacOS/Obsidian',
+];
 // --- Layout -------------------------------------------------------------------------------------------
 
-const SIDES = { TB: ['bottom', 'top'], LR: ['right', 'left'], BT: ['top', 'bottom'], RL: ['left', 'right'] }; // edge [from, to] per direction
+const SIDES = {
+  TB: ['bottom', 'top'],
+  LR: ['right', 'left'],
+  BT: ['top', 'bottom'],
+  RL: ['left', 'right'],
+}; // edge [from, to] per direction
 
-module.exports = { ROOT, DEFAULT_BOARD, SKIP_DIRS, COLORS, URGENCY, TEMPLATE_DIR, ARCHIVE_DIR, OBSIDIAN, SIDES };
+module.exports = {
+  ROOT,
+  DEFAULT_BOARD,
+  SKIP_DIRS,
+  COLORS,
+  URGENCY,
+  TEMPLATE_DIR,
+  ARCHIVE_DIR,
+  OBSIDIAN,
+  SIDES,
+};

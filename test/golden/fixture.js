@@ -5,8 +5,14 @@ const path = require('path');
 const FIXED_TIME = new Date('2026-01-14T12:00:00Z');
 
 const card = (id, text, color, position) => ({
-  id, type: 'text', text, x: position[0], y: position[1],
-  width: 250, height: 60, ...(color ? { color } : {}),
+  id,
+  type: 'text',
+  text,
+  x: position[0],
+  y: position[1],
+  width: 250,
+  height: 60,
+  ...(color ? { color } : {}),
 });
 
 const BOARD = {
@@ -18,12 +24,34 @@ const BOARD = {
     card('ctx00000000000a5', 'Context card', null, [300, 200]),
     card('nest0000000000a6', '[[Sub.canvas|Sub]]', null, [600, 200]),
     card('orng0000000000a7', 'Running elsewhere', '2', [0, 400]),
-    card('para0000000000a8', 'First paragraph\n\nSecond paragraph\n\n- one\n- two', null, [300, 400]),
-    { id: 'grp00000000000a9', type: 'group', label: 'Group', x: -50, y: 350, width: 700, height: 200 },
+    card(
+      'para0000000000a8',
+      'First paragraph\n\nSecond paragraph\n\n- one\n- two',
+      null,
+      [300, 400],
+    ),
+    {
+      id: 'grp00000000000a9',
+      type: 'group',
+      label: 'Group',
+      x: -50,
+      y: 350,
+      width: 700,
+      height: 200,
+    },
   ],
   edges: [
-    { id: 'edge000000000001', fromNode: 'wish0000000000a1', toNode: 'ctx00000000000a5' },
-    { id: 'edge000000000002', fromNode: 'plan0000000000a3', toNode: 'brief000000000a2', label: 'depends on' },
+    {
+      id: 'edge000000000001',
+      fromNode: 'wish0000000000a1',
+      toNode: 'ctx00000000000a5',
+    },
+    {
+      id: 'edge000000000002',
+      fromNode: 'plan0000000000a3',
+      toNode: 'brief000000000a2',
+      label: 'depends on',
+    },
   ],
 };
 
@@ -36,12 +64,19 @@ const SUB = {
 };
 
 const NOTES = {
-  'Projects/_assets/plans/Brief note.md': '---\ncontext:\n  - PD\n---\n## Aim\nA brief.\n### Done when\n- it works\n\n## Design\nx\n\n## Open questions\n- [?] Which way?\n',
-  'Projects/_assets/plans/Plan note.md': '---\ncontext:\n  - PD\n---\n## Aim\nA plan.\n### Done when\n- done\n\n## Design\ny\n\n## Parts\n- [x] first\n- [ ] second\n',
+  'Projects/_assets/plans/Brief note.md':
+    '---\ncontext:\n  - PD\n---\n## Aim\nA brief.\n### Done when\n- it works\n\n## Design\nx\n\n## Open questions\n- [?] Which way?\n',
+  'Projects/_assets/plans/Plan note.md':
+    '---\ncontext:\n  - PD\n---\n## Aim\nA plan.\n### Done when\n- done\n\n## Design\ny\n\n## Parts\n- [x] first\n- [ ] second\n',
 };
 
 module.exports = function writeFixture(vaultRoot, pluginSources) {
-  const pluginDir = path.join(vaultRoot, '.obsidian', 'plugins', 'canvas-board');
+  const pluginDir = path.join(
+    vaultRoot,
+    '.obsidian',
+    'plugins',
+    'canvas-board',
+  );
   fs.mkdirSync(pluginDir, { recursive: true });
   for (const [name, source] of Object.entries(pluginSources)) {
     fs.cpSync(source, path.join(pluginDir, name), { recursive: true });

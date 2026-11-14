@@ -40,7 +40,14 @@ var require_constants = __commonJS({
       archiveFolder: "Board notes/Archive"
       // the one archive folder when archiveMode is global
     };
-    var COLOR_NUM = { red: "1", orange: "2", yellow: "3", green: "4", cyan: "5", purple: "6" };
+    var COLOR_NUM = {
+      red: "1",
+      orange: "2",
+      yellow: "3",
+      green: "4",
+      cyan: "5",
+      purple: "6"
+    };
     var WORKFLOW = [
       ["cyan", "The agent carries the card to done."],
       ["purple", "The agent takes one step, then hands back."],
@@ -68,7 +75,14 @@ var require_constants = __commonJS({
       ["x-terminal-emulator", (v, c) => ["-e", ...c]],
       ["xterm", (v, c) => ["-e", ...c]]
     ];
-    module2.exports = { COLORS, DEFAULTS, COLOR_NUM, WORKFLOW, LAYOUT_DIRS, LINUX_TERMINALS };
+    module2.exports = {
+      COLORS,
+      DEFAULTS,
+      COLOR_NUM,
+      WORKFLOW,
+      LAYOUT_DIRS,
+      LINUX_TERMINALS
+    };
   }
 });
 
@@ -80,8 +94,21 @@ var require_constants2 = __commonJS({
     var MIN_PB = 5;
     var SAVE_EVERY_MS = 1e4;
     var CONTENT_KEYS = ["text", "file", "subpath", "url", "label", "color"];
-    var DEFAULTS = { pb: 0, pbDate: "", lowPercent: 25, idleMinutes: 5, windowMinutes: 15 };
-    module2.exports = { MINUTE_MS, INPUT_MS, MIN_PB, SAVE_EVERY_MS, CONTENT_KEYS, DEFAULTS };
+    var DEFAULTS = {
+      pb: 0,
+      pbDate: "",
+      lowPercent: 25,
+      idleMinutes: 5,
+      windowMinutes: 15
+    };
+    module2.exports = {
+      MINUTE_MS,
+      INPUT_MS,
+      MIN_PB,
+      SAVE_EVERY_MS,
+      CONTENT_KEYS,
+      DEFAULTS
+    };
   }
 });
 
@@ -108,7 +135,9 @@ var require_cardsOf = __commonJS({
     var { CONTENT_KEYS } = require_constants2();
     var cardsOf = (json) => {
       const map = /* @__PURE__ */ new Map();
-      for (const n of JSON.parse(json || "{}").nodes || []) map.set(n.id, JSON.stringify(CONTENT_KEYS.map((k) => n[k] ?? null)));
+      for (const n of JSON.parse(json || "{}").nodes || []) {
+        map.set(n.id, JSON.stringify(CONTENT_KEYS.map((k) => n[k] ?? null)));
+      }
       return map;
     };
     module2.exports = cardsOf;
@@ -177,21 +206,37 @@ var require_ApmCounter = __commonJS({
           const input = () => {
             this.lastInput = Date.now();
           };
-          plugin.registerDomEvent(win, "keydown", input, { capture: true, passive: true });
-          plugin.registerDomEvent(win, "mousedown", input, { capture: true, passive: true });
+          plugin.registerDomEvent(win, "keydown", input, {
+            capture: true,
+            passive: true
+          });
+          plugin.registerDomEvent(win, "mousedown", input, {
+            capture: true,
+            passive: true
+          });
         };
         listen(window);
-        plugin.registerEvent(this.app.workspace.on("window-open", (w) => listen(w.win)));
-        plugin.registerEvent(this.app.workspace.on("active-leaf-change", () => this.refresh()));
+        plugin.registerEvent(
+          this.app.workspace.on("window-open", (w) => listen(w.win))
+        );
+        plugin.registerEvent(
+          this.app.workspace.on("active-leaf-change", () => this.refresh())
+        );
         this.app.workspace.onLayoutReady(async () => {
-          for (const f of this.app.vault.getFiles()) if (f.extension === "canvas") await this.snapshot(f);
-          plugin.registerEvent(this.app.vault.on("modify", (f) => this.onModify(f)));
-          plugin.registerEvent(this.app.vault.on("rename", (f, old) => {
-            if (this.snapshots.has(old)) {
-              this.snapshots.set(f.path, this.snapshots.get(old));
-              this.snapshots.delete(old);
-            }
-          }));
+          for (const f of this.app.vault.getFiles()) {
+            if (f.extension === "canvas") await this.snapshot(f);
+          }
+          plugin.registerEvent(
+            this.app.vault.on("modify", (f) => this.onModify(f))
+          );
+          plugin.registerEvent(
+            this.app.vault.on("rename", (f, old) => {
+              if (this.snapshots.has(old)) {
+                this.snapshots.set(f.path, this.snapshots.get(old));
+                this.snapshots.delete(old);
+              }
+            })
+          );
         });
         plugin.registerInterval(window.setInterval(() => this.refresh(), 1e3));
         this.refresh();
@@ -215,24 +260,40 @@ var require_ApmCounter = __commonJS({
         const after = await this.snapshot(file);
         if (!before || !after) return;
         const now = Date.now();
-        if (now - this.lastInput > INPUT_MS || this.app.workspace.getActiveFile()?.path !== file.path) return;
-        this.record(touchedCards(before, after).map((id) => `${file.path}#${id}`), now);
+        if (now - this.lastInput > INPUT_MS || this.app.workspace.getActiveFile()?.path !== file.path) {
+          return;
+        }
+        this.record(
+          touchedCards(before, after).map((id) => `${file.path}#${id}`),
+          now
+        );
       }
       record(keys, now = Date.now()) {
         if (!keys.length) return;
         for (const k of keys) this.touched.set(k, now);
-        if (now - this.lastAction > this.settings.idleMinutes * MINUTE_MS) this.sessionStart = now;
+        if (now - this.lastAction > this.settings.idleMinutes * MINUTE_MS) {
+          this.sessionStart = now;
+        }
         this.lastAction = now;
         this.refresh(now);
       }
       pace(now = Date.now()) {
         const windowMs = this.settings.windowMinutes * MINUTE_MS;
-        for (const [k, t] of this.touched) if (t <= now - windowMs) this.touched.delete(k);
+        for (const [k, t] of this.touched) {
+          if (t <= now - windowMs) this.touched.delete(k);
+        }
         return this.touched.size;
       }
       isIdle(now) {
-        if (now - this.lastAction > this.settings.idleMinutes * MINUTE_MS) return true;
-        const windows = [window, ...[...this.app.workspace.floatingSplit?.children ?? []].map((c) => c.win)];
+        if (now - this.lastAction > this.settings.idleMinutes * MINUTE_MS) {
+          return true;
+        }
+        const windows = [
+          window,
+          ...[...this.app.workspace.floatingSplit?.children ?? []].map(
+            (c) => c.win
+          )
+        ];
         return !windows.some((w) => w && w.document.hasFocus());
       }
       refresh(now = Date.now()) {
@@ -254,7 +315,12 @@ var require_ApmCounter = __commonJS({
           this.shown = shown;
         }
         if (!shown) return;
-        const state = this.isIdle(now) ? "idle" : band(pace, s.pb, s.lowPercent, now - this.sessionStart < s.windowMinutes * MINUTE_MS);
+        const state = this.isIdle(now) ? "idle" : band(
+          pace,
+          s.pb,
+          s.lowPercent,
+          now - this.sessionStart < s.windowMinutes * MINUTE_MS
+        );
         if (this.state !== state) {
           if (this.state) this.el.removeClass("apm-" + this.state);
           this.el.addClass("apm-" + state);
@@ -265,7 +331,10 @@ var require_ApmCounter = __commonJS({
           this.el.setText(text);
           this.text = text;
           const what = `Cards touched in the last ${s.windowMinutes} min.`;
-          this.el.setAttribute("aria-label", s.pbDate ? `${what} Personal best set ${s.pbDate}.` : what);
+          this.el.setAttribute(
+            "aria-label",
+            s.pbDate ? `${what} Personal best set ${s.pbDate}.` : what
+          );
         }
       }
       async resetPb() {
@@ -293,13 +362,39 @@ var require_constants3 = __commonJS({
     var ROOT = path.resolve(__dirname, "..", "..", "..");
     var DEFAULT_BOARD = "Board.canvas";
     var SKIP_DIRS = /* @__PURE__ */ new Set([".git", ".obsidian", ".trash", "node_modules"]);
-    var COLORS = { red: "1", orange: "2", yellow: "3", green: "4", cyan: "5", purple: "6" };
+    var COLORS = {
+      red: "1",
+      orange: "2",
+      yellow: "3",
+      green: "4",
+      cyan: "5",
+      purple: "6"
+    };
     var URGENCY = ["1", "3", "2", "5", "6", "4"];
     var TEMPLATE_DIR = "Templates/Canvas";
     var ARCHIVE_DIR = "Board notes/Archive";
-    var OBSIDIAN = ["obsidian", "C:\\Program Files\\Obsidian\\Obsidian.com", "/Applications/Obsidian.app/Contents/MacOS/Obsidian"];
-    var SIDES = { TB: ["bottom", "top"], LR: ["right", "left"], BT: ["top", "bottom"], RL: ["left", "right"] };
-    module2.exports = { ROOT, DEFAULT_BOARD, SKIP_DIRS, COLORS, URGENCY, TEMPLATE_DIR, ARCHIVE_DIR, OBSIDIAN, SIDES };
+    var OBSIDIAN = [
+      "obsidian",
+      "C:\\Program Files\\Obsidian\\Obsidian.com",
+      "/Applications/Obsidian.app/Contents/MacOS/Obsidian"
+    ];
+    var SIDES = {
+      TB: ["bottom", "top"],
+      LR: ["right", "left"],
+      BT: ["top", "bottom"],
+      RL: ["left", "right"]
+    };
+    module2.exports = {
+      ROOT,
+      DEFAULT_BOARD,
+      SKIP_DIRS,
+      COLORS,
+      URGENCY,
+      TEMPLATE_DIR,
+      ARCHIVE_DIR,
+      OBSIDIAN,
+      SIDES
+    };
   }
 });
 
@@ -328,7 +423,9 @@ var require_applyOps = __commonJS({
             n.text = o.text;
             delete n.file;
           }
-          for (const k of ["x", "y", "width", "height"]) if (o[k] !== void 0) n[k] = o[k];
+          for (const k of ["x", "y", "width", "height"]) {
+            if (o[k] !== void 0) n[k] = o[k];
+          }
         } else if (o.op === "sides") {
           const e = d.edges.find((e2) => e2.id === o.id);
           if (e) {
@@ -352,7 +449,9 @@ var require_applyOps = __commonJS({
             e.fromEnd = o.fromEnd;
             e.toEnd = o.toEnd;
           }
-        } else if (o.op === "unedge") d.edges = d.edges.filter((e) => e.id !== o.id);
+        } else if (o.op === "unedge") {
+          d.edges = d.edges.filter((e) => e.id !== o.id);
+        }
       }
       return retyped;
     }
@@ -366,7 +465,9 @@ var require_archiveDir = __commonJS({
     var { ARCHIVE_DIR } = require_constants3();
     var path = require("path");
     function archiveDir(board, s = {}) {
-      if (s.archiveMode === "global") return String(s.archiveFolder || ARCHIVE_DIR).trim().replace(/[/\\]+$/, "") || ARCHIVE_DIR;
+      if (s.archiveMode === "global") {
+        return String(s.archiveFolder || ARCHIVE_DIR).trim().replace(/[/\\]+$/, "") || ARCHIVE_DIR;
+      }
       const b = String(board).replace(/\\/g, "/"), dir = path.posix.dirname(b);
       return (dir === "." ? "" : dir + "/") + path.posix.basename(b, ".canvas") + " archive";
     }
@@ -398,7 +499,18 @@ var require_archiveNote = __commonJS({
     function archiveNote(d, id, board, date, contexts = ["G&A"]) {
       const n = d.nodes.find((n2) => n2.id === id);
       if (!n) throw new Error("no node " + id);
-      const edges = d.edges.filter((e) => e.fromNode === id || e.toNode === id).map((e) => yamlStr([e.id, e.fromNode, e.fromSide || "", e.toNode, e.toSide || "", e.label || ""].join(" | ")));
+      const edges = d.edges.filter((e) => e.fromNode === id || e.toNode === id).map(
+        (e) => yamlStr(
+          [
+            e.id,
+            e.fromNode,
+            e.fromSide || "",
+            e.toNode,
+            e.toSide || "",
+            e.label || ""
+          ].join(" | ")
+        )
+      );
       const fm = [
         "---",
         "context:",
@@ -420,7 +532,11 @@ var require_archiveNote = __commonJS({
         ""
       ].join("\n");
       const body = n.type === "text" ? n.text : n.type === "file" ? `[[${n.file}]]` : n.type === "link" ? n.url : n.label || "";
-      return { name: noteName(n.type === "text" ? n.text : n.file || n.url || n.label), content: fm + body + "\n", ops: [{ op: "remove", id }] };
+      return {
+        name: noteName(n.type === "text" ? n.text : n.file || n.url || n.label),
+        content: fm + body + "\n",
+        ops: [{ op: "remove", id }]
+      };
     }
     module2.exports = archiveNote;
   }
@@ -431,7 +547,12 @@ var require_bounds = __commonJS({
   "src/board/bounds.js"(exports2, module2) {
     var bounds = (ns) => {
       const x = Math.min(...ns.map((n) => n.x)), y = Math.min(...ns.map((n) => n.y));
-      return { x, y, w: Math.max(...ns.map((n) => n.x + n.width)) - x, h: Math.max(...ns.map((n) => n.y + n.height)) - y };
+      return {
+        x,
+        y,
+        w: Math.max(...ns.map((n) => n.x + n.width)) - x,
+        h: Math.max(...ns.map((n) => n.y + n.height)) - y
+      };
     };
     module2.exports = bounds;
   }
@@ -450,8 +571,13 @@ var require_withGroupMembers = __commonJS({
   "src/board/withGroupMembers.js"(exports2, module2) {
     function withGroupMembers(d, ids) {
       const pick = new Set(ids);
-      for (const g of d.nodes.filter((n) => n.type === "group" && pick.has(n.id)))
-        for (const n of d.nodes) if (n.x >= g.x && n.y >= g.y && n.x + n.width <= g.x + g.width && n.y + n.height <= g.y + g.height) pick.add(n.id);
+      for (const g of d.nodes.filter((n) => n.type === "group" && pick.has(n.id))) {
+        for (const n of d.nodes) {
+          if (n.x >= g.x && n.y >= g.y && n.x + n.width <= g.x + g.width && n.y + n.height <= g.y + g.height) {
+            pick.add(n.id);
+          }
+        }
+      }
       return pick;
     }
     module2.exports = withGroupMembers;
@@ -486,7 +612,14 @@ var require_collapseOps = __commonJS({
       const ops = [{ op: "add", node: card }];
       for (const e of d.edges) {
         const from = pick.has(e.fromNode), to = pick.has(e.toNode);
-        if (from !== to) ops.push({ op: "retarget", id: e.id, fromNode: from ? card.id : e.fromNode, toNode: to ? card.id : e.toNode });
+        if (from !== to) {
+          ops.push({
+            op: "retarget",
+            id: e.id,
+            fromNode: from ? card.id : e.fromNode,
+            toNode: to ? card.id : e.toNode
+          });
+        }
       }
       for (const n of moving) ops.push({ op: "remove", id: n.id });
       return { ops, sub, id: card.id };
@@ -513,15 +646,28 @@ var require_expandOps = __commonJS({
       const card = d.nodes.find((n) => n.id === id);
       if (!card) throw new Error("no node " + id);
       if (!sub.nodes.length) throw new Error("empty subcanvas");
-      const taken = new Set(d.nodes.map((n) => n.id).concat(d.edges.map((e) => e.id)));
-      const ids = new Map(sub.nodes.map((n) => [n.id, taken.has(n.id) ? newId() : n.id]));
+      const taken = new Set(
+        d.nodes.map((n) => n.id).concat(d.edges.map((e) => e.id))
+      );
+      const ids = new Map(
+        sub.nodes.map((n) => [n.id, taken.has(n.id) ? newId() : n.id])
+      );
       const b = bounds(sub.nodes);
       const others = d.nodes.filter((n) => n.id !== id);
       let ox = Math.round(card.x + (card.width - b.w) / 2) - b.x;
       const oy = Math.round(card.y + (card.height - b.h) / 2) - b.y;
-      const hits = () => sub.nodes.some((p) => others.some((n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
+      const hits = () => sub.nodes.some(
+        (p) => others.some(
+          (n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y
+        )
+      );
       for (let k = 0; k < 200 && hits(); k++) ox += 40;
-      const nodes = sub.nodes.map((n) => ({ ...n, id: ids.get(n.id), x: n.x + ox, y: n.y + oy }));
+      const nodes = sub.nodes.map((n) => ({
+        ...n,
+        id: ids.get(n.id),
+        x: n.x + ox,
+        y: n.y + oy
+      }));
       let first = nodes.filter((n) => n.type !== "group").sort(byReading)[0] || nodes[0];
       const ops = [];
       if (group) {
@@ -539,9 +685,27 @@ var require_expandOps = __commonJS({
         ops.push({ op: "add", node: first });
       }
       ops.push(...nodes.map((node) => ({ op: "add", node })));
-      for (const e of sub.edges) ops.push({ op: "edge", edge: { ...e, id: taken.has(e.id) ? newId() : e.id, fromNode: ids.get(e.fromNode), toNode: ids.get(e.toNode) } });
-      for (const e of d.edges) if (e.fromNode === id || e.toNode === id)
-        ops.push({ op: "retarget", id: e.id, fromNode: e.fromNode === id ? first.id : e.fromNode, toNode: e.toNode === id ? first.id : e.toNode });
+      for (const e of sub.edges) {
+        ops.push({
+          op: "edge",
+          edge: {
+            ...e,
+            id: taken.has(e.id) ? newId() : e.id,
+            fromNode: ids.get(e.fromNode),
+            toNode: ids.get(e.toNode)
+          }
+        });
+      }
+      for (const e of d.edges) {
+        if (e.fromNode === id || e.toNode === id) {
+          ops.push({
+            op: "retarget",
+            id: e.id,
+            fromNode: e.fromNode === id ? first.id : e.fromNode,
+            toNode: e.toNode === id ? first.id : e.toNode
+          });
+        }
+      }
       ops.push({ op: "remove", id });
       return group ? Object.assign(ops, { group: first.id }) : ops;
     }
@@ -554,7 +718,15 @@ var require_fitHeight = __commonJS({
   "src/board/fitHeight.js"(exports2, module2) {
     function fitHeight(text, w) {
       const perLine = Math.max(10, Math.floor((w - 40) / 8));
-      const lines = String(text || "").split("\n").reduce((s, l) => s + Math.max(1, Math.ceil(l.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").length / perLine)), 0);
+      const lines = String(text || "").split("\n").reduce(
+        (s, l) => s + Math.max(
+          1,
+          Math.ceil(
+            l.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").length / perLine
+          )
+        ),
+        0
+      );
       return Math.max(60, lines * 26 + 34);
     }
     module2.exports = fitHeight;
@@ -568,17 +740,32 @@ var require_extractOps = __commonJS({
     var newId = require_newId();
     function extractOps(d, id, part, from) {
       const card = d.nodes.find((n) => n.id === id);
-      if (!card || card.type !== "text") throw new Error("extract takes one text card");
+      if (!card || card.type !== "text") {
+        throw new Error("extract takes one text card");
+      }
       const at = from !== void 0 && card.text.slice(from, from + part.length) === part ? from : card.text.indexOf(part);
       if (!part.trim() || at < 0) throw new Error("text not found in the card");
       const left = (card.text.slice(0, at) + card.text.slice(at + part.length)).replace(/\n{3,}/g, "\n\n").trim();
       const text = part.trim();
       const height = fitHeight(text, card.width);
       let y = card.y;
-      while (d.nodes.some((n) => n.x === card.x + card.width + 40 && n.y === y)) y += 40;
-      const node = { id: newId(), type: "text", text, x: card.x + card.width + 40, y, width: card.width, height };
+      while (d.nodes.some((n) => n.x === card.x + card.width + 40 && n.y === y)) {
+        y += 40;
+      }
+      const node = {
+        id: newId(),
+        type: "text",
+        text,
+        x: card.x + card.width + 40,
+        y,
+        width: card.width,
+        height
+      };
       if (card.color) node.color = card.color;
-      return [{ op: "set", id, text: left, height: fitHeight(left, card.width) }, { op: "add", node }];
+      return [
+        { op: "set", id, text: left, height: fitHeight(left, card.width) },
+        { op: "add", node }
+      ];
     }
     module2.exports = extractOps;
   }
@@ -596,31 +783,73 @@ var require_layoutOps = __commonJS({
       const fixed = cards.filter((n) => !pick.has(n.id));
       if (!moving.length) return [];
       const g = new dagre.graphlib.Graph();
-      g.setGraph({ rankdir: dir, nodesep: 40, ranksep: 80, marginx: 0, marginy: 0 });
+      g.setGraph({
+        rankdir: dir,
+        nodesep: 40,
+        ranksep: 80,
+        marginx: 0,
+        marginy: 0
+      });
       g.setDefaultEdgeLabel(() => ({}));
-      const size = (n) => ({ width: n.width, height: fit && n.type === "text" ? fitHeight(n.text, n.width) : n.height });
+      const size = (n) => ({
+        width: n.width,
+        height: fit && n.type === "text" ? fitHeight(n.text, n.width) : n.height
+      });
       for (const n of moving) g.setNode(n.id, size(n));
-      const inner = d.edges.filter((e) => pick.has(e.fromNode) && pick.has(e.toNode));
+      const inner = d.edges.filter(
+        (e) => pick.has(e.fromNode) && pick.has(e.toNode)
+      );
       const back = (e) => flow === "in" || /depends on/i.test(e.label || "");
-      for (const e of inner) back(e) ? g.setEdge(e.toNode, e.fromNode) : g.setEdge(e.fromNode, e.toNode);
+      for (const e of inner) {
+        back(e) ? g.setEdge(e.toNode, e.fromNode) : g.setEdge(e.fromNode, e.toNode);
+      }
       dagre.layout(g);
-      const box = (ns) => ns.reduce((b2, n) => ({ x0: Math.min(b2.x0, n.x), y0: Math.min(b2.y0, n.y), x1: Math.max(b2.x1, n.x + n.width), y1: Math.max(b2.y1, n.y + n.height) }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+      const box = (ns) => ns.reduce(
+        (b2, n) => ({
+          x0: Math.min(b2.x0, n.x),
+          y0: Math.min(b2.y0, n.y),
+          x1: Math.max(b2.x1, n.x + n.width),
+          y1: Math.max(b2.y1, n.y + n.height)
+        }),
+        { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
+      );
       const placed = moving.map((n) => {
         const p = g.node(n.id);
-        return { id: n.id, x: Math.round(p.x - p.width / 2), y: Math.round(p.y - p.height / 2), width: p.width, height: p.height };
+        return {
+          id: n.id,
+          x: Math.round(p.x - p.width / 2),
+          y: Math.round(p.y - p.height / 2),
+          width: p.width,
+          height: p.height
+        };
       });
       const b = box(placed), was = box(moving);
       const cx = Math.round((was.x0 + was.x1 - b.x0 - b.x1) / 2), cy = Math.round((was.y0 + was.y1 - b.y0 - b.y1) / 2);
       let ox = cx, oy = cy;
-      const hits = () => placed.some((p) => fixed.some((n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
+      const hits = () => placed.some(
+        (p) => fixed.some(
+          (n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y
+        )
+      );
       for (let k = 1; k <= 400 && hits(); k++) {
         const step = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 40;
         if (dir === "LR" || dir === "RL") oy = cy + step;
         else ox = cx + step;
       }
-      const ops = placed.map((p) => ({ op: "set", id: p.id, x: p.x + ox, y: p.y + oy, width: p.width, height: p.height }));
+      const ops = placed.map((p) => ({
+        op: "set",
+        id: p.id,
+        x: p.x + ox,
+        y: p.y + oy,
+        width: p.width,
+        height: p.height
+      }));
       const [fromSide, toSide] = SIDES[dir];
-      for (const e of inner) ops.push(back(e) ? { op: "sides", id: e.id, fromSide: toSide, toSide: fromSide } : { op: "sides", id: e.id, fromSide, toSide });
+      for (const e of inner) {
+        ops.push(
+          back(e) ? { op: "sides", id: e.id, fromSide: toSide, toSide: fromSide } : { op: "sides", id: e.id, fromSide, toSide }
+        );
+      }
       return ops;
     }
     module2.exports = layoutOps;
@@ -645,13 +874,24 @@ var require_mergeOps = __commonJS({
     function mergeOps(d, ids) {
       const cards = d.nodes.filter((n) => ids.includes(n.id)).sort(byReading);
       if (cards.length < 2) throw new Error("merge needs 2+ cards");
-      if (cards.some((n) => n.type !== "text")) throw new Error("merge takes text cards only");
+      if (cards.some((n) => n.type !== "text")) {
+        throw new Error("merge takes text cards only");
+      }
       const [keep, ...rest] = cards;
       const gone = new Set(rest.map((n) => n.id));
       const all = new Set(cards.map((n) => n.id));
       const text = cards.map((n) => n.text.trim()).join("\n\n");
       const width = Math.max(...cards.map((n) => n.width));
-      const ops = [{ op: "set", id: keep.id, text, color: mostUrgent(cards.map((n) => n.color || "")), width, height: fitHeight(text, width) }];
+      const ops = [
+        {
+          op: "set",
+          id: keep.id,
+          text,
+          color: mostUrgent(cards.map((n) => n.color || "")),
+          width,
+          height: fitHeight(text, width)
+        }
+      ];
       const center = (n) => [n.x + n.width / 2, n.y + n.height / 2];
       const dist = (a, b) => Math.hypot(center(a)[0] - center(b)[0], center(a)[1] - center(b)[1]);
       const twoWay = (e) => e.fromEnd === "arrow" && e.toEnd !== "none";
@@ -659,11 +899,16 @@ var require_mergeOps = __commonJS({
       for (const e of d.edges) {
         if (!all.has(e.fromNode) && !all.has(e.toNode)) continue;
         if (all.has(e.fromNode) && all.has(e.toNode)) {
-          if (gone.has(e.fromNode) || gone.has(e.toNode)) ops.push({ op: "unedge", id: e.id });
+          if (gone.has(e.fromNode) || gone.has(e.toNode)) {
+            ops.push({ op: "unedge", id: e.id });
+          }
           continue;
         }
         const out = all.has(e.fromNode), other = out ? e.toNode : e.fromNode;
-        const len = dist(d.nodes.find((n) => n.id === (out ? e.fromNode : e.toNode)), d.nodes.find((n) => n.id === other) || keep);
+        const len = dist(
+          d.nodes.find((n) => n.id === (out ? e.fromNode : e.toNode)),
+          d.nodes.find((n) => n.id === other) || keep
+        );
         if (!byOther.has(other)) byOther.set(other, []);
         byOther.get(other).push({ e, out, len });
       }
@@ -671,11 +916,21 @@ var require_mergeOps = __commonJS({
         list.sort((a, b) => a.len - b.len);
         const best = list.find((x) => twoWay(x.e)) || list[0];
         const both = list.some((x) => x.out) && list.some((x) => !x.out);
-        for (const x of list) if (x !== best) ops.push({ op: "unedge", id: x.e.id });
+        for (const x of list) {
+          if (x !== best) ops.push({ op: "unedge", id: x.e.id });
+        }
         const e = best.e;
-        if (gone.has(e.fromNode) || gone.has(e.toNode))
-          ops.push({ op: "retarget", id: e.id, fromNode: gone.has(e.fromNode) ? keep.id : e.fromNode, toNode: gone.has(e.toNode) ? keep.id : e.toNode });
-        if (both && !twoWay(e)) ops.push({ op: "ends", id: e.id, fromEnd: "arrow", toEnd: "arrow" });
+        if (gone.has(e.fromNode) || gone.has(e.toNode)) {
+          ops.push({
+            op: "retarget",
+            id: e.id,
+            fromNode: gone.has(e.fromNode) ? keep.id : e.fromNode,
+            toNode: gone.has(e.toNode) ? keep.id : e.toNode
+          });
+        }
+        if (both && !twoWay(e)) {
+          ops.push({ op: "ends", id: e.id, fromEnd: "arrow", toEnd: "arrow" });
+        }
       }
       for (const n of rest) ops.push({ op: "remove", id: n.id });
       return ops;
@@ -689,7 +944,12 @@ var require_plainLines = __commonJS({
   "src/board/plainLines.js"(exports2, module2) {
     function plainLines(text) {
       const name = (n) => n.replace(/\.(md|canvas)$/, "").split("/").pop();
-      return String(text || "").split("\n").map((l) => l.replace(/!?\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(/!?\[\[([^\]#]*)#\^?([^\]]+)\]\]/g, (_, n, h) => n ? `${name(n)} \u203A ${h}` : h).replace(/!?\[\[([^\]]+)\]\]/g, (_, n) => name(n)).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/, "").replace(/\*\*|__|~~|==|`/g, "").replace(/(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g, "$1$2").replace(/\s+/g, " ").trim()).filter(Boolean);
+      return String(text || "").split("\n").map(
+        (l) => l.replace(/!?\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(
+          /!?\[\[([^\]#]*)#\^?([^\]]+)\]\]/g,
+          (_, n, h) => n ? `${name(n)} \u203A ${h}` : h
+        ).replace(/!?\[\[([^\]]+)\]\]/g, (_, n) => name(n)).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/, "").replace(/\*\*|__|~~|==|`/g, "").replace(/(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g, "$1$2").replace(/\s+/g, " ").trim()
+      ).filter(Boolean);
     }
     module2.exports = plainLines;
   }
@@ -700,7 +960,12 @@ var require_relinkText = __commonJS({
   "src/board/relinkText.js"(exports2, module2) {
     var path = require("path");
     function relinkText(text, hits, to) {
-      return (text || "").replace(/!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g, (m, target, sub, alias) => hits(target.trim()) ? to(alias || path.posix.basename(target.trim()).replace(/\.canvas$/, "")) : m);
+      return (text || "").replace(
+        /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
+        (m, target, sub, alias) => hits(target.trim()) ? to(
+          alias || path.posix.basename(target.trim()).replace(/\.canvas$/, "")
+        ) : m
+      );
     }
     module2.exports = relinkText;
   }
@@ -712,7 +977,9 @@ var require_restoreOps = __commonJS({
     var newId = require_newId();
     function restoreOps(d, src) {
       const fm = (src.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) || [])[1];
-      if (!fm || !/^archived-from:/m.test(fm)) throw new Error("not an archived card note");
+      if (!fm || !/^archived-from:/m.test(fm)) {
+        throw new Error("not an archived card note");
+      }
       const get = (k) => {
         const m = new RegExp(`^${k}: (.*)$`, "m").exec(fm);
         if (!m) return void 0;
@@ -724,7 +991,14 @@ var require_restoreOps = __commonJS({
       const type = get("card-type") || "text";
       const ids = new Set(d.nodes.map((n) => n.id));
       const id = ids.has(get("card-id")) ? newId() : get("card-id");
-      const node = { id, type, x: Number(get("x")), y: Number(get("y")), width: Number(get("width")), height: Number(get("height")) };
+      const node = {
+        id,
+        type,
+        x: Number(get("x")),
+        y: Number(get("y")),
+        width: Number(get("width")),
+        height: Number(get("height"))
+      };
       if (type === "text") node.text = body;
       if (type === "file") node.file = get("card-file");
       if (type === "link") node.url = get("card-url");
@@ -733,9 +1007,13 @@ var require_restoreOps = __commonJS({
       const old = get("card-id");
       const edgeIds = new Set(d.edges.map((e) => e.id));
       for (const m of fm.matchAll(/^ {2}- (".*")$/gm)) {
-        const [eid, from, fromSide, to, toSide, label] = JSON.parse(m[1]).split(" | ");
+        const [eid, from, fromSide, to, toSide, label] = JSON.parse(m[1]).split(
+          " | "
+        );
         const fromNode = from === old ? id : from, toNode = to === old ? id : to;
-        if (edgeIds.has(eid) || !(fromNode === id || ids.has(fromNode)) || !(toNode === id || ids.has(toNode))) continue;
+        if (edgeIds.has(eid) || !(fromNode === id || ids.has(fromNode)) || !(toNode === id || ids.has(toNode))) {
+          continue;
+        }
         const edge = { id: eid, fromNode, toNode };
         if (fromSide) edge.fromSide = fromSide;
         if (toSide) edge.toSide = toSide;
@@ -773,7 +1051,9 @@ var require_splitOps = __commonJS({
     var splitText = require_splitText();
     function splitOps(d, id, by = "paragraph") {
       const card = d.nodes.find((n) => n.id === id);
-      if (!card || card.type !== "text") throw new Error("split takes one text card");
+      if (!card || card.type !== "text") {
+        throw new Error("split takes one text card");
+      }
       const pieces = splitText(card.text || "", by);
       if (pieces.length < 2) throw new Error(`nothing to split by ${by}`);
       let y = card.y;
@@ -797,9 +1077,23 @@ var require_templateOps = __commonJS({
       if (!nodes.length) throw new Error("empty template");
       const x0 = Math.min(...nodes.map((n) => n.x)), y0 = Math.min(...nodes.map((n) => n.y));
       const ids = new Map(nodes.map((n) => [n.id, newId()]));
-      const ops = nodes.map((n) => ({ op: "add", node: { ...n, id: ids.get(n.id), x: n.x - x0 + at.x, y: n.y - y0 + at.y } }));
-      for (const e of tpl.edges || []) if (ids.has(e.fromNode) && ids.has(e.toNode))
-        ops.push({ op: "edge", edge: { ...e, id: newId(), fromNode: ids.get(e.fromNode), toNode: ids.get(e.toNode) } });
+      const ops = nodes.map((n) => ({
+        op: "add",
+        node: { ...n, id: ids.get(n.id), x: n.x - x0 + at.x, y: n.y - y0 + at.y }
+      }));
+      for (const e of tpl.edges || []) {
+        if (ids.has(e.fromNode) && ids.has(e.toNode)) {
+          ops.push({
+            op: "edge",
+            edge: {
+              ...e,
+              id: newId(),
+              fromNode: ids.get(e.fromNode),
+              toNode: ids.get(e.toNode)
+            }
+          });
+        }
+      }
       return ops;
     }
     module2.exports = templateOps;
@@ -834,7 +1128,9 @@ var require_boardLibrary = __commonJS({
 var require_parseColors = __commonJS({
   "src/plugin/parseColors.js"(exports2, module2) {
     var { COLOR_NUM } = require_constants();
-    var parseColors = (s) => new Set(String(s || "").split(/[\s,]+/).filter(Boolean).map((c) => COLOR_NUM[c.toLowerCase()] || c).filter((c) => /^[1-6]$/.test(c)));
+    var parseColors = (s) => new Set(
+      String(s || "").split(/[\s,]+/).filter(Boolean).map((c) => COLOR_NUM[c.toLowerCase()] || c).filter((c) => /^[1-6]$/.test(c))
+    );
     module2.exports = parseColors;
   }
 });
@@ -855,55 +1151,128 @@ var require_CanvasBoardSettings = __commonJS({
       display() {
         const { containerEl } = this;
         containerEl.empty();
-        const text = (name, desc, key) => new Setting(containerEl).setName(name).setDesc(desc).addText((t) => t.setPlaceholder(DEFAULTS[key]).setValue(this.plugin.settings[key]).onChange(async (v) => {
-          this.plugin.settings[key] = v.trim() || DEFAULTS[key];
-          await this.plugin.saveData(this.plugin.settings);
-        }));
+        const text = (name, desc, key) => new Setting(containerEl).setName(name).setDesc(desc).addText(
+          (t) => t.setPlaceholder(DEFAULTS[key]).setValue(this.plugin.settings[key]).onChange(async (v) => {
+            this.plugin.settings[key] = v.trim() || DEFAULTS[key];
+            await this.plugin.saveData(this.plugin.settings);
+          })
+        );
         const heading = (name) => new Setting(containerEl).setName(name).setHeading();
-        new Setting(containerEl).setName("Hotkeys").setDesc("Every canvas board command can have a key; buttons and menu items show it.").addButton((b) => b.setButtonText("Open hotkeys").onClick(() => {
-          this.app.setting.openTabById("hotkeys");
-          const tab = this.app.setting.activeTab;
-          if (tab && tab.searchComponent) {
-            tab.searchComponent.setValue(this.plugin.manifest.name);
-            if (tab.setQuery) tab.setQuery(this.plugin.manifest.name);
-          }
-        }));
+        new Setting(containerEl).setName("Hotkeys").setDesc(
+          "Every canvas board command can have a key; buttons and menu items show it."
+        ).addButton(
+          (b) => b.setButtonText("Open hotkeys").onClick(() => {
+            this.app.setting.openTabById("hotkeys");
+            const tab = this.app.setting.activeTab;
+            if (tab && tab.searchComponent) {
+              tab.searchComponent.setValue(this.plugin.manifest.name);
+              if (tab.setQuery) tab.setQuery(this.plugin.manifest.name);
+            }
+          })
+        );
         heading("Board");
-        new Setting(containerEl).setName("Starter board").setDesc('A board with the color legend and first steps: the default board if it does not exist yet, else "Starter board.canvas".').addButton((b) => b.setButtonText("Create").onClick(() => this.plugin.createStarterBoard()));
-        text("Default board", 'Board used by "Run pass" when the active tab is not a canvas, and by "Open the board" (ribbon).', "defaultBoard");
-        text("Card count warning", "The status bar card count turns to the warning color past this many cards (0: never).", "cardWarning");
-        text("Stale after (days)", 'A yellow card whose note is untouched this many days gets a warning badge with its age; the roll-up adds "\xB7 Nd" from the same value (0: never).', "staleDays");
-        text("Agent notes folder", "Where the agent creates the notes and plan canvases for cards. Changing it does not move anything: rename the folder in Obsidian first, so links follow.", "notesFolder");
-        new Setting(containerEl).setName("Archive").setDesc('Where "Archive selected cards" puts the notes: a "<board> archive" folder next to each board, or one folder for all boards. Changing it does not move notes already archived; restore works from any folder.').addDropdown((dd) => dd.addOption("board", "Next to each board").addOption("global", "One folder for all boards").setValue(this.plugin.settings.archiveMode).onChange(async (v) => {
-          this.plugin.settings.archiveMode = v;
-          await this.plugin.saveData(this.plugin.settings);
-          this.display();
-        }));
-        if (this.plugin.settings.archiveMode === "global") text("Archive folder", "The folder for all boards' archive notes.", "archiveFolder");
-        heading("Workflow").setDesc('What each color does and its label, shown in tooltips, the filter pane and the color commands. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.');
+        new Setting(containerEl).setName("Starter board").setDesc(
+          'A board with the color legend and first steps: the default board if it does not exist yet, else "Starter board.canvas".'
+        ).addButton(
+          (b) => b.setButtonText("Create").onClick(() => this.plugin.createStarterBoard())
+        );
+        text(
+          "Default board",
+          'Board used by "Run pass" when the active tab is not a canvas, and by "Open the board" (ribbon).',
+          "defaultBoard"
+        );
+        text(
+          "Card count warning",
+          "The status bar card count turns to the warning color past this many cards (0: never).",
+          "cardWarning"
+        );
+        text(
+          "Stale after (days)",
+          'A yellow card whose note is untouched this many days gets a warning badge with its age; the roll-up adds "\xB7 Nd" from the same value (0: never).',
+          "staleDays"
+        );
+        text(
+          "Agent notes folder",
+          "Where the agent creates the notes and plan canvases for cards. Changing it does not move anything: rename the folder in Obsidian first, so links follow.",
+          "notesFolder"
+        );
+        new Setting(containerEl).setName("Archive").setDesc(
+          'Where "Archive selected cards" puts the notes: a "<board> archive" folder next to each board, or one folder for all boards. Changing it does not move notes already archived; restore works from any folder.'
+        ).addDropdown(
+          (dd) => dd.addOption("board", "Next to each board").addOption("global", "One folder for all boards").setValue(this.plugin.settings.archiveMode).onChange(async (v) => {
+            this.plugin.settings.archiveMode = v;
+            await this.plugin.saveData(this.plugin.settings);
+            this.display();
+          })
+        );
+        if (this.plugin.settings.archiveMode === "global") {
+          text(
+            "Archive folder",
+            "The folder for all boards' archive notes.",
+            "archiveFolder"
+          );
+        }
+        heading("Workflow").setDesc(
+          'What each color does and its label, shown in tooltips, the filter pane and the color commands. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.'
+        );
         const go = parseColors(this.plugin.settings.passColors);
         for (const [name, meaning] of WORKFLOW) {
           const num = COLOR_NUM[name];
           const row = new Setting(containerEl).setName(num ? name : "uncolored").setDesc(meaning);
-          row.nameEl.prepend(createSpan({ cls: "canvas-board-dot canvas-board-workflow-dot", attr: { style: this.plugin.dotStyle(num) } }));
-          row.addText((t) => t.setPlaceholder(COLORS.find((c) => c[0] === name)[3]).setValue((this.plugin.settings.colorLabels || {})[name] || "").onChange((v) => this.plugin.setColorLabel(name, v.trim())));
-          if (!num) row.addToggle((t) => t.setTooltip("Never triggers the agent").setValue(false).setDisabled(true));
-          else row.addToggle((t) => t.setTooltip("Triggers the agent").setValue(go.has(num)).onChange(async (on) => {
-            if (on) go.add(num);
-            else go.delete(num);
-            this.plugin.settings.passColors = WORKFLOW.map(([n]) => n).filter((n) => go.has(COLOR_NUM[n])).join(" ");
-            await this.plugin.saveData(this.plugin.settings);
-          }));
+          row.nameEl.prepend(
+            createSpan({
+              cls: "canvas-board-dot canvas-board-workflow-dot",
+              attr: { style: this.plugin.dotStyle(num) }
+            })
+          );
+          row.addText(
+            (t) => t.setPlaceholder(COLORS.find((c) => c[0] === name)[3]).setValue((this.plugin.settings.colorLabels || {})[name] || "").onChange((v) => this.plugin.setColorLabel(name, v.trim()))
+          );
+          if (!num) {
+            row.addToggle(
+              (t) => t.setTooltip("Never triggers the agent").setValue(false).setDisabled(true)
+            );
+          } else {
+            row.addToggle(
+              (t) => t.setTooltip("Triggers the agent").setValue(go.has(num)).onChange(async (on) => {
+                if (on) go.add(num);
+                else go.delete(num);
+                this.plugin.settings.passColors = WORKFLOW.map(([n]) => n).filter((n) => go.has(COLOR_NUM[n])).join(" ");
+                await this.plugin.saveData(this.plugin.settings);
+              })
+            );
+          }
         }
         heading("Pass");
-        text("Claude path", "Empty: ~/.local/bin/claude (claude.exe on Windows) if it exists, else claude on PATH.", "claudePath");
-        text("Terminal command", "Starts the pass. Empty: Windows Terminal, macOS Terminal, or the first known terminal on Linux (gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm, foot, xterm). Otherwise {vault}, {board}, {claude} are replaced; quote parts with spaces.", "terminal");
+        text(
+          "Claude path",
+          "Empty: ~/.local/bin/claude (claude.exe on Windows) if it exists, else claude on PATH.",
+          "claudePath"
+        );
+        text(
+          "Terminal command",
+          "Starts the pass. Empty: Windows Terminal, macOS Terminal, or the first known terminal on Linux (gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm, foot, xterm). Otherwise {vault}, {board}, {claude} are replaced; quote parts with spaces.",
+          "terminal"
+        );
         const skillFile = this.plugin.skillPath();
-        new Setting(containerEl).setName("Agent instructions").setDesc("What the agent does on a pass. Saved when the field loses focus, to .claude/skills/canvas-board/SKILL.md (where Claude Code reads it; any agent can be pointed at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin's version.").addButton((b) => b.setButtonText("Reset").setWarning().onClick(() => {
-          this.plugin.syncSkill(path.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir), true);
-          this.display();
-        }));
-        const editor = containerEl.createEl("textarea", { cls: "canvas-board-skill-editor", attr: { spellcheck: "false", rows: "24" } });
+        new Setting(containerEl).setName("Agent instructions").setDesc(
+          "What the agent does on a pass. Saved when the field loses focus, to .claude/skills/canvas-board/SKILL.md (where Claude Code reads it; any agent can be pointed at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin's version."
+        ).addButton(
+          (b) => b.setButtonText("Reset").setWarning().onClick(() => {
+            this.plugin.syncSkill(
+              path.join(
+                this.app.vault.adapter.basePath,
+                this.plugin.manifest.dir
+              ),
+              true
+            );
+            this.display();
+          })
+        );
+        const editor = containerEl.createEl("textarea", {
+          cls: "canvas-board-skill-editor",
+          attr: { spellcheck: "false", rows: "24" }
+        });
         try {
           editor.value = fs.readFileSync(skillFile, "utf8");
         } catch (e) {
@@ -915,17 +1284,27 @@ var require_CanvasBoardSettings = __commonJS({
             fs.writeFileSync(skillFile, editor.value);
             new Notice("Kanvas board: agent instructions saved");
           } catch (e) {
-            new Notice(`Kanvas board: could not save the agent instructions (${e.message})`);
+            new Notice(
+              `Kanvas board: could not save the agent instructions (${e.message})`
+            );
           }
         });
-        heading("APM counter").setDesc("Canvas cards touched in a rolling window, in the status bar while a canvas is the active tab.");
+        heading("APM counter").setDesc(
+          "Canvas cards touched in a rolling window, in the status bar while a canvas is the active tab."
+        );
         const apm = this.plugin.apm;
         const a = apm.settings;
-        new Setting(containerEl).setName("Personal best").setDesc(a.pb ? `${a.pb} cards in ${a.windowMinutes} min${a.pbDate ? `, set ${a.pbDate}` : ""}.` : "None yet.").addButton((b) => b.setButtonText("Reset").setWarning().onClick(async () => {
-          await apm.resetPb();
-          this.display();
-        }));
-        new Setting(containerEl).setName("Window (minutes)").setDesc("Cards are counted over this rolling window. Changing it resets the personal best: the numbers are not comparable.").addText((t) => {
+        new Setting(containerEl).setName("Personal best").setDesc(
+          a.pb ? `${a.pb} cards in ${a.windowMinutes} min${a.pbDate ? `, set ${a.pbDate}` : ""}.` : "None yet."
+        ).addButton(
+          (b) => b.setButtonText("Reset").setWarning().onClick(async () => {
+            await apm.resetPb();
+            this.display();
+          })
+        );
+        new Setting(containerEl).setName("Window (minutes)").setDesc(
+          "Cards are counted over this rolling window. Changing it resets the personal best: the numbers are not comparable."
+        ).addText((t) => {
           t.setValue(String(a.windowMinutes));
           t.inputEl.addEventListener("change", async () => {
             const n = Number(t.getValue());
@@ -934,30 +1313,57 @@ var require_CanvasBoardSettings = __commonJS({
             this.display();
           });
         });
-        new Setting(containerEl).setName("Alert below").setDesc("Percent of the personal best under which the counter turns red and pulses. Not in the first window of a session.").addSlider((sl) => sl.setLimits(5, 50, 5).setValue(a.lowPercent).setDynamicTooltip().onChange(async (v) => {
-          a.lowPercent = v;
-          await this.plugin.saveData(this.plugin.settings);
-          apm.refresh();
-        }));
-        new Setting(containerEl).setName("Idle after (minutes)").setDesc("Without an action for this long, the alert stops and the counter dims. It also dims while Obsidian is not focused.").addText((t) => t.setValue(String(a.idleMinutes)).onChange(async (v) => {
-          const n = Number(v);
-          if (!(n > 0)) return;
-          a.idleMinutes = n;
-          await this.plugin.saveData(this.plugin.settings);
-          apm.refresh();
-        }));
+        new Setting(containerEl).setName("Alert below").setDesc(
+          "Percent of the personal best under which the counter turns red and pulses. Not in the first window of a session."
+        ).addSlider(
+          (sl) => sl.setLimits(5, 50, 5).setValue(a.lowPercent).setDynamicTooltip().onChange(async (v) => {
+            a.lowPercent = v;
+            await this.plugin.saveData(this.plugin.settings);
+            apm.refresh();
+          })
+        );
+        new Setting(containerEl).setName("Idle after (minutes)").setDesc(
+          "Without an action for this long, the alert stops and the counter dims. It also dims while Obsidian is not focused."
+        ).addText(
+          (t) => t.setValue(String(a.idleMinutes)).onChange(async (v) => {
+            const n = Number(v);
+            if (!(n > 0)) return;
+            a.idleMinutes = n;
+            await this.plugin.saveData(this.plugin.settings);
+            apm.refresh();
+          })
+        );
         heading("Layout");
-        new Setting(containerEl).setName("Layout direction").setDesc('Tidy layout and agent-made plan canvases: the card a branch starts from comes first, following arrows in the fold direction ("depends on" prerequisites too). Shift-click the Tidy layout button, or commands "Tidy layout direction: \u2026", switch it on the fly.').addDropdown((dd) => dd.addOptions({ TB: "Top to bottom", LR: "Left to right", BT: "Bottom to top", RL: "Right to left" }).setValue(this.plugin.settings.layoutDirection).onChange((v) => this.plugin.setLayoutDirection(v)));
+        new Setting(containerEl).setName("Layout direction").setDesc(
+          'Tidy layout and agent-made plan canvases: the card a branch starts from comes first, following arrows in the fold direction ("depends on" prerequisites too). Shift-click the Tidy layout button, or commands "Tidy layout direction: \u2026", switch it on the fly.'
+        ).addDropdown(
+          (dd) => dd.addOptions({
+            TB: "Top to bottom",
+            LR: "Left to right",
+            BT: "Bottom to top",
+            RL: "Right to left"
+          }).setValue(this.plugin.settings.layoutDirection).onChange((v) => this.plugin.setLayoutDirection(v))
+        );
         heading("View");
-        new Setting(containerEl).setName("Fold direction").setDesc('Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Tidy layout reads branches the same way. Commands "Fold direction: \u2026" switch it on the fly.').addDropdown((dd) => dd.addOptions({ out: "Outgoing", in: "Incoming" }).setValue(this.plugin.settings.foldDirection).onChange(async (v) => {
-          this.plugin.settings.foldDirection = v;
-          await this.plugin.saveData(this.plugin.settings);
-        }));
-        new Setting(containerEl).setName("Hide cards under hidden tags").setDesc("Hiding a tag in the filter pane also hides the branch of each card that has it, in the fold direction.").addToggle((t) => t.setValue(this.plugin.settings.hideTagBranches).onChange(async (v) => {
-          this.plugin.settings.hideTagBranches = v;
-          await this.plugin.saveData(this.plugin.settings);
-          for (const canvas of this.plugin.panes.keys()) this.plugin.refreshView(canvas);
-        }));
+        new Setting(containerEl).setName("Fold direction").setDesc(
+          'Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Tidy layout reads branches the same way. Commands "Fold direction: \u2026" switch it on the fly.'
+        ).addDropdown(
+          (dd) => dd.addOptions({ out: "Outgoing", in: "Incoming" }).setValue(this.plugin.settings.foldDirection).onChange(async (v) => {
+            this.plugin.settings.foldDirection = v;
+            await this.plugin.saveData(this.plugin.settings);
+          })
+        );
+        new Setting(containerEl).setName("Hide cards under hidden tags").setDesc(
+          "Hiding a tag in the filter pane also hides the branch of each card that has it, in the fold direction."
+        ).addToggle(
+          (t) => t.setValue(this.plugin.settings.hideTagBranches).onChange(async (v) => {
+            this.plugin.settings.hideTagBranches = v;
+            await this.plugin.saveData(this.plugin.settings);
+            for (const canvas of this.plugin.panes.keys()) {
+              this.plugin.refreshView(canvas);
+            }
+          })
+        );
       }
     };
     module2.exports = CanvasBoardSettings;
@@ -4076,7 +4482,9 @@ var require_loadSettings = __commonJS({
     var unitOf = require_unitOf();
     function loadSettings(stored, legacy) {
       const s = Object.assign({}, DEFAULTS, stored || legacy || {});
-      if (s.unit !== unitOf(s.windowMinutes)) Object.assign(s, { pb: 0, pbDate: "", unit: unitOf(s.windowMinutes) });
+      if (s.unit !== unitOf(s.windowMinutes)) {
+        Object.assign(s, { pb: 0, pbDate: "", unit: unitOf(s.windowMinutes) });
+      }
       return s;
     }
     module2.exports = loadSettings;
@@ -4091,7 +4499,12 @@ var require_claudeBin = __commonJS({
     var path = require("path");
     function claudeBin(setting) {
       if (setting) return setting;
-      const local = path.join(os.homedir(), ".local", "bin", process.platform === "win32" ? "claude.exe" : "claude");
+      const local = path.join(
+        os.homedir(),
+        ".local",
+        "bin",
+        process.platform === "win32" ? "claude.exe" : "claude"
+      );
       return fs.existsSync(local) ? local : "claude";
     }
     module2.exports = claudeBin;
@@ -4115,24 +4528,44 @@ var require_defaultLaunch = __commonJS({
     var onPath = require_onPath();
     function defaultLaunch({ vault, board, claude }) {
       const prompt = `/canvas-board ${board}`;
-      if (process.platform === "win32") return ["wt.exe", ["-w", "canvas-board", "new-tab", "-d", vault, "--title", `pass ${board}`, claude, prompt]];
-      if (process.platform === "darwin") return ["osascript", [
-        "-e",
-        "on run argv",
-        "-e",
-        'tell application "Terminal"',
-        "-e",
-        "activate",
-        "-e",
-        'do script "cd " & quoted form of item 1 of argv & " && " & quoted form of item 2 of argv & " " & quoted form of item 3 of argv',
-        "-e",
-        "end tell",
-        "-e",
-        "end run",
-        vault,
-        claude,
-        prompt
-      ]];
+      if (process.platform === "win32") {
+        return [
+          "wt.exe",
+          [
+            "-w",
+            "canvas-board",
+            "new-tab",
+            "-d",
+            vault,
+            "--title",
+            `pass ${board}`,
+            claude,
+            prompt
+          ]
+        ];
+      }
+      if (process.platform === "darwin") {
+        return [
+          "osascript",
+          [
+            "-e",
+            "on run argv",
+            "-e",
+            'tell application "Terminal"',
+            "-e",
+            "activate",
+            "-e",
+            'do script "cd " & quoted form of item 1 of argv & " && " & quoted form of item 2 of argv & " " & quoted form of item 3 of argv',
+            "-e",
+            "end tell",
+            "-e",
+            "end run",
+            vault,
+            claude,
+            prompt
+          ]
+        ];
+      }
       const found = LINUX_TERMINALS.find(([bin]) => onPath(bin));
       return found ? [found[0], found[1](vault, [claude, prompt])] : null;
     }
@@ -4151,10 +4584,26 @@ var require_FilterPane = __commonJS({
         this.canvas = canvas;
         this.isOpen = false;
         this.key = "";
-        const el = this.el = canvas.wrapperEl.createDiv({ cls: "canvas-board-pane" });
-        for (const ev of ["pointerdown", "mousedown", "wheel", "dblclick", "contextmenu"]) el.addEventListener(ev, (e) => e.stopPropagation());
+        const el = this.el = canvas.wrapperEl.createDiv({
+          cls: "canvas-board-pane"
+        });
+        for (const ev of [
+          "pointerdown",
+          "mousedown",
+          "wheel",
+          "dblclick",
+          "contextmenu"
+        ]) {
+          el.addEventListener(ev, (e) => e.stopPropagation());
+        }
         const head = el.createDiv({ cls: "canvas-board-pane-head" });
-        const btn = head.createDiv({ cls: "clickable-icon", attr: { "aria-label": plugin.keyedLabel("Filter cards", "filter"), "data-tooltip-position": "right" } });
+        const btn = head.createDiv({
+          cls: "clickable-icon",
+          attr: {
+            "aria-label": plugin.keyedLabel("Filter cards", "filter"),
+            "data-tooltip-position": "right"
+          }
+        });
         setIcon(btn, "filter");
         btn.addEventListener("click", () => this.toggle());
         this.badge = head.createSpan({ cls: "canvas-board-pane-badge" });
@@ -4166,7 +4615,10 @@ var require_FilterPane = __commonJS({
           const h = s.createDiv({ cls: "canvas-board-pane-heading" });
           h.createSpan({ text: title });
           if (reset) {
-            const r = h.createSpan({ cls: "clickable-icon canvas-board-pane-reset", attr: { "aria-label": "Reset" } });
+            const r = h.createSpan({
+              cls: "clickable-icon canvas-board-pane-reset",
+              attr: { "aria-label": "Reset" }
+            });
             setIcon(r, "rotate-ccw");
             r.addEventListener("click", () => {
               reset();
@@ -4175,20 +4627,35 @@ var require_FilterPane = __commonJS({
           }
           return s;
         };
-        this.colorsEl = section("Colors", () => v().xcolors.clear()).createDiv({ cls: "canvas-board-chips" });
+        this.colorsEl = section("Colors", () => v().xcolors.clear()).createDiv({
+          cls: "canvas-board-chips"
+        });
         this.tagsSection = section("Tags", () => v().xtags.clear());
         this.tagsEl = this.tagsSection.createDiv({ cls: "canvas-board-chips" });
-        this.foldedSection = section("Folded", () => plugin.setFolds(canvas, new Map([...plugin.folds(canvas).keys()].map((id) => [id, null]))));
-        this.foldedEl = this.foldedSection.createDiv({ cls: "canvas-board-pane-list" });
+        this.foldedSection = section(
+          "Folded",
+          () => plugin.setFolds(
+            canvas,
+            new Map([...plugin.folds(canvas).keys()].map((id) => [id, null]))
+          )
+        );
+        this.foldedEl = this.foldedSection.createDiv({
+          cls: "canvas-board-pane-list"
+        });
         const foot = this.body.createDiv({ cls: "canvas-board-pane-foot" });
-        const all = foot.createDiv({ cls: "clickable-icon", attr: { "aria-label": "Unhide all (clear filter and folds)" } });
+        const all = foot.createDiv({
+          cls: "clickable-icon",
+          attr: { "aria-label": "Unhide all (clear filter and folds)" }
+        });
         setIcon(all, "eye");
         all.addEventListener("click", () => plugin.showAll(canvas));
         this.toggle(false);
       }
       tags() {
         const tags = /* @__PURE__ */ new Set();
-        for (const node of this.canvas.nodes.values()) for (const t of this.plugin.cardTagSet(node)) tags.add(t);
+        for (const node of this.canvas.nodes.values()) {
+          for (const t of this.plugin.cardTagSet(node)) tags.add(t);
+        }
         return tags;
       }
       toggle(open = !this.isOpen) {
@@ -4204,7 +4671,9 @@ var require_FilterPane = __commonJS({
         const counts = {};
         for (const n of canvas.nodes.values()) {
           const d = n.getData();
-          if (d.type !== "group") counts[d.color || ""] = (counts[d.color || ""] || 0) + 1;
+          if (d.type !== "group") {
+            counts[d.color || ""] = (counts[d.color || ""] || 0) + 1;
+          }
         }
         const folds = plugin.folds(canvas);
         const active = plugin.filtering(v) || folds.size > 0;
@@ -4214,7 +4683,15 @@ var require_FilterPane = __commonJS({
         const state = plugin.viewState(canvas);
         const tags = [.../* @__PURE__ */ new Set([...this.tags(), ...state.xtags])].sort();
         const foldedCards = [...folds.keys()].map((id) => canvas.nodes.get(id)).filter(Boolean).map((n) => [n.getData().color, plugin.cardText(n)]);
-        const key = JSON.stringify([counts, [...state.xcolors], tags, [...state.xtags], [...folds], foldedCards, state.hidden.size]);
+        const key = JSON.stringify([
+          counts,
+          [...state.xcolors],
+          tags,
+          [...state.xtags],
+          [...folds],
+          foldedCards,
+          state.hidden.size
+        ]);
         if (key === this.key) return;
         this.key = key;
         const apply = () => plugin.refreshView(canvas);
@@ -4224,37 +4701,83 @@ var require_FilterPane = __commonJS({
           apply();
         };
         const select = (keep) => {
-          if (!plugin.selectMore(canvas, [...canvas.selection], keep)) new Notice("Kanvas board: no visible card to select");
+          if (!plugin.selectMore(canvas, [...canvas.selection], keep)) {
+            new Notice("Kanvas board: no visible card to select");
+          }
         };
         this.colorsEl.empty();
         for (const [name, color] of COLORS) {
           const out = state.xcolors.has(color);
-          const chip = this.colorsEl.createDiv({ cls: "canvas-board-swatch", attr: { "aria-label": `${plugin.colorLabel(name)} \xB7 ${counts[color] || 0} cards \xB7 click to ${out ? "show" : "hide"} \xB7 shift-click to select` } });
+          const chip = this.colorsEl.createDiv({
+            cls: "canvas-board-swatch",
+            attr: {
+              "aria-label": `${plugin.colorLabel(name)} \xB7 ${counts[color] || 0} cards \xB7 click to ${out ? "show" : "hide"} \xB7 shift-click to select`
+            }
+          });
           chip.toggleClass("is-out", out);
-          chip.createSpan({ cls: "canvas-board-dot", attr: { style: color ? `background: var(--canvas-color-${color})` : "" } });
-          chip.addEventListener("click", (e) => e.shiftKey ? select((n) => (n.getData().color || "") === color) : toggle(state.xcolors, color));
+          chip.createSpan({
+            cls: "canvas-board-dot",
+            attr: {
+              style: color ? `background: var(--canvas-color-${color})` : ""
+            }
+          });
+          chip.addEventListener(
+            "click",
+            (e) => e.shiftKey ? select((n) => (n.getData().color || "") === color) : toggle(state.xcolors, color)
+          );
         }
         this.tagsEl.empty();
         this.tagsSection.toggle(tags.length > 0);
         for (const t of tags) {
           const out = state.xtags.has(t);
-          const chip = this.tagsEl.createDiv({ cls: "canvas-board-chip", text: "#" + t, attr: { "aria-label": `click to ${out ? "show" : "hide"} \xB7 shift-click to select` } });
+          const chip = this.tagsEl.createDiv({
+            cls: "canvas-board-chip",
+            text: "#" + t,
+            attr: {
+              "aria-label": `click to ${out ? "show" : "hide"} \xB7 shift-click to select`
+            }
+          });
           chip.toggleClass("is-out", out);
-          chip.addEventListener("click", (e) => e.shiftKey ? select((n) => plugin.cardTagSet(n).has(t)) : toggle(state.xtags, t));
+          chip.addEventListener(
+            "click",
+            (e) => e.shiftKey ? select((n) => plugin.cardTagSet(n).has(t)) : toggle(state.xtags, t)
+          );
         }
         this.foldedEl.empty();
         this.foldedSection.toggle(folds.size > 0);
         for (const [id, dir] of folds) {
           const node = canvas.nodes.get(id);
           if (!node) continue;
-          const row = this.foldedEl.createDiv({ cls: "canvas-board-pane-row canvas-board-pane-card", attr: { "aria-label": "Click to unfold the whole branch \xB7 shift-click to select the card" } });
-          row.createSpan({ cls: "canvas-board-dot", attr: { style: plugin.dotStyle(node.getData().color) } });
+          const row = this.foldedEl.createDiv({
+            cls: "canvas-board-pane-row canvas-board-pane-card",
+            attr: {
+              "aria-label": "Click to unfold the whole branch \xB7 shift-click to select the card"
+            }
+          });
+          row.createSpan({
+            cls: "canvas-board-dot",
+            attr: { style: plugin.dotStyle(node.getData().color) }
+          });
           const text = row.createDiv({ cls: "canvas-board-pane-card-text" });
           const [title, ...rest] = plugin.cb.plainLines(plugin.cardText(node));
-          text.createDiv({ cls: "canvas-board-pane-card-title", text: title || "(empty)" });
-          if (rest.length) text.createDiv({ cls: "canvas-board-pane-card-rest", text: rest.join(" \xB7 ") });
-          row.createSpan({ cls: "canvas-board-pane-card-count", text: `\xB7 ${plugin.branchLevels(canvas, id, dir).flat().length} folded` });
-          row.addEventListener("click", (e) => e.shiftKey ? select((n) => n.id === id) : plugin.unfold(canvas, [id], Infinity));
+          text.createDiv({
+            cls: "canvas-board-pane-card-title",
+            text: title || "(empty)"
+          });
+          if (rest.length) {
+            text.createDiv({
+              cls: "canvas-board-pane-card-rest",
+              text: rest.join(" \xB7 ")
+            });
+          }
+          row.createSpan({
+            cls: "canvas-board-pane-card-count",
+            text: `\xB7 ${plugin.branchLevels(canvas, id, dir).flat().length} folded`
+          });
+          row.addEventListener(
+            "click",
+            (e) => e.shiftKey ? select((n) => n.id === id) : plugin.unfold(canvas, [id], Infinity)
+          );
         }
       }
       destroy() {
@@ -4337,23 +4860,48 @@ var require_FindBar = __commonJS({
           window.clearTimeout(this.frameTimer);
           this.frameTimer = window.setTimeout(() => this.frame(), 100);
         });
-        const el = this.el = canvas.wrapperEl.createDiv({ cls: "document-search-container canvas-board-find" });
-        for (const ev of ["pointerdown", "mousedown", "wheel", "dblclick", "contextmenu"]) el.addEventListener(ev, (e) => e.stopPropagation());
+        const el = this.el = canvas.wrapperEl.createDiv({
+          cls: "document-search-container canvas-board-find"
+        });
+        for (const ev of [
+          "pointerdown",
+          "mousedown",
+          "wheel",
+          "dblclick",
+          "contextmenu"
+        ]) {
+          el.addEventListener(ev, (e) => e.stopPropagation());
+        }
         const box = el.createDiv({ cls: "document-search" });
-        const field = this.field = box.createDiv({ cls: "search-input-container document-search-input" });
-        this.input = field.createEl("input", { type: "search", attr: { placeholder: "Find\u2026", spellcheck: "false" } });
+        const field = this.field = box.createDiv({
+          cls: "search-input-container document-search-input"
+        });
+        this.input = field.createEl("input", {
+          type: "search",
+          attr: { placeholder: "Find\u2026", spellcheck: "false" }
+        });
         this.countEl = field.createDiv({ cls: "document-search-count" });
         const buttons = box.createDiv({ cls: "document-search-buttons" });
         const button = (icon, label, fn) => {
-          const b = buttons.createEl("button", { cls: "document-search-button clickable-icon", attr: { "aria-label": label } });
+          const b = buttons.createEl("button", {
+            cls: "document-search-button clickable-icon",
+            attr: { "aria-label": label }
+          });
           setIcon(b, icon);
           b.addEventListener("click", fn);
         };
         button("arrow-up", "Previous (Shift+Enter)", () => this.step(-1));
         button("arrow-down", "Next (Enter)", () => this.step(1));
-        const all = buttons.createEl("button", { cls: "document-search-button", text: "All", attr: { "aria-label": "Select all matches (Alt+Enter)" } });
+        const all = buttons.createEl("button", {
+          cls: "document-search-button",
+          text: "All",
+          attr: { "aria-label": "Select all matches (Alt+Enter)" }
+        });
         all.addEventListener("click", () => this.selectAll());
-        const close = box.createDiv({ cls: "document-search-close-button clickable-icon", attr: { "aria-label": "Close (Escape)" } });
+        const close = box.createDiv({
+          cls: "document-search-close-button clickable-icon",
+          attr: { "aria-label": "Close (Escape)" }
+        });
         setIcon(close, "x");
         close.addEventListener("click", () => this.close());
         this.scope = new Scope(plugin.app.scope);
@@ -4369,8 +4917,14 @@ var require_FindBar = __commonJS({
             this.close();
           }
         });
-        this.input.addEventListener("focus", () => plugin.app.keymap.pushScope(this.scope));
-        this.input.addEventListener("blur", () => plugin.app.keymap.popScope(this.scope));
+        this.input.addEventListener(
+          "focus",
+          () => plugin.app.keymap.pushScope(this.scope)
+        );
+        this.input.addEventListener(
+          "blur",
+          () => plugin.app.keymap.popScope(this.scope)
+        );
         this.input.addEventListener("input", () => this.search());
         el.hide();
       }
@@ -4416,7 +4970,9 @@ var require_FindBar = __commonJS({
         this.input.focus();
       }
       mark(nodes) {
-        for (const n of this.canvas.nodes.values()) n.nodeEl.removeClass("canvas-board-find-match", "is-current");
+        for (const n of this.canvas.nodes.values()) {
+          n.nodeEl.removeClass("canvas-board-find-match", "is-current");
+        }
         for (const n of nodes) n.nodeEl.addClass("canvas-board-find-match");
         this.frame(nodes);
       }
@@ -4434,7 +4990,12 @@ var require_FindBar = __commonJS({
             this.revealing = null;
           }
         }
-        if (nodes.length) this.observer.observe(this.canvas.wrapperEl, { childList: true, subtree: true });
+        if (nodes.length) {
+          this.observer.observe(this.canvas.wrapperEl, {
+            childList: true,
+            subtree: true
+          });
+        }
       }
       // Scrolls a long card to its first match. By hand: scrollIntoView would also scroll the canvas itself.
       reveal(frame) {
@@ -4447,11 +5008,15 @@ var require_FindBar = __commonJS({
       show() {
         const { canvas, plugin } = this;
         const q = this.input.value.trim();
-        this.countEl.setText(!q ? "" : this.matches.length ? `${this.index + 1} / ${this.matches.length}` : "No results");
+        this.countEl.setText(
+          !q ? "" : this.matches.length ? `${this.index + 1} / ${this.matches.length}` : "No results"
+        );
         this.field.toggleClass("mod-no-match", !!q && !this.matches.length);
         const node = this.matches[this.index];
         if (!node) return;
-        for (const n of this.matches) n.nodeEl.toggleClass("is-current", n === node);
+        for (const n of this.matches) {
+          n.nodeEl.toggleClass("is-current", n === node);
+        }
         if (plugin.isHidden(canvas, node)) {
           plugin.showAll(canvas);
           new Notice("Kanvas board: filter and folds cleared to show the card");
@@ -4530,24 +5095,30 @@ var require_NamePrompt = __commonJS({
           const name = nameOf(value);
           if (!name) return;
           this.close();
-          Promise.resolve(this.onSubmit(name)).catch((e) => new Notice(`Kanvas board: ${e.message}`));
+          Promise.resolve(this.onSubmit(name)).catch(
+            (e) => new Notice(`Kanvas board: ${e.message}`)
+          );
         };
         new Setting(this.contentEl).addText((t) => {
           t.onChange((v) => {
             value = v;
             refresh();
           });
-          if (suggestions && suggestions.length) suggest = new NameSuggest(this.app, t.inputEl, suggestions, (v) => {
-            t.setValue(v);
-            value = v;
-            refresh();
-            picked = true;
-            setTimeout(() => {
-              picked = false;
-            }, 0);
-          });
+          if (suggestions && suggestions.length) {
+            suggest = new NameSuggest(this.app, t.inputEl, suggestions, (v) => {
+              t.setValue(v);
+              value = v;
+              refresh();
+              picked = true;
+              setTimeout(() => {
+                picked = false;
+              }, 0);
+            });
+          }
           t.inputEl.addEventListener("keydown", (e) => {
-            if (e.key !== "Enter" || picked || suggest && suggest.suggestEl && suggest.suggestEl.isConnected) return;
+            if (e.key !== "Enter" || picked || suggest && suggest.suggestEl && suggest.suggestEl.isConnected) {
+              return;
+            }
             e.preventDefault();
             submit();
           });
@@ -4592,7 +5163,9 @@ var require_Picker = __commonJS({
         return this.label(item);
       }
       onChooseItem(item) {
-        Promise.resolve(this.onChoose(item)).catch((e) => new Notice(`Kanvas board: ${e.message}`));
+        Promise.resolve(this.onChoose(item)).catch(
+          (e) => new Notice(`Kanvas board: ${e.message}`)
+        );
       }
     };
     module2.exports = Picker;
@@ -4612,18 +5185,28 @@ var require_UnpackChoice = __commonJS({
       }
       onOpen() {
         const k = this.links.length;
-        this.setTitle(`${this.file.basename} is linked from ${k} other place${k > 1 ? "s" : ""}`);
+        this.setTitle(
+          `${this.file.basename} is linked from ${k} other place${k > 1 ? "s" : ""}`
+        );
         const ul = this.contentEl.createEl("ul");
-        for (const l of this.links.slice(0, 8)) ul.createEl("li", { text: l.id ? `${l.label} (${l.path})` : l.path });
+        for (const l of this.links.slice(0, 8)) {
+          ul.createEl("li", { text: l.id ? `${l.label} (${l.path})` : l.path });
+        }
         if (k > 8) ul.createEl("li", { text: `and ${k - 8} more` });
         const s = new Setting(this.contentEl);
         const pick = (mode) => {
           this.close();
           this.onPick(mode);
         };
-        s.addButton((b) => b.setButtonText("Unpack into a group, redirect links").setCta().onClick(() => pick("group")));
-        s.addButton((b) => b.setButtonText("Keep the file (copy)").onClick(() => pick("copy")));
-        s.addButton((b) => b.setButtonText("Break links and trash").setWarning().onClick(() => pick("dissolve")));
+        s.addButton(
+          (b) => b.setButtonText("Unpack into a group, redirect links").setCta().onClick(() => pick("group"))
+        );
+        s.addButton(
+          (b) => b.setButtonText("Keep the file (copy)").onClick(() => pick("copy"))
+        );
+        s.addButton(
+          (b) => b.setButtonText("Break links and trash").setWarning().onClick(() => pick("dissolve"))
+        );
         s.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()));
       }
       onClose() {
@@ -4637,7 +5220,13 @@ var require_UnpackChoice = __commonJS({
 // src/plugin/CanvasBoardPlugin.js
 var require_CanvasBoardPlugin = __commonJS({
   "src/plugin/CanvasBoardPlugin.js"(exports2, module2) {
-    var { COLORS, COLOR_NUM, DEFAULTS, LAYOUT_DIRS, WORKFLOW } = require_constants();
+    var {
+      COLORS,
+      COLOR_NUM,
+      DEFAULTS,
+      LAYOUT_DIRS,
+      WORKFLOW
+    } = require_constants();
     var { Notice, Plugin, setIcon } = require("obsidian");
     var { spawn } = require("child_process");
     var ApmCounter = require_ApmCounter();
@@ -4667,12 +5256,21 @@ var require_CanvasBoardPlugin = __commonJS({
         let legacyApm;
         if (!this.settings.apm) {
           try {
-            legacyApm = JSON.parse(fs.readFileSync(path.join(dir, "..", "apm-counter", "data.json"), "utf8"));
+            legacyApm = JSON.parse(
+              fs.readFileSync(
+                path.join(dir, "..", "apm-counter", "data.json"),
+                "utf8"
+              )
+            );
           } catch (e) {
           }
         }
         this.settings.apm = loadSettings(this.settings.apm, legacyApm);
-        this.apm = new ApmCounter(this, this.settings.apm, () => this.saveData(this.settings));
+        this.apm = new ApmCounter(
+          this,
+          this.settings.apm,
+          () => this.saveData(this.settings)
+        );
         this.apm.load();
         this.register(() => this.apm.unload());
         this.api = {
@@ -4686,7 +5284,12 @@ var require_CanvasBoardPlugin = __commonJS({
             if (!canvas) return null;
             const d = canvas.getData();
             const retyped = applyOps(d, ops);
-            if (retyped.length) canvas.setData({ ...d, nodes: d.nodes.filter((n) => !retyped.includes(n.id)) });
+            if (retyped.length) {
+              canvas.setData({
+                ...d,
+                nodes: d.nodes.filter((n) => !retyped.includes(n.id))
+              });
+            }
             canvas.setData(d);
             canvas.requestSave();
             await new Promise((r) => setTimeout(r, 2500));
@@ -4722,12 +5325,23 @@ var require_CanvasBoardPlugin = __commonJS({
             if (!canvas) return false;
             if (!checking) {
               if (canvas.selection.size < 2) {
-                new Notice("Tidy layout: select the cards to tidy first (2 or more; Ctrl+A for the whole canvas).");
+                new Notice(
+                  "Tidy layout: select the cards to tidy first (2 or more; Ctrl+A for the whole canvas)."
+                );
                 return true;
               }
               const ids = [...canvas.selection].map((n) => n.id);
               const d = canvas.getData();
-              this.edit(canvas, layoutOps(d, { ids, dir: this.settings.layoutDirection, dagre, flow: this.settings.foldDirection }), d);
+              this.edit(
+                canvas,
+                layoutOps(d, {
+                  ids,
+                  dir: this.settings.layoutDirection,
+                  dagre,
+                  flow: this.settings.foldDirection
+                }),
+                d
+              );
             }
             return true;
           }
@@ -4737,7 +5351,7 @@ var require_CanvasBoardPlugin = __commonJS({
           name: "Tidy layout direction: next",
           callback: () => this.cycleLayoutDirection()
         });
-        for (const [dir2, { name }] of Object.entries(LAYOUT_DIRS))
+        for (const [dir2, { name }] of Object.entries(LAYOUT_DIRS)) {
           this.addCommand({
             id: `tidy-direction-${dir2.toLowerCase()}`,
             name: `Tidy layout direction: ${name}`,
@@ -4747,8 +5361,11 @@ var require_CanvasBoardPlugin = __commonJS({
               return true;
             }
           });
+        }
         const actions = this.actions = [];
-        const runAction = this.runAction = (run, canvas, sel) => Promise.resolve(run(canvas, sel)).catch((e) => new Notice(`Kanvas board: ${e.message}`));
+        const runAction = this.runAction = (run, canvas, sel) => Promise.resolve(run(canvas, sel)).catch(
+          (e) => new Notice(`Kanvas board: ${e.message}`)
+        );
         const canvasCommand = (id, name, menu, test, run) => {
           actions.push({ id, menu, test, run });
           this.addCommand({
@@ -4763,63 +5380,184 @@ var require_CanvasBoardPlugin = __commonJS({
           });
         };
         const isText = (n) => n.getData().type === "text";
-        canvasCommand("collapse", "Pack into subcanvas", ["Pack into subcanvas", "package"], (c, sel) => sel.length > 0, (canvas, sel) => new NamePrompt(this.app, "Subcanvas name", async (name) => {
-          const board = this.activeFile();
-          const dir2 = board.parent && board.parent.path !== "/" ? board.parent.path + "/" : "";
-          const file = this.freePath(dir2, name, ".canvas");
-          const { ops, sub } = cb.collapseOps(canvas.getData(), sel.map((n) => n.id), file, name);
-          await this.app.vault.create(file, JSON.stringify(sub, null, "	"));
-          this.edit(canvas, ops);
-          this.undoNotice(canvas, `packed ${sel.length} card${sel.length > 1 ? "s" : ""} into ${file}`, [file]);
-        }).open());
+        canvasCommand(
+          "collapse",
+          "Pack into subcanvas",
+          ["Pack into subcanvas", "package"],
+          (c, sel) => sel.length > 0,
+          (canvas, sel) => new NamePrompt(this.app, "Subcanvas name", async (name) => {
+            const board = this.activeFile();
+            const dir2 = board.parent && board.parent.path !== "/" ? board.parent.path + "/" : "";
+            const file = this.freePath(dir2, name, ".canvas");
+            const { ops, sub } = cb.collapseOps(
+              canvas.getData(),
+              sel.map((n) => n.id),
+              file,
+              name
+            );
+            await this.app.vault.create(file, JSON.stringify(sub, null, "	"));
+            this.edit(canvas, ops);
+            this.undoNotice(
+              canvas,
+              `packed ${sel.length} card${sel.length > 1 ? "s" : ""} into ${file}`,
+              [file]
+            );
+          }).open()
+        );
         const linked = (c, sel) => sel.length === 1 && !!this.linkedCanvas(sel[0]);
-        canvasCommand("expand", "Unpack subcanvas (dissolve)", ["Unpack subcanvas (dissolve)", "package-open"], linked, async (canvas, [node]) => {
-          const file = this.linkedCanvas(node);
-          const links = await this.subcanvasLinks(file, canvas, node.id);
-          if (!links.length) return this.unpack(canvas, node, file, "dissolve");
-          new UnpackChoice(this.app, file, links, (mode) => this.unpack(canvas, node, file, mode, links).catch((e) => new Notice(`Kanvas board: ${e.message}`))).open();
-        });
-        canvasCommand("unpack-copy", "Unpack subcanvas (copy)", ["Unpack subcanvas (copy)", "copy"], linked, (canvas, [node]) => this.unpack(canvas, node, this.linkedCanvas(node), "copy"));
-        canvasCommand("merge", "Merge selected cards", ["Merge cards", "merge"], (c, sel) => sel.length > 1 && sel.every(isText), (canvas, sel) => this.edit(canvas, cb.mergeOps(canvas.getData(), sel.map((n) => n.id))));
-        for (const [by, label] of [["paragraph", "paragraph"], ["bullet", "top-level bullet"], ["h1", "heading 1"], ["h2", "heading 2"], ["h3", "heading 3"]])
-          canvasCommand(`split-${by}`, `Split card by ${label}`, by === "bullet" ? ["Split by top-level bullet", "split"] : null, (c, sel) => sel.length === 1 && isText(sel[0]) && !sel[0].isEditing, (canvas, [node]) => this.edit(canvas, cb.splitOps(canvas.getData(), node.id, by)));
-        canvasCommand("extract", "Extract current selection to a new card", ["Extract current selection to a new card", "text-select"], (c, sel) => sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]), (canvas, [node]) => {
-          const editor = this.cardEditor(node);
-          const part = editor.getSelection();
-          if (!part.trim()) throw new Error("select some text in the card first");
-          const from = editor.posToOffset(editor.getCursor("from"));
-          const before = editor.getValue();
-          editor.replaceSelection("");
-          node.blur();
-          const d = canvas.getData();
-          const n = d.nodes.find((x) => x.id === node.id);
-          if (n) n.text = before;
-          this.edit(canvas, cb.extractOps(d, node.id, part, from), d);
-        });
-        canvasCommand("archive", "Archive selected cards", ["Archive", "archive"], (c, sel) => sel.length > 0, async (canvas, sel) => {
-          const board = this.activeFile().path;
-          const d = canvas.getData();
-          const dir2 = cb.archiveDir(board, this.settings);
-          if (!this.app.vault.getAbstractFileByPath(dir2)) await this.app.vault.createFolder(dir2);
-          const notes = [];
-          for (const node of sel) {
-            const a = cb.archiveNote(d, node.id, board, window.moment().format("YYYY-MM-DD"), this.cardContexts(node, board));
-            notes.push(this.freePath(dir2 + "/", a.name, ".md"));
-            await this.app.vault.create(notes[notes.length - 1], a.content);
+        canvasCommand(
+          "expand",
+          "Unpack subcanvas (dissolve)",
+          ["Unpack subcanvas (dissolve)", "package-open"],
+          linked,
+          async (canvas, [node]) => {
+            const file = this.linkedCanvas(node);
+            const links = await this.subcanvasLinks(file, canvas, node.id);
+            if (!links.length) return this.unpack(canvas, node, file, "dissolve");
+            new UnpackChoice(
+              this.app,
+              file,
+              links,
+              (mode) => this.unpack(canvas, node, file, mode, links).catch(
+                (e) => new Notice(`Kanvas board: ${e.message}`)
+              )
+            ).open();
           }
-          this.edit(canvas, sel.map((n) => ({ op: "remove", id: n.id })));
-          this.undoNotice(canvas, `archived ${sel.length} card${sel.length > 1 ? "s" : ""}`, notes);
-        });
+        );
+        canvasCommand(
+          "unpack-copy",
+          "Unpack subcanvas (copy)",
+          ["Unpack subcanvas (copy)", "copy"],
+          linked,
+          (canvas, [node]) => this.unpack(canvas, node, this.linkedCanvas(node), "copy")
+        );
+        canvasCommand(
+          "merge",
+          "Merge selected cards",
+          ["Merge cards", "merge"],
+          (c, sel) => sel.length > 1 && sel.every(isText),
+          (canvas, sel) => this.edit(
+            canvas,
+            cb.mergeOps(
+              canvas.getData(),
+              sel.map((n) => n.id)
+            )
+          )
+        );
+        for (const [by, label] of [
+          ["paragraph", "paragraph"],
+          ["bullet", "top-level bullet"],
+          ["h1", "heading 1"],
+          ["h2", "heading 2"],
+          ["h3", "heading 3"]
+        ]) {
+          canvasCommand(
+            `split-${by}`,
+            `Split card by ${label}`,
+            by === "bullet" ? ["Split by top-level bullet", "split"] : null,
+            (c, sel) => sel.length === 1 && isText(sel[0]) && !sel[0].isEditing,
+            (canvas, [node]) => this.edit(canvas, cb.splitOps(canvas.getData(), node.id, by))
+          );
+        }
+        canvasCommand(
+          "extract",
+          "Extract current selection to a new card",
+          ["Extract current selection to a new card", "text-select"],
+          (c, sel) => sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]),
+          (canvas, [node]) => {
+            const editor = this.cardEditor(node);
+            const part = editor.getSelection();
+            if (!part.trim()) throw new Error("select some text in the card first");
+            const from = editor.posToOffset(editor.getCursor("from"));
+            const before = editor.getValue();
+            editor.replaceSelection("");
+            node.blur();
+            const d = canvas.getData();
+            const n = d.nodes.find((x) => x.id === node.id);
+            if (n) n.text = before;
+            this.edit(canvas, cb.extractOps(d, node.id, part, from), d);
+          }
+        );
+        canvasCommand(
+          "archive",
+          "Archive selected cards",
+          ["Archive", "archive"],
+          (c, sel) => sel.length > 0,
+          async (canvas, sel) => {
+            const board = this.activeFile().path;
+            const d = canvas.getData();
+            const dir2 = cb.archiveDir(board, this.settings);
+            if (!this.app.vault.getAbstractFileByPath(dir2)) {
+              await this.app.vault.createFolder(dir2);
+            }
+            const notes = [];
+            for (const node of sel) {
+              const a = cb.archiveNote(
+                d,
+                node.id,
+                board,
+                window.moment().format("YYYY-MM-DD"),
+                this.cardContexts(node, board)
+              );
+              notes.push(this.freePath(dir2 + "/", a.name, ".md"));
+              await this.app.vault.create(notes[notes.length - 1], a.content);
+            }
+            this.edit(
+              canvas,
+              sel.map((n) => ({ op: "remove", id: n.id }))
+            );
+            this.undoNotice(
+              canvas,
+              `archived ${sel.length} card${sel.length > 1 ? "s" : ""}`,
+              notes
+            );
+          }
+        );
         const canFold = (c, n) => !this.foldOf(n) && this.branchLinks(c, this.settings.foldDirection).has(n.id);
-        canvasCommand("fold", "Fold branch", ["Fold branch", "chevrons-down-up"], (c, sel) => sel.some((n) => canFold(c, n)), (canvas, sel) => this.setFolds(canvas, new Map(sel.filter((n) => canFold(canvas, n)).map((n) => [n.id, this.settings.foldDirection]))));
+        canvasCommand(
+          "fold",
+          "Fold branch",
+          ["Fold branch", "chevrons-down-up"],
+          (c, sel) => sel.some((n) => canFold(c, n)),
+          (canvas, sel) => this.setFolds(
+            canvas,
+            new Map(
+              sel.filter((n) => canFold(canvas, n)).map((n) => [n.id, this.settings.foldDirection])
+            )
+          )
+        );
         for (const [levels, id, name, menu] of [
-          [1, "unfold", "Unfold branch 1 level", ["Unfold 1 level", "chevron-down"]],
+          [
+            1,
+            "unfold",
+            "Unfold branch 1 level",
+            ["Unfold 1 level", "chevron-down"]
+          ],
           [2, "unfold-2", "Unfold branch 2 levels", null],
           [3, "unfold-3", "Unfold branch 3 levels", null],
-          [Infinity, "unfold-all", "Unfold whole branch", ["Unfold whole branch", "chevrons-up-down"]]
-        ])
-          canvasCommand(id, name, menu, (c, sel) => sel.some((n) => this.unfoldTargets(c, n.id).length), (canvas, sel) => this.unfold(canvas, [...new Set(sel.flatMap((n) => this.unfoldTargets(canvas, n.id)))], levels));
-        for (const [dir2, label] of [["out", "outgoing (cards it points to)"], ["in", "incoming (cards pointing to it)"]])
+          [
+            Infinity,
+            "unfold-all",
+            "Unfold whole branch",
+            ["Unfold whole branch", "chevrons-up-down"]
+          ]
+        ]) {
+          canvasCommand(
+            id,
+            name,
+            menu,
+            (c, sel) => sel.some((n) => this.unfoldTargets(c, n.id).length),
+            (canvas, sel) => this.unfold(
+              canvas,
+              [...new Set(sel.flatMap((n) => this.unfoldTargets(canvas, n.id)))],
+              levels
+            )
+          );
+        }
+        for (const [dir2, label] of [
+          ["out", "outgoing (cards it points to)"],
+          ["in", "incoming (cards pointing to it)"]
+        ]) {
           this.addCommand({
             id: `fold-direction-${dir2}`,
             name: `Fold direction: ${label}`,
@@ -4833,53 +5571,104 @@ var require_CanvasBoardPlugin = __commonJS({
               return true;
             }
           });
-        const templates = () => this.app.vault.getFiles().filter((f) => f.extension === "canvas" && f.path.startsWith(cb.TEMPLATE_DIR + "/"));
+        }
+        const templates = () => this.app.vault.getFiles().filter(
+          (f) => f.extension === "canvas" && f.path.startsWith(cb.TEMPLATE_DIR + "/")
+        );
         const templateName = (f) => f.path.slice(cb.TEMPLATE_DIR.length + 1, -".canvas".length);
-        canvasCommand("template-save", "Save selected cards as a template", ["Save as template", "layout-template"], (c, sel) => sel.length > 0, (canvas) => {
-          const existing = new Map(templates().map((f) => [templateName(f).toLowerCase(), f]));
-          new NamePrompt(this.app, "Template name", async (name) => {
-            const content = JSON.stringify((({ nodes, edges }) => ({ nodes, edges }))(canvas.getSelectionData()), null, "	");
-            const old = existing.get(name.toLowerCase());
-            if (old) {
-              await this.app.vault.modify(old, content);
-              new Notice(`Kanvas board: template ${old.path} overwritten`);
-              return;
-            }
-            if (!this.app.vault.getAbstractFileByPath(cb.TEMPLATE_DIR)) await this.app.vault.createFolder(cb.TEMPLATE_DIR);
-            const file = this.freePath(cb.TEMPLATE_DIR + "/", name, ".canvas");
-            await this.app.vault.create(file, content);
-            new Notice(`Kanvas board: template saved to ${file}`);
-          }, { suggestions: [...existing.values()].map(templateName), overwrite: (v) => existing.has(v.toLowerCase()) }).open();
-        });
+        canvasCommand(
+          "template-save",
+          "Save selected cards as a template",
+          ["Save as template", "layout-template"],
+          (c, sel) => sel.length > 0,
+          (canvas) => {
+            const existing = new Map(
+              templates().map((f) => [templateName(f).toLowerCase(), f])
+            );
+            new NamePrompt(
+              this.app,
+              "Template name",
+              async (name) => {
+                const content = JSON.stringify(
+                  (({ nodes, edges }) => ({ nodes, edges }))(
+                    canvas.getSelectionData()
+                  ),
+                  null,
+                  "	"
+                );
+                const old = existing.get(name.toLowerCase());
+                if (old) {
+                  await this.app.vault.modify(old, content);
+                  new Notice(`Kanvas board: template ${old.path} overwritten`);
+                  return;
+                }
+                if (!this.app.vault.getAbstractFileByPath(cb.TEMPLATE_DIR)) {
+                  await this.app.vault.createFolder(cb.TEMPLATE_DIR);
+                }
+                const file = this.freePath(cb.TEMPLATE_DIR + "/", name, ".canvas");
+                await this.app.vault.create(file, content);
+                new Notice(`Kanvas board: template saved to ${file}`);
+              },
+              {
+                suggestions: [...existing.values()].map(templateName),
+                overwrite: (v) => existing.has(v.toLowerCase())
+              }
+            ).open();
+          }
+        );
         const cards = (sel) => sel.filter((n) => !n.from && n.getData().type !== "group");
         const selectMore = this.selectMore = (canvas, sel, keep) => {
-          const add = [...canvas.nodes.values()].filter((n) => n.getData().type !== "group" && !this.isHidden(canvas, n) && keep(n));
+          const add = [...canvas.nodes.values()].filter(
+            (n) => n.getData().type !== "group" && !this.isHidden(canvas, n) && keep(n)
+          );
           canvas.updateSelection(() => {
             canvas.selection.clear();
             for (const n of [...sel, ...add]) canvas.selection.add(n);
           });
           return add.length;
         };
-        const childIds = (c, sel) => new Set(cards(sel).flatMap((n) => this.branchLevels(c, n.id, this.settings.foldDirection).flat()));
+        const childIds = (c, sel) => new Set(
+          cards(sel).flatMap(
+            (n) => this.branchLevels(c, n.id, this.settings.foldDirection).flat()
+          )
+        );
         canvasCommand(
           "select-children",
           "Select children (all levels down, in the fold direction)",
           ["Select children", "list-tree"],
-          (c, sel) => [...childIds(c, sel)].some((id) => c.nodes.get(id) && !this.isHidden(c, c.nodes.get(id)) && !c.selection.has(c.nodes.get(id))),
+          (c, sel) => [...childIds(c, sel)].some(
+            (id) => c.nodes.get(id) && !this.isHidden(c, c.nodes.get(id)) && !c.selection.has(c.nodes.get(id))
+          ),
           (canvas, sel) => {
             const ids = childIds(canvas, sel);
             selectMore(canvas, sel, (n) => ids.has(n.id));
           }
         );
         const tagsOf = (sel) => new Set(cards(sel).flatMap((n) => [...this.cardTagSet(n)]));
-        canvasCommand("select-same-tag", "Select cards with the same tag", ["Select same tag", "tag"], (c, sel) => tagsOf(sel).size > 0, (canvas, sel) => {
-          const tags = tagsOf(sel);
-          selectMore(canvas, sel, (n) => [...this.cardTagSet(n)].some((t) => tags.has(t)));
-        });
-        canvasCommand("select-same-color", "Select cards with the same color", ["Select same color", "palette"], (c, sel) => cards(sel).length > 0, (canvas, sel) => {
-          const colors = new Set(cards(sel).map((n) => n.getData().color || ""));
-          selectMore(canvas, sel, (n) => colors.has(n.getData().color || ""));
-        });
+        canvasCommand(
+          "select-same-tag",
+          "Select cards with the same tag",
+          ["Select same tag", "tag"],
+          (c, sel) => tagsOf(sel).size > 0,
+          (canvas, sel) => {
+            const tags = tagsOf(sel);
+            selectMore(
+              canvas,
+              sel,
+              (n) => [...this.cardTagSet(n)].some((t) => tags.has(t))
+            );
+          }
+        );
+        canvasCommand(
+          "select-same-color",
+          "Select cards with the same color",
+          ["Select same color", "palette"],
+          (c, sel) => cards(sel).length > 0,
+          (canvas, sel) => {
+            const colors = new Set(cards(sel).map((n) => n.getData().color || ""));
+            selectMore(canvas, sel, (n) => colors.has(n.getData().color || ""));
+          }
+        );
         this.addCommand({
           id: "template-insert",
           name: "Insert cards from template",
@@ -4887,9 +5676,22 @@ var require_CanvasBoardPlugin = __commonJS({
             const canvas = this.activeCanvas();
             if (!canvas) return false;
             if (!checking) {
-              const files = this.app.vault.getFiles().filter((f) => f.extension === "canvas" && f.path.startsWith(cb.TEMPLATE_DIR + "/"));
-              if (!files.length) new Notice(`Kanvas board: no template in ${cb.TEMPLATE_DIR} (Save selected cards as a template)`);
-              else new Picker(this.app, "Template", files, (f) => f.basename, (f) => this.insertTemplate(canvas, f)).open();
+              const files = this.app.vault.getFiles().filter(
+                (f) => f.extension === "canvas" && f.path.startsWith(cb.TEMPLATE_DIR + "/")
+              );
+              if (!files.length) {
+                new Notice(
+                  `Kanvas board: no template in ${cb.TEMPLATE_DIR} (Save selected cards as a template)`
+                );
+              } else {
+                new Picker(
+                  this.app,
+                  "Template",
+                  files,
+                  (f) => f.basename,
+                  (f) => this.insertTemplate(canvas, f)
+                ).open();
+              }
             }
             return true;
           }
@@ -4935,16 +5737,39 @@ var require_CanvasBoardPlugin = __commonJS({
           }
         });
         const addActions = (menu, canvas, sel) => {
-          for (const a of actions) if (a.menu && a.test(canvas, sel))
-            menu.addItem((item) => item.setTitle(this.keyedTitle(a.menu[0], a.id)).setIcon(a.menu[1]).setSection("canvas-board").onClick(() => runAction(a.run, canvas, sel)));
+          for (const a of actions) {
+            if (a.menu && a.test(canvas, sel)) {
+              menu.addItem(
+                (item) => item.setTitle(this.keyedTitle(a.menu[0], a.id)).setIcon(a.menu[1]).setSection("canvas-board").onClick(() => runAction(a.run, canvas, sel))
+              );
+            }
+          }
         };
-        this.registerEvent(this.app.workspace.on("canvas:selection-menu", (menu, canvas) => addActions(menu, canvas, [...canvas.selection])));
-        this.registerEvent(this.app.workspace.on("canvas:node-menu", (menu, node) => addActions(menu, node.canvas, node.canvas.selection.has(node) ? [...node.canvas.selection] : [node])));
-        this.registerEvent(this.app.workspace.on("editor-menu", (menu, editor) => {
-          const canvas = this.activeCanvas();
-          const node = canvas && [...canvas.selection].find((n) => n.isEditing && this.cardEditor(n) === editor);
-          if (node) addActions(menu, canvas, [node]);
-        }));
+        this.registerEvent(
+          this.app.workspace.on(
+            "canvas:selection-menu",
+            (menu, canvas) => addActions(menu, canvas, [...canvas.selection])
+          )
+        );
+        this.registerEvent(
+          this.app.workspace.on(
+            "canvas:node-menu",
+            (menu, node) => addActions(
+              menu,
+              node.canvas,
+              node.canvas.selection.has(node) ? [...node.canvas.selection] : [node]
+            )
+          )
+        );
+        this.registerEvent(
+          this.app.workspace.on("editor-menu", (menu, editor) => {
+            const canvas = this.activeCanvas();
+            const node = canvas && [...canvas.selection].find(
+              (n) => n.isEditing && this.cardEditor(n) === editor
+            );
+            if (node) addActions(menu, canvas, [node]);
+          })
+        );
         const isArchived = (file) => {
           const fm = file && file.extension === "md" && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
           return !!(fm && fm["archived-from"]);
@@ -4955,13 +5780,27 @@ var require_CanvasBoardPlugin = __commonJS({
           checkCallback: (checking) => {
             const file = this.app.workspace.getActiveFile();
             if (!isArchived(file)) return false;
-            if (!checking) this.restore(file).catch((e) => new Notice(`Kanvas board: ${e.message}`));
+            if (!checking) {
+              this.restore(file).catch(
+                (e) => new Notice(`Kanvas board: ${e.message}`)
+              );
+            }
             return true;
           }
         });
-        this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
-          if (isArchived(file)) menu.addItem((item) => item.setTitle("Restore archived card").setIcon("archive-restore").setSection("canvas-board").onClick(() => this.restore(file).catch((e) => new Notice(`Kanvas board: ${e.message}`))));
-        }));
+        this.registerEvent(
+          this.app.workspace.on("file-menu", (menu, file) => {
+            if (isArchived(file)) {
+              menu.addItem(
+                (item) => item.setTitle("Restore archived card").setIcon("archive-restore").setSection("canvas-board").onClick(
+                  () => this.restore(file).catch(
+                    (e) => new Notice(`Kanvas board: ${e.message}`)
+                  )
+                )
+              );
+            }
+          })
+        );
         this.addCommand({
           id: "run-pass",
           name: "Run pass (recheck the board)",
@@ -4977,7 +5816,11 @@ var require_CanvasBoardPlugin = __commonJS({
           name: "Create a starter board (color legend and first cards)",
           callback: () => this.createStarterBoard()
         });
-        this.addRibbonIcon("kanban-square", "Open the board (Kanvas board)", () => this.openBoard());
+        this.addRibbonIcon(
+          "kanban-square",
+          "Open the board (Kanvas board)",
+          () => this.openBoard()
+        );
         this.countEl = this.addStatusBarItem();
         this.viewEl = this.addStatusBarItem();
         this.viewEl.addClass("mod-clickable");
@@ -4996,13 +5839,17 @@ var require_CanvasBoardPlugin = __commonJS({
             this.refreshView(canvas);
             this.pane(canvas).update();
           }
-          for (const [canvas, pane] of this.panes) if (!open.has(canvas)) {
-            pane.destroy();
-            this.panes.delete(canvas);
+          for (const [canvas, pane] of this.panes) {
+            if (!open.has(canvas)) {
+              pane.destroy();
+              this.panes.delete(canvas);
+            }
           }
-          for (const [canvas, f] of this.finds) if (!open.has(canvas)) {
-            f.destroy();
-            this.finds.delete(canvas);
+          for (const [canvas, f] of this.finds) {
+            if (!open.has(canvas)) {
+              f.destroy();
+              this.finds.delete(canvas);
+            }
           }
         };
         this.registerEvent(this.app.workspace.on("active-leaf-change", tick));
@@ -5036,7 +5883,9 @@ var require_CanvasBoardPlugin = __commonJS({
       }
       // An edited label also renames its command in the palette and the hotkey list. The id, and so the key, stays.
       async setColorLabel(name, label) {
-        const labels = this.settings.colorLabels = { ...this.settings.colorLabels };
+        const labels = this.settings.colorLabels = {
+          ...this.settings.colorLabels
+        };
         if (label) labels[name] = label;
         else delete labels[name];
         await this.saveData(this.settings);
@@ -5077,7 +5926,10 @@ var require_CanvasBoardPlugin = __commonJS({
         const at = h ? h.current : null;
         const frag = createFragment((f) => {
           f.appendText(`Kanvas board: ${msg} `);
-          const b = f.createEl("button", { cls: "canvas-board-notice-undo", text: "Undo" });
+          const b = f.createEl("button", {
+            cls: "canvas-board-notice-undo",
+            text: "Undo"
+          });
           b.addEventListener("click", async () => {
             if (!h || h.current !== at) {
               new Notice("Kanvas board: the board changed since, use Ctrl+Z");
@@ -5088,7 +5940,9 @@ var require_CanvasBoardPlugin = __commonJS({
               const file = this.app.vault.getAbstractFileByPath(p);
               if (file) await this.app.fileManager.trashFile(file);
             }
-            if (restore && !this.app.vault.getAbstractFileByPath(restore.path)) await this.app.vault.create(restore.path, restore.content);
+            if (restore && !this.app.vault.getAbstractFileByPath(restore.path)) {
+              await this.app.vault.create(restore.path, restore.content);
+            }
           });
         });
         new Notice(frag, 8e3);
@@ -5102,11 +5956,19 @@ var require_CanvasBoardPlugin = __commonJS({
         }
         const file = this.app.vault.getAbstractFileByPath(board);
         if (!file) {
-          new Notice(createFragment((f) => {
-            f.appendText(`Kanvas board: ${board} not found (setting "Default board"). `);
-            const b = f.createEl("button", { cls: "canvas-board-notice-undo", text: "Create a starter board" });
-            b.addEventListener("click", () => this.createStarterBoard());
-          }), 1e4);
+          new Notice(
+            createFragment((f) => {
+              f.appendText(
+                `Kanvas board: ${board} not found (setting "Default board"). `
+              );
+              const b = f.createEl("button", {
+                cls: "canvas-board-notice-undo",
+                text: "Create a starter board"
+              });
+              b.addEventListener("click", () => this.createStarterBoard());
+            }),
+            1e4
+          );
           return;
         }
         await this.app.workspace.getLeaf(false).openFile(file);
@@ -5124,15 +5986,42 @@ var require_CanvasBoardPlugin = __commonJS({
             board = `${dir}Starter board${n > 1 ? ` ${n}` : ""}.canvas`;
           while (vault.getAbstractFileByPath(board) && ++n);
         }
-        const id = () => Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+        const id = () => Array.from(
+          { length: 16 },
+          () => Math.floor(Math.random() * 16).toString(16)
+        ).join("");
         const nodes = [];
         const edges = [];
         const W = 400;
-        nodes.push({ id: id(), type: "group", label: "How the colors work", x: -40, y: -80, width: W + 80, height: WORKFLOW.length * 100 + 100 });
-        const DOT = { cyan: "\u{1F535}", purple: "\u{1F7E3}", orange: "\u{1F7E0}", yellow: "\u{1F7E1}", red: "\u{1F534}", green: "\u{1F7E2}", none: "\u26AA" };
+        nodes.push({
+          id: id(),
+          type: "group",
+          label: "How the colors work",
+          x: -40,
+          y: -80,
+          width: W + 80,
+          height: WORKFLOW.length * 100 + 100
+        });
+        const DOT = {
+          cyan: "\u{1F535}",
+          purple: "\u{1F7E3}",
+          orange: "\u{1F7E0}",
+          yellow: "\u{1F7E1}",
+          red: "\u{1F534}",
+          green: "\u{1F7E2}",
+          none: "\u26AA"
+        };
         WORKFLOW.forEach(([name, meaning], i) => {
-          nodes.push({ id: id(), type: "text", text: `${DOT[name]} **${this.colorLabel(name)}** (${COLOR_NUM[name] ? name : "uncolored"})
-${meaning}`, x: 0, y: i * 100, width: W, height: 80 });
+          nodes.push({
+            id: id(),
+            type: "text",
+            text: `${DOT[name]} **${this.colorLabel(name)}** (${COLOR_NUM[name] ? name : "uncolored"})
+${meaning}`,
+            x: 0,
+            y: i * 100,
+            width: W,
+            height: 80
+          });
         });
         const steps = [
           "**1. Write a wish**\nOne card, one thing you want done, in your own words. Uncolored cards are ideas: the agent never touches them.",
@@ -5141,56 +6030,124 @@ ${meaning}`, x: 0, y: i * 100, width: W, height: 80 });
           "**4. Answer**\nYellow: a question or a review for you, in the card's note. Answer there, color the card cyan or purple again, run the next pass."
         ];
         const x0 = W + 160;
-        nodes.push({ id: id(), type: "group", label: "First steps", x: x0 - 40, y: -80, width: W + 80, height: steps.length * 160 + 280 });
+        nodes.push({
+          id: id(),
+          type: "group",
+          label: "First steps",
+          x: x0 - 40,
+          y: -80,
+          width: W + 80,
+          height: steps.length * 160 + 280
+        });
         let prev;
         steps.forEach((text, i) => {
-          const card = { id: id(), type: "text", text, x: x0, y: i * 160, width: W, height: 130 };
+          const card = {
+            id: id(),
+            type: "text",
+            text,
+            x: x0,
+            y: i * 160,
+            width: W,
+            height: 130
+          };
           nodes.push(card);
-          if (prev) edges.push({ id: id(), fromNode: prev, fromSide: "bottom", toNode: card.id, toSide: "top" });
+          if (prev) {
+            edges.push({
+              id: id(),
+              fromNode: prev,
+              fromSide: "bottom",
+              toNode: card.id,
+              toSide: "top"
+            });
+          }
           prev = card.id;
         });
-        nodes.push({ id: id(), type: "text", text: "Try it: color this card cyan, then run a pass.\n\nWrite a short note that explains this board in my own words.", x: x0, y: steps.length * 160 + 20, width: W, height: 130 });
+        nodes.push({
+          id: id(),
+          type: "text",
+          text: "Try it: color this card cyan, then run a pass.\n\nWrite a short note that explains this board in my own words.",
+          x: x0,
+          y: steps.length * 160 + 20,
+          width: W,
+          height: 130
+        });
         try {
           const dir = path.posix.dirname(board);
-          if (dir !== "." && !vault.getAbstractFileByPath(dir)) await vault.createFolder(dir);
-          const file = await vault.create(board, JSON.stringify({ nodes, edges }, null, "	"));
+          if (dir !== "." && !vault.getAbstractFileByPath(dir)) {
+            await vault.createFolder(dir);
+          }
+          const file = await vault.create(
+            board,
+            JSON.stringify({ nodes, edges }, null, "	")
+          );
           await this.app.workspace.getLeaf(false).openFile(file);
           new Notice(`Kanvas board: starter board created (${board})`);
         } catch (e) {
-          new Notice(`Kanvas board: could not create the starter board (${e.message})`);
+          new Notice(
+            `Kanvas board: could not create the starter board (${e.message})`
+          );
         }
       }
       async setLayoutDirection(dir) {
         this.settings.layoutDirection = dir;
         await this.saveData(this.settings);
-        for (const leaf of this.app.workspace.getLeavesOfType("canvas")) this.decorate(leaf.view);
+        for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
+          this.decorate(leaf.view);
+        }
         new Notice(`Kanvas board: tidy layout ${LAYOUT_DIRS[dir].name}`);
       }
       cycleLayoutDirection() {
         const dirs = Object.keys(LAYOUT_DIRS);
-        return this.setLayoutDirection(dirs[(dirs.indexOf(this.settings.layoutDirection) + 1) % dirs.length]);
+        return this.setLayoutDirection(
+          dirs[(dirs.indexOf(this.settings.layoutDirection) + 1) % dirs.length]
+        );
       }
       // Runs a plugin command on this canvas view (made active first: a click on its buttons may not focus it).
       runOn(view, id) {
         const leaf = this.app.workspace.getLeavesOfType("canvas").find((l) => l.view === view);
-        if (leaf && this.app.workspace.activeLeaf !== leaf) this.app.workspace.setActiveLeaf(leaf, { focus: true });
+        if (leaf && this.app.workspace.activeLeaf !== leaf) {
+          this.app.workspace.setActiveLeaf(leaf, { focus: true });
+        }
         this.app.commands.executeCommandById(`${this.manifest.id}:${id}`);
       }
       // Buttons on a canvas view, added once (tick runs every 2 s and adds back what the canvas redrew away).
       decorate(view) {
         const canvas = view.canvas;
-        if (!view.canvasBoardAction && view.addAction)
-          view.canvasBoardAction = view.addAction("play", "Run pass", () => this.runPass());
-        if (view.canvasBoardAction) view.canvasBoardAction.setAttr("aria-label", this.keyedLabel("Run pass", "run-pass"));
+        if (!view.canvasBoardAction && view.addAction) {
+          view.canvasBoardAction = view.addAction(
+            "play",
+            "Run pass",
+            () => this.runPass()
+          );
+        }
+        if (view.canvasBoardAction) {
+          view.canvasBoardAction.setAttr(
+            "aria-label",
+            this.keyedLabel("Run pass", "run-pass")
+          );
+        }
         const controls = canvas.wrapperEl && canvas.wrapperEl.querySelector(".canvas-controls");
         if (controls) {
           let group = controls.querySelector(".canvas-board-controls");
           if (!group) {
-            group = createDiv({ cls: "canvas-control-group mod-raised canvas-board-controls" });
+            group = createDiv({
+              cls: "canvas-control-group mod-raised canvas-board-controls"
+            });
             const help = controls.lastElementChild;
             controls.insertBefore(group, help);
-            for (const [id, label, icon] of [["find", "Search current canvas", "search"], ["filter", "Filter cards", "filter"], ["tidy-layout", "Tidy layout", "network"]]) {
-              const b = group.createDiv({ cls: "canvas-control-item", attr: { "data-command": id, "data-label": label, "data-tooltip-position": "left" } });
+            for (const [id, label, icon] of [
+              ["find", "Search current canvas", "search"],
+              ["filter", "Filter cards", "filter"],
+              ["tidy-layout", "Tidy layout", "network"]
+            ]) {
+              const b = group.createDiv({
+                cls: "canvas-control-item",
+                attr: {
+                  "data-command": id,
+                  "data-label": label,
+                  "data-tooltip-position": "left"
+                }
+              });
               setIcon(b, icon);
               b.addEventListener("click", (e) => {
                 if (id === "tidy-layout" && e.shiftKey) this.cycleLayoutDirection();
@@ -5198,14 +6155,28 @@ ${meaning}`, x: 0, y: i * 100, width: W, height: 80 });
               });
             }
           }
-          for (const b of group.children) b.setAttr("aria-label", this.keyedLabel(b.dataset.label, b.dataset.command));
+          for (const b of group.children) {
+            b.setAttr(
+              "aria-label",
+              this.keyedLabel(b.dataset.label, b.dataset.command)
+            );
+          }
           const tidy = group.querySelector('[data-command="tidy-layout"]');
           const dir = LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
           if (tidy) {
             this.tidyTurn = nextTurn(this.tidyTurn ?? dir.turn, dir.turn);
-            tidy.style.setProperty("--canvas-board-tidy-turn", `${this.tidyTurn}deg`);
-            tidy.setAttr("aria-label", this.keyedLabel(`Tidy layout: ${dir.name}
-Shift-click: next direction`, "tidy-layout"));
+            tidy.style.setProperty(
+              "--canvas-board-tidy-turn",
+              `${this.tidyTurn}deg`
+            );
+            tidy.setAttr(
+              "aria-label",
+              this.keyedLabel(
+                `Tidy layout: ${dir.name}
+Shift-click: next direction`,
+                "tidy-layout"
+              )
+            );
           }
         }
         const menu = canvas.menu;
@@ -5222,25 +6193,49 @@ Shift-click: next direction`, "tidy-layout"));
             return r;
           };
           menu.canvasBoardObserver = new MutationObserver(() => {
-            for (const item of menu.menuEl.querySelectorAll(".canvas-color-picker-item:not(.canvas-color-picker-custom)")) {
+            for (const item of menu.menuEl.querySelectorAll(
+              ".canvas-color-picker-item:not(.canvas-color-picker-custom)"
+            )) {
               const c = (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || "";
               const row = COLORS.find((x) => x[1] === c);
-              if (row) item.setAttrs({ "aria-label": this.keyedLabel(this.colorLabel(row[0]), `color-${row[2]}`), "data-tooltip-position": "top" });
+              if (row) {
+                item.setAttrs({
+                  "aria-label": this.keyedLabel(
+                    this.colorLabel(row[0]),
+                    `color-${row[2]}`
+                  ),
+                  "data-tooltip-position": "top"
+                });
+              }
             }
           });
-          menu.canvasBoardObserver.observe(menu.menuEl, { childList: true, subtree: true });
+          menu.canvasBoardObserver.observe(menu.menuEl, {
+            childList: true,
+            subtree: true
+          });
         }
       }
       menuButtons(canvas) {
         const el = canvas.menu.menuEl;
         const sel = [...canvas.selection];
-        if (!sel.length || !el.childElementCount || el.querySelector(".canvas-board-menu-btn")) return;
+        if (!sel.length || !el.childElementCount || el.querySelector(".canvas-board-menu-btn")) {
+          return;
+        }
         for (const id of ["fold", "unfold", "archive"]) {
           const a = this.actions.find((x) => x.id === id);
           if (!a || !a.test(canvas, sel)) continue;
-          const b = el.createEl("button", { cls: "clickable-icon canvas-board-menu-btn", attr: { "aria-label": this.keyedLabel(a.menu[0], id), "data-tooltip-position": "top" } });
+          const b = el.createEl("button", {
+            cls: "clickable-icon canvas-board-menu-btn",
+            attr: {
+              "aria-label": this.keyedLabel(a.menu[0], id),
+              "data-tooltip-position": "top"
+            }
+          });
           setIcon(b, a.menu[1]);
-          b.addEventListener("click", () => this.runAction(a.run, canvas, [...canvas.selection]));
+          b.addEventListener(
+            "click",
+            () => this.runAction(a.run, canvas, [...canvas.selection])
+          );
         }
       }
       undecorate(view) {
@@ -5249,7 +6244,13 @@ Shift-click: next direction`, "tidy-layout"));
           view.canvasBoardAction.remove();
           delete view.canvasBoardAction;
         }
-        if (canvas.wrapperEl) for (const el of canvas.wrapperEl.querySelectorAll(".canvas-board-controls, .canvas-board-menu-btn")) el.remove();
+        if (canvas.wrapperEl) {
+          for (const el of canvas.wrapperEl.querySelectorAll(
+            ".canvas-board-controls, .canvas-board-menu-btn"
+          )) {
+            el.remove();
+          }
+        }
         const menu = canvas.menu;
         if (menu && menu.canvasBoardRender) {
           menu.render = menu.canvasBoardRender;
@@ -5260,7 +6261,11 @@ Shift-click: next direction`, "tidy-layout"));
       }
       // Filter state of an open canvas. `create` false only reads (an empty state, not stored).
       viewState(canvas, create = true) {
-        const empty = () => ({ xcolors: /* @__PURE__ */ new Set(), xtags: /* @__PURE__ */ new Set(), hidden: /* @__PURE__ */ new Set() });
+        const empty = () => ({
+          xcolors: /* @__PURE__ */ new Set(),
+          xtags: /* @__PURE__ */ new Set(),
+          hidden: /* @__PURE__ */ new Set()
+        });
         let v = this.views.get(canvas);
         if (v || !create) return v || empty();
         v = empty();
@@ -5270,17 +6275,23 @@ Shift-click: next direction`, "tidy-layout"));
         canvas.updateSelection = function(fn) {
           const r = orig.call(this, () => {
             fn();
-            for (const x of [...this.selection]) if (v.hidden.has(x.id) || x.from && (v.hidden.has(x.from.node.id) || v.hidden.has(x.to.node.id))) this.selection.delete(x);
+            for (const x of [...this.selection]) {
+              if (v.hidden.has(x.id) || x.from && (v.hidden.has(x.from.node.id) || v.hidden.has(x.to.node.id))) {
+                this.selection.delete(x);
+              }
+            }
           });
           plugin.updateCount();
           return r;
         };
         const history = canvas.applyHistory;
-        if (history) canvas.applyHistory = function(...a) {
-          const r = history.apply(this, a);
-          plugin.refreshView(this);
-          return r;
-        };
+        if (history) {
+          canvas.applyHistory = function(...a) {
+            const r = history.apply(this, a);
+            plugin.refreshView(this);
+            return r;
+          };
+        }
         return v;
       }
       isHidden(canvas, node) {
@@ -5292,8 +6303,9 @@ Shift-click: next direction`, "tidy-layout"));
         v.xcolors.clear();
         v.xtags.clear();
         const folds = this.folds(canvas);
-        if (folds.size) this.setFolds(canvas, new Map([...folds.keys()].map((id) => [id, null])));
-        else this.refreshView(canvas);
+        if (folds.size) {
+          this.setFolds(canvas, new Map([...folds.keys()].map((id) => [id, null])));
+        } else this.refreshView(canvas);
       }
       // A fold is stored on the card as "canvasBoard": {"folded": "in" | "out"} (the fold direction). JSON Canvas
       // 1.0 has no such field; other readers ignore it and show every card. Obsidian keeps it (node.unknownData).
@@ -5350,9 +6362,13 @@ Shift-click: next direction`, "tidy-layout"));
         let level = [root];
         while (level.length) {
           const next = [];
-          for (const id of level) for (const x of links.get(id) || []) if (!seen.has(x)) {
-            seen.add(x);
-            next.push(x);
+          for (const id of level) {
+            for (const x of links.get(id) || []) {
+              if (!seen.has(x)) {
+                seen.add(x);
+                next.push(x);
+              }
+            }
           }
           if (next.length) levels.push(next);
           level = next;
@@ -5371,12 +6387,14 @@ Shift-click: next direction`, "tidy-layout"));
         let level = [id];
         while (level.length) {
           const next = [];
-          for (const x of level) for (const y of links.get(x) || []) {
-            if (seen.has(y)) continue;
-            seen.add(y);
-            const n = canvas.nodes.get(y);
-            if (n && this.foldOf(n)) found.push(y);
-            else next.push(y);
+          for (const x of level) {
+            for (const y of links.get(x) || []) {
+              if (seen.has(y)) continue;
+              seen.add(y);
+              const n = canvas.nodes.get(y);
+              if (n && this.foldOf(n)) found.push(y);
+              else next.push(y);
+            }
           }
           level = next;
         }
@@ -5393,7 +6411,9 @@ Shift-click: next direction`, "tidy-layout"));
           const below = this.branchLevels(canvas, id, dir);
           const links = this.branchLinks(canvas, dir);
           if (levels < below.length) {
-            for (const x of below[levels - 1]) if ((links.get(x) || []).length) changes.set(x, dir);
+            for (const x of below[levels - 1]) {
+              if ((links.get(x) || []).length) changes.set(x, dir);
+            }
           }
         }
         this.setFolds(canvas, changes);
@@ -5402,7 +6422,11 @@ Shift-click: next direction`, "tidy-layout"));
       // #tag1 is not #tag10.
       cardTagSet(node) {
         const tags = /* @__PURE__ */ new Set();
-        for (const m of (node.getData().text || "").matchAll(/(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g)) if (!/^\d+$/.test(m[1])) tags.add(m[1]);
+        for (const m of (node.getData().text || "").matchAll(
+          /(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g
+        )) {
+          if (!/^\d+$/.test(m[1])) tags.add(m[1]);
+        }
         return tags;
       }
       // Every color and tag shows by default; a hidden color, or any hidden tag, hides the card.
@@ -5421,15 +6445,27 @@ Shift-click: next direction`, "tidy-layout"));
         const v = this.viewState(canvas);
         const hidden = /* @__PURE__ */ new Set();
         if (this.filtering(v)) {
-          for (const node of canvas.nodes.values()) if (node.getData().type !== "group" && !this.matches(node, v)) hidden.add(node.id);
+          for (const node of canvas.nodes.values()) {
+            if (node.getData().type !== "group" && !this.matches(node, v)) {
+              hidden.add(node.id);
+            }
+          }
         }
-        if (v.xtags.size && this.settings.hideTagBranches)
+        if (v.xtags.size && this.settings.hideTagBranches) {
           for (const node of canvas.nodes.values()) {
             const tags = this.cardTagSet(node);
             if (![...v.xtags].some((t) => tags.has(t))) continue;
-            for (const id of this.branchLevels(canvas, node.id, this.settings.foldDirection).flat())
-              if (canvas.nodes.get(id) && canvas.nodes.get(id).getData().type !== "group") hidden.add(id);
+            for (const id of this.branchLevels(
+              canvas,
+              node.id,
+              this.settings.foldDirection
+            ).flat()) {
+              if (canvas.nodes.get(id) && canvas.nodes.get(id).getData().type !== "group") {
+                hidden.add(id);
+              }
+            }
           }
+        }
         const folded = /* @__PURE__ */ new Map();
         for (const [root, dir] of this.folds(canvas)) {
           const below = this.branchLevels(canvas, root, dir).flat();
@@ -5438,8 +6474,10 @@ Shift-click: next direction`, "tidy-layout"));
         }
         v.hidden = hidden;
         this.paint(canvas, hidden, folded);
-        if ([...canvas.selection].some((x) => hidden.has(x.id))) canvas.updateSelection(() => {
-        });
+        if ([...canvas.selection].some((x) => hidden.has(x.id))) {
+          canvas.updateSelection(() => {
+          });
+        }
         if (canvas === this.activeCanvas()) this.updateViewLabel(canvas);
         const pane = this.panes.get(canvas);
         if (pane) pane.update();
@@ -5455,8 +6493,13 @@ Shift-click: next direction`, "tidy-layout"));
             continue;
           }
           if (!badge) {
-            badge = node.nodeEl.createDiv({ cls: "canvas-board-folded", attr: { "data-tooltip-position": "bottom" } });
-            for (const ev of ["pointerdown", "mousedown", "dblclick"]) badge.addEventListener(ev, (e) => e.stopPropagation());
+            badge = node.nodeEl.createDiv({
+              cls: "canvas-board-folded",
+              attr: { "data-tooltip-position": "bottom" }
+            });
+            for (const ev of ["pointerdown", "mousedown", "dblclick"]) {
+              badge.addEventListener(ev, (e) => e.stopPropagation());
+            }
             badge.addEventListener("click", (e) => {
               e.stopPropagation();
               this.unfold(canvas, [node.id], 1);
@@ -5468,7 +6511,13 @@ Shift-click: next direction`, "tidy-layout"));
         this.paintStale(canvas);
         for (const e of canvas.edges.values()) {
           const off = hidden.has(e.from.node.id) || hidden.has(e.to.node.id);
-          for (const el of [e.lineGroupEl, e.lineEndGroupEl, e.labelElement && e.labelElement.wrapperEl]) if (el) el.classList.toggle("canvas-board-hidden", off);
+          for (const el of [
+            e.lineGroupEl,
+            e.lineEndGroupEl,
+            e.labelElement && e.labelElement.wrapperEl
+          ]) {
+            if (el) el.classList.toggle("canvas-board-hidden", off);
+          }
         }
       }
       // Yellow (needs me) cards whose note was not touched for "Stale after" days: a warning badge (the icon of
@@ -5481,12 +6530,20 @@ Shift-click: next direction`, "tidy-layout"));
           let age = -1;
           if (days > 0 && d.color === "3") {
             let file = null;
-            if (d.type === "file") file = this.app.vault.getAbstractFileByPath(d.file);
-            else if (d.type === "text") {
+            if (d.type === "file") {
+              file = this.app.vault.getAbstractFileByPath(d.file);
+            } else if (d.type === "text") {
               const m = /\[\[([^\]|#]+)/.exec(d.text || "");
-              if (m) file = this.app.metadataCache.getFirstLinkpathDest(m[1].trim(), board);
+              if (m) {
+                file = this.app.metadataCache.getFirstLinkpathDest(
+                  m[1].trim(),
+                  board
+                );
+              }
             }
-            if (file && file.stat) age = Math.floor((Date.now() - file.stat.mtime) / 864e5);
+            if (file && file.stat) {
+              age = Math.floor((Date.now() - file.stat.mtime) / 864e5);
+            }
           }
           let badge = node.nodeEl.querySelector(":scope > .canvas-board-stale");
           if (age < days || age < 0) {
@@ -5494,15 +6551,24 @@ Shift-click: next direction`, "tidy-layout"));
             continue;
           }
           if (!badge) {
-            badge = node.nodeEl.createDiv({ cls: "canvas-board-stale", attr: { "data-tooltip-position": "top" } });
-            setIcon(badge.createSpan({ cls: "canvas-board-stale-icon" }), "triangle-alert");
+            badge = node.nodeEl.createDiv({
+              cls: "canvas-board-stale",
+              attr: { "data-tooltip-position": "top" }
+            });
+            setIcon(
+              badge.createSpan({ cls: "canvas-board-stale-icon" }),
+              "triangle-alert"
+            );
             badge.createSpan({ cls: "canvas-board-stale-text" });
           }
           const label = age < 1 ? "today" : `${age}d`;
           if (badge.dataset.age !== label) {
             badge.dataset.age = label;
             badge.querySelector(".canvas-board-stale-text").setText(label);
-            badge.setAttr("aria-label", `Waiting on you \xB7 note untouched for ${age} day${age === 1 ? "" : "s"} (stale after ${days})`);
+            badge.setAttr(
+              "aria-label",
+              `Waiting on you \xB7 note untouched for ${age} day${age === 1 ? "" : "s"} (stale after ${days})`
+            );
           }
         }
       }
@@ -5518,7 +6584,9 @@ Shift-click: next direction`, "tidy-layout"));
       }
       cardText(node) {
         const d = node.getData();
-        return String((d.type === "text" ? d.text : d.type === "file" ? d.file : d.type === "link" ? d.url : d.label) || "");
+        return String(
+          (d.type === "text" ? d.text : d.type === "file" ? d.file : d.type === "link" ? d.url : d.label) || ""
+        );
       }
       // Background of a color dot: a preset canvas color ('1'…'6'), a custom hex, or none.
       dotStyle(color) {
@@ -5531,7 +6599,10 @@ Shift-click: next direction`, "tidy-layout"));
         const b = canvas.getViewportBBox();
         const w = nodes.length ? Math.max(...nodes.map((n) => n.x + n.width)) - Math.min(...nodes.map((n) => n.x)) : 0;
         const h = nodes.length ? Math.max(...nodes.map((n) => n.y + n.height)) - Math.min(...nodes.map((n) => n.y)) : 0;
-        const at = { x: Math.round((b.minX + b.maxX - w) / 2), y: Math.round((b.minY + b.maxY - h) / 2) };
+        const at = {
+          x: Math.round((b.minX + b.maxX - w) / 2),
+          y: Math.round((b.minY + b.maxY - h) / 2)
+        };
         const ops = this.cb.templateOps(tpl, at);
         this.edit(canvas, ops);
         const added = ops.filter((o) => o.op === "add").map((o) => canvas.nodes.get(o.node.id)).filter(Boolean);
@@ -5549,7 +6620,15 @@ Shift-click: next direction`, "tidy-layout"));
           return;
         }
         const cards = [...canvas.nodes.values()].map((n) => n.getData()).filter((n) => n.type !== "group");
-        const names = { "": "none", 1: "red", 2: "orange", 3: "yellow", 4: "green", 5: "cyan", 6: "purple" };
+        const names = {
+          "": "none",
+          1: "red",
+          2: "orange",
+          3: "yellow",
+          4: "green",
+          5: "cyan",
+          6: "purple"
+        };
         const byColor = {};
         for (const n of cards) {
           const c = names[n.color || ""] || "custom";
@@ -5559,16 +6638,28 @@ Shift-click: next direction`, "tidy-layout"));
         const over = max > 0 && cards.length > max;
         const sel = [...canvas.selection].filter((x) => !x.from).length;
         this.countEl.empty();
-        this.countEl.createSpan({ text: `${cards.length} cards`, cls: over ? "canvas-board-over" : "" });
+        this.countEl.createSpan({
+          text: `${cards.length} cards`,
+          cls: over ? "canvas-board-over" : ""
+        });
         if (sel) this.countEl.appendText(` \xB7 ${sel} selected`);
-        this.countEl.setAttr("aria-label", (over ? `over ${max} \xB7 ` : "") + Object.entries(byColor).map(([c, k]) => `${c} ${k}`).join(" \xB7 "));
+        this.countEl.setAttr(
+          "aria-label",
+          (over ? `over ${max} \xB7 ` : "") + Object.entries(byColor).map(([c, k]) => `${c} ${k}`).join(" \xB7 ")
+        );
         this.countEl.setAttr("data-tooltip-position", "top");
         this.countEl.show();
       }
       // The plugin folder holds the skill's default; the vault copy is written only when missing (then it is the
       // user's, plugin updates never overwrite it) or on "Reset agent skill" (`force`).
       skillPath() {
-        return path.join(this.app.vault.adapter.basePath, ".claude", "skills", "canvas-board", "SKILL.md");
+        return path.join(
+          this.app.vault.adapter.basePath,
+          ".claude",
+          "skills",
+          "canvas-board",
+          "SKILL.md"
+        );
       }
       syncSkill(dir, force = false) {
         const src = path.join(dir, "skill", "SKILL.md");
@@ -5577,7 +6668,9 @@ Shift-click: next direction`, "tidy-layout"));
           if (!force && fs.existsSync(dest)) return;
           fs.mkdirSync(path.dirname(dest), { recursive: true });
           fs.copyFileSync(src, dest);
-          if (force) new Notice("Kanvas board: agent skill reset to the plugin's version");
+          if (force) {
+            new Notice("Kanvas board: agent skill reset to the plugin's version");
+          }
         } catch (e) {
           console.error("canvas-board: skill sync failed", e);
           if (force) new Notice(`Kanvas board: skill reset failed (${e.message})`);
@@ -5590,9 +6683,19 @@ Shift-click: next direction`, "tidy-layout"));
         const retyped = this.cb.applyOps(d, ops);
         const h = canvas.history;
         const last = h && h.data && h.data[h.current];
-        const same = (x) => JSON.stringify(x, (k, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort()) : v);
-        if (canvas.pushHistory && (!last || same(last) !== same(before))) canvas.pushHistory(before);
-        if (retyped.length) canvas.setData({ ...d, nodes: d.nodes.filter((n) => !retyped.includes(n.id)) });
+        const same = (x) => JSON.stringify(
+          x,
+          (k, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort()) : v
+        );
+        if (canvas.pushHistory && (!last || same(last) !== same(before))) {
+          canvas.pushHistory(before);
+        }
+        if (retyped.length) {
+          canvas.setData({
+            ...d,
+            nodes: d.nodes.filter((n) => !retyped.includes(n.id))
+          });
+        }
         canvas.setData(d);
         canvas.requestSave(false);
       }
@@ -5625,11 +6728,21 @@ Shift-click: next direction`, "tidy-layout"));
           for (const n of d.nodes || []) {
             if (f.path === here && n.id === skipId) continue;
             const hit = n.type === "file" ? n.file === file.path : n.type === "text" && this.cb.relinkText(n.text, hits(f.path), () => "\0") !== n.text;
-            if (hit) out.push({ path: f.path, id: n.id, label: (n.text || n.file || "").split("\n")[0] });
+            if (hit) {
+              out.push({
+                path: f.path,
+                id: n.id,
+                label: (n.text || n.file || "").split("\n")[0]
+              });
+            }
           }
         }
         const resolved = this.app.metadataCache.resolvedLinks;
-        for (const src in resolved) if (src !== file.path && !src.endsWith(".canvas") && resolved[src][file.path]) out.push({ path: src, label: src });
+        for (const src in resolved) {
+          if (src !== file.path && !src.endsWith(".canvas") && resolved[src][file.path]) {
+            out.push({ path: src, label: src });
+          }
+        }
         return out;
       }
       canvasFile(canvas) {
@@ -5640,9 +6753,18 @@ Shift-click: next direction`, "tidy-layout"));
       // file, other links redirected: cards on this board get an edge to the group, other cards and notes link this board).
       async unpack(canvas, node, file, mode, links = []) {
         const sub = JSON.parse(await this.app.vault.read(file) || "{}");
-        const content = JSON.stringify({ nodes: sub.nodes || [], edges: sub.edges || [] }, null, "	");
+        const content = JSON.stringify(
+          { nodes: sub.nodes || [], edges: sub.edges || [] },
+          null,
+          "	"
+        );
         const label = (((node.getData().text || "").match(/\|([^\]]+)\]\]/) || [])[1] || file.basename).trim();
-        const ops = this.cb.expandOps(canvas.getData(), node.id, { nodes: sub.nodes || [], edges: sub.edges || [] }, mode === "group" ? { group: label } : {});
+        const ops = this.cb.expandOps(
+          canvas.getData(),
+          node.id,
+          { nodes: sub.nodes || [], edges: sub.edges || [] },
+          mode === "group" ? { group: label } : {}
+        );
         const here = this.canvasFile(canvas);
         const isSub = (from) => (target) => {
           const f = this.app.metadataCache.getFirstLinkpathDest(target, from);
@@ -5653,21 +6775,38 @@ Shift-click: next direction`, "tidy-layout"));
           for (const l of links.filter((l2) => l2.path === here)) {
             const n2 = canvas.getData().nodes.find((x) => x.id === l.id);
             if (!n2) continue;
-            ops.push({ op: "set", id: n2.id, text: n2.type === "text" ? this.cb.relinkText(n2.text, isSub(here), (t) => t) : label });
-            ops.push({ op: "edge", edge: { id: [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join(""), fromNode: n2.id, fromSide: a, toNode: ops.group, toSide: b } });
+            ops.push({
+              op: "set",
+              id: n2.id,
+              text: n2.type === "text" ? this.cb.relinkText(n2.text, isSub(here), (t) => t) : label
+            });
+            ops.push({
+              op: "edge",
+              edge: {
+                id: [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join(""),
+                fromNode: n2.id,
+                fromSide: a,
+                toNode: ops.group,
+                toSide: b
+              }
+            });
           }
         }
         this.edit(canvas, ops);
         if (mode === "group") {
           const to = (t) => `[[${here}|${t}]]`;
-          for (const p of [...new Set(links.filter((l) => l.path !== here).map((l) => l.path))]) {
+          for (const p of [
+            ...new Set(links.filter((l) => l.path !== here).map((l) => l.path))
+          ]) {
             const f = this.app.vault.getAbstractFileByPath(p);
             if (!f) continue;
             if (p.endsWith(".canvas")) {
               const relink = (d) => {
                 for (const n2 of d.nodes || []) {
                   if (n2.type === "file" && n2.file === file.path) n2.file = here;
-                  else if (n2.type === "text") n2.text = this.cb.relinkText(n2.text, isSub(p), to);
+                  else if (n2.type === "text") {
+                    n2.text = this.cb.relinkText(n2.text, isSub(p), to);
+                  }
                 }
               };
               const open = this.openCanvas(p);
@@ -5676,12 +6815,19 @@ Shift-click: next direction`, "tidy-layout"));
                 relink(d);
                 open.setData(d);
                 open.requestSave();
-              } else await this.app.vault.process(f, (t) => {
-                const d = JSON.parse(t || "{}");
-                relink(d);
-                return JSON.stringify(d, null, "	");
-              });
-            } else await this.app.vault.process(f, (t) => this.cb.relinkText(t, isSub(p), to));
+              } else {
+                await this.app.vault.process(f, (t) => {
+                  const d = JSON.parse(t || "{}");
+                  relink(d);
+                  return JSON.stringify(d, null, "	");
+                });
+              }
+            } else {
+              await this.app.vault.process(
+                f,
+                (t) => this.cb.relinkText(t, isSub(p), to)
+              );
+            }
           }
         }
         if (mode !== "copy") await this.app.fileManager.trashFile(file);
@@ -5691,7 +6837,12 @@ Shift-click: next direction`, "tidy-layout"));
           copy: `unpacked ${n} card${s(n)}, ${file.path} kept`,
           group: `unpacked ${n} card${s(n)} into a group, ${k} link${s(k)} redirected`
         }[mode];
-        this.undoNotice(canvas, what, [], mode === "copy" ? null : { path: file.path, content });
+        this.undoNotice(
+          canvas,
+          what,
+          [],
+          mode === "copy" ? null : { path: file.path, content }
+        );
       }
       linkedCanvas(node) {
         const d = node.getData();
@@ -5718,14 +6869,17 @@ Shift-click: next direction`, "tidy-layout"));
         const file = this.app.vault.getAbstractFileByPath(board) || this.app.metadataCache.getFirstLinkpathDest(board, note.path);
         if (!file) throw new Error(`board ${board} not found`);
         const canvas = this.openCanvas(file.path);
-        if (canvas) this.edit(canvas, this.cb.restoreOps(canvas.getData(), src).ops);
-        else await this.app.vault.process(file, (text) => {
-          const d = JSON.parse(text);
-          d.nodes = d.nodes || [];
-          d.edges = d.edges || [];
-          this.cb.applyOps(d, this.cb.restoreOps(d, src).ops);
-          return JSON.stringify(d, null, "	");
-        });
+        if (canvas) {
+          this.edit(canvas, this.cb.restoreOps(canvas.getData(), src).ops);
+        } else {
+          await this.app.vault.process(file, (text) => {
+            const d = JSON.parse(text);
+            d.nodes = d.nodes || [];
+            d.edges = d.edges || [];
+            this.cb.applyOps(d, this.cb.restoreOps(d, src).ops);
+            return JSON.stringify(d, null, "	");
+          });
+        }
         await this.app.fileManager.trashFile(note);
         new Notice(`Kanvas board: card restored on ${file.path}`);
       }
@@ -5754,7 +6908,10 @@ Shift-click: next direction`, "tidy-layout"));
         if (nodes.some(isGo)) return true;
         for (const n of nodes) {
           for (const m of (n.text || "").matchAll(/\[\[([^\]|#]+\.canvas)/g)) {
-            const dest = this.app.metadataCache.getFirstLinkpathDest(m[1].trim(), board);
+            const dest = this.app.metadataCache.getFirstLinkpathDest(
+              m[1].trim(),
+              board
+            );
             if (dest && (await read(dest.path)).some(isGo)) return true;
           }
         }
@@ -5767,32 +6924,56 @@ Shift-click: next direction`, "tidy-layout"));
         const board = view && view.getViewType() === "canvas" && view.file ? view.file.path : this.settings.defaultBoard;
         const go = parseColors(this.settings.passColors);
         if (!go.size) {
-          new Notice(createFragment((f) => {
-            f.appendText("Kanvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. ");
-            const b = f.createEl("button", { cls: "canvas-board-notice-undo", text: "Open settings" });
-            b.addEventListener("click", () => {
-              this.app.setting.open();
-              this.app.setting.openTabById(this.manifest.id);
-            });
-          }), 1e4);
+          new Notice(
+            createFragment((f) => {
+              f.appendText(
+                "Kanvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. "
+              );
+              const b = f.createEl("button", {
+                cls: "canvas-board-notice-undo",
+                text: "Open settings"
+              });
+              b.addEventListener("click", () => {
+                this.app.setting.open();
+                this.app.setting.openTabById(this.manifest.id);
+              });
+            }),
+            1e4
+          );
           return;
         }
         if (!await this.hasGoCards(board, go)) {
           const names = Object.keys(COLOR_NUM).filter((k) => go.has(COLOR_NUM[k]));
-          new Notice(`Kanvas board: nothing to do on ${board} (no ${names.join(" or ")} card)`);
+          new Notice(
+            `Kanvas board: nothing to do on ${board} (no ${names.join(" or ")} card)`
+          );
           return;
         }
         const vars = { vault, board, claude };
         const template = String(this.settings.terminal || "").trim();
-        const launch = template ? (([c, ...a]) => [c, a])((template.match(/"[^"]*"|\S+/g) || []).map((a) => a.replace(/^"|"$/g, "").replace(/\{(vault|board|claude)\}/g, (_, k) => vars[k]))) : defaultLaunch(vars);
+        const launch = template ? (([c, ...a]) => [c, a])(
+          (template.match(/"[^"]*"|\S+/g) || []).map(
+            (a) => a.replace(/^"|"$/g, "").replace(/\{(vault|board|claude)\}/g, (_, k) => vars[k])
+          )
+        ) : defaultLaunch(vars);
         if (!launch) {
-          new Notice('Kanvas board: no terminal found to start the pass. Set "Terminal command" in the plugin settings.', 1e4);
+          new Notice(
+            'Kanvas board: no terminal found to start the pass. Set "Terminal command" in the plugin settings.',
+            1e4
+          );
           return;
         }
         const [cmd, cmdArgs] = launch;
         try {
-          const child = spawn(cmd, cmdArgs, { cwd: vault, detached: true, stdio: "ignore" });
-          child.on("error", (e) => new Notice(`Kanvas board: could not start the pass (${e.message})`));
+          const child = spawn(cmd, cmdArgs, {
+            cwd: vault,
+            detached: true,
+            stdio: "ignore"
+          });
+          child.on(
+            "error",
+            (e) => new Notice(`Kanvas board: could not start the pass (${e.message})`)
+          );
           child.unref();
           new Notice(`Kanvas board: pass started on ${board}`);
         } catch (e) {

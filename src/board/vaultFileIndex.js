@@ -22,9 +22,12 @@ class VaultFileIndex {
     if (!this.files) {
       this.files = new Map();
       const skip = new Set([...SKIP_DIRS, ...(settings().skipFolders || [])]);
-      const walk = dir => {
+      const walk = (dir) => {
         for (const e of fs.readdirSync(abs(dir), { withFileTypes: true })) {
-          if (e.isDirectory()) { if (!skip.has(e.name)) walk(path.posix.join(dir, e.name)); continue; }
+          if (e.isDirectory()) {
+            if (!skip.has(e.name)) walk(path.posix.join(dir, e.name));
+            continue;
+          }
           const rel = path.posix.join(dir, e.name);
           const key = e.name.endsWith('.md') ? e.name.slice(0, -3) : e.name;
           if (!this.files.has(key)) this.files.set(key, rel);

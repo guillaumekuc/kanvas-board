@@ -4,7 +4,10 @@ const { OBSIDIAN } = require('./constants.js');
 function obsidianEval(code) {
   for (const bin of OBSIDIAN) {
     try {
-      const out = execFileSync(bin, ['eval', `code=${code}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      const out = execFileSync(bin, ['eval', `code=${code}`], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
       const m = out.match(/=>\s?([\s\S]*)$/);
       if (!m) throw new Error(out.trim());
       return m[1].trim();

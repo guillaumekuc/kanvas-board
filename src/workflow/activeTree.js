@@ -8,7 +8,13 @@ function activeTree(t) {
   const active = new Set([...goColors(), WORKING]);
   const total = { waiting: 0 };
   const a = activeNode(t, total, active);
-  return { board: a.board, waiting: total.waiting, cards: a.cards, context: a.context, edges: a.edges };
+  return {
+    board: a.board,
+    waiting: total.waiting,
+    cards: a.cards,
+    context: a.context,
+    edges: a.edges,
+  };
 }
 
 module.exports = activeTree;

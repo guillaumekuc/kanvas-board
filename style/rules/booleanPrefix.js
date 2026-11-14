@@ -11,7 +11,10 @@ module.exports = {
     const prefixPattern = new RegExp(`^(${prefixes.join('|')})[A-Z]`);
     const reportBareName = (identifier) => {
       if (prefixPattern.test(identifier.name)) return;
-      context.report({ node: identifier, message: `Boolean '${identifier.name}' should start with ${prefixes.join(' / ')}.` });
+      context.report({
+        node: identifier,
+        message: `Boolean '${identifier.name}' should start with ${prefixes.join(' / ')}.`,
+      });
     };
     return {
       VariableDeclarator(declarator) {
