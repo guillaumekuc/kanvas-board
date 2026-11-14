@@ -1,0 +1,22 @@
+// The command groups, in the order their right-click items appear.
+module.exports = [
+  require('./registerColorCommands.js'),
+  require('./registerTidyCommands.js'),
+  require('./registerPackCommands.js'),
+  require('./registerUnpackCommands.js'),
+  require('./registerMergeSplitCommands.js'),
+  require('./registerExtractCommand.js'),
+  require('./registerArchiveCommand.js'),
+  require('./registerFoldCommand.js'),
+  require('./registerUnfoldCommands.js'),
+  require('./registerFoldDirectionCommands.js'),
+  require('./registerTemplateSaveCommand.js'),
+  require('./registerSelectChildrenCommand.js'),
+  require('./registerSelectSameTagCommand.js'),
+  require('./registerSelectSameColorCommand.js'),
+  require('./registerTemplateInsertCommand.js'),
+  require('./registerViewCommands.js'),
+  require('./registerRestoreCommands.js'),
+  require('./registerBoardCommands.js'),
+  require('./registerContextMenus.js'),
+];

@@ -1,0 +1,24 @@
+{
+  "name": "canvas-board",
+  "version": "1.0.0",
+  "description": "Kanvas board plugin: dev tooling (build, style check, tests)",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node test/apm.test.js && node test/golden/run.js && node test/plugin/run.js",
+    "check:style": "eslint .",
+    "check:style:summary": "node style/summary.js",
+    "check": "npm run build && npm test && npm run check:style",
+    "hooks": "git config core.hooksPath hooks",
+    "format": "prettier --write src test style build.js eslint.config.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "esbuild": "^0.25.12",
+    "eslint": "^9.39.5",
+    "globals": "^17.14.0",
+    "prettier": "^3.6.2"
+  },
+  "private": true
+}
