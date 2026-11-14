@@ -2,7 +2,7 @@ const bounds = require('./bounds.js');
 const newId = require('./newId.js');
 const withGroupMembers = require('./withGroupMembers.js');
 
-function collapseOps(canvasData, ids, file, label) {
+function collapseOps(canvasData, { ids, file, label }) {
   const pick = withGroupMembers(canvasData, ids);
   const moving = canvasData.nodes.filter((node) => pick.has(node.id));
   if (!moving.length) throw new Error('nothing to collapse');

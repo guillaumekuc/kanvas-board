@@ -2,7 +2,7 @@ const fitHeight = require('./fitHeight.js');
 const newId = require('./newId.js');
 
 // `part` (a piece of the card's text, e.g. the editor selection) leaves the card for a new card next to it.
-function extractOps(canvasData, id, part, from) {
+function extractOps(canvasData, { id, part, from }) {
   const card = canvasData.nodes.find((node) => node.id === id);
   if (!card || card.type !== 'text') {
     throw new Error('extract takes one text card');

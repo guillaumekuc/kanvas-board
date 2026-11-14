@@ -1,20 +1,14 @@
-const { execFileSync } = require('child_process');
 const { OBSIDIAN } = require('./constants.js');
+const tryEval = require('./tryEval.js');
 
+const { NOT_INSTALLED } = tryEval;
+
+// Runs `code` in the running Obsidian through its CLI; null when Obsidian is
+// not running or the CLI is off.
 function obsidianEval(code) {
   for (const binary of OBSIDIAN) {
-    try {
-      const out = execFileSync(binary, ['eval', `code=${code}`], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      const match = out.match(/=>\s?([\s\S]*)$/);
-      if (!match) throw new Error(out.trim());
-      return match[1].trim();
-    } catch (error) {
-      if (error.code === 'ENOENT') continue;
-      return null; // Obsidian not running, or the CLI is off
-    }
+    const result = tryEval(binary, code);
+    if (result !== NOT_INSTALLED) return result;
   }
   return null;
 }

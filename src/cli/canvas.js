@@ -53,7 +53,7 @@ const option = name => { const index = args.indexOf(name); return index >= 0 ? a
     }
     case 'add': {
       const width = Number(option('--width') || 320), height = Number(option('--height') || fitHeight(option('--text'), width));
-      const position = place(readBoard(board), option('--near'), width, height);
+      const position = place(readBoard(board), { near: option('--near'), width, height });
       const node = { id: newId(), type: 'text', text: option('--text') || '', x: position.x, y: position.y, width: width, height: height };
       const color = colorArg(option('--color'));
       if (color) node.color = color;
@@ -83,7 +83,7 @@ const option = name => { const index = args.indexOf(name); return index >= 0 ? a
       const name = option('--name');
       if (!name) throw new Error('collapse needs --name');
       const file = freePath(path.posix.dirname(board), name, '.canvas');
-      const { operations, subcanvas, id } = collapseOps(readBoard(board), (option('--ids') || '').split(',').filter(Boolean), file, name);
+      const { operations, subcanvas, id } = collapseOps(readBoard(board), { ids: (option('--ids') || '').split(',').filter(Boolean), file, label: name });
       fileSystem.writeFileSync(vaultPath(file), serialize(subcanvas));
       writeOps(board, operations);
       console.log(file, id);
@@ -95,7 +95,7 @@ const option = name => { const index = args.indexOf(name); return index >= 0 ? a
       const subcanvas = card && cardLinks(card).canvas;
       if (!subcanvas) throw new Error('card links no canvas');
       const others = args.includes('--keep') ? [] : linksTo(subcanvas, board, rest[0]);
-      writeOps(board, expandOps(readBoard(board), rest[0], readBoard(subcanvas)));
+      writeOps(board, expandOps(readBoard(board), { id: rest[0], subcanvas: readBoard(subcanvas) }));
       if (args.includes('--keep')) console.log('unpacked (copy), kept', subcanvas);
       else if (others.length) console.log('unpacked, kept', subcanvas, '- still linked from:', others.join(', '));
       else { toTrash(subcanvas); console.log('unpacked (dissolve), trashed', subcanvas); }
@@ -103,13 +103,13 @@ const option = name => { const index = args.indexOf(name); return index >= 0 ? a
     }
     case 'merge': console.log(writeOps(board, mergeOps(readBoard(board), (option('--ids') || '').split(',').filter(Boolean)))); break;
     case 'split': console.log(writeOps(board, splitOps(readBoard(board), rest[0], option('--by') || 'paragraph'))); break;
-    case 'extract': console.log(writeOps(board, extractOps(readBoard(board), rest[0], option('--text') || ''))); break;
+    case 'extract': console.log(writeOps(board, extractOps(readBoard(board), { id: rest[0], part: option('--text') || '' }))); break;
     case 'archive': {
       const canvasData = readBoard(board);
       const ids = rest[0].split(',');
       for (const id of ids) {
         const node = canvasData.nodes.find(node => node.id === id);
-        const archived = archiveNote(canvasData, id, board, today(), node && cardContexts(node));
+        const archived = archiveNote(canvasData, { id, board, date: today(), contexts: node && cardContexts(node) });
         const folder = archiveDir(board, settings());
         const file = freePath(folder, archived.name, '.md');
         fileSystem.mkdirSync(vaultPath(folder), { recursive: true });

@@ -189,9 +189,11 @@ class CanvasBoardPlugin extends Plugin {
           const file = this.freePath(folder, name, '.canvas');
           const { operations, subcanvas } = library.collapseOps(
             canvas.getData(),
-            selection.map((node) => node.id),
-            file,
-            name,
+            {
+              ids: selection.map((node) => node.id),
+              file,
+              label: name,
+            },
           );
           await this.app.vault.create(
             file,
@@ -296,7 +298,7 @@ class CanvasBoardPlugin extends Plugin {
         if (savedNode) savedNode.text = before; // the editor may not have saved yet: work from what it showed
         this.edit(
           canvas,
-          library.extractOps(canvasData, node.id, part, from),
+          library.extractOps(canvasData, { id: node.id, part, from }),
           canvasData,
         );
       },
@@ -316,13 +318,12 @@ class CanvasBoardPlugin extends Plugin {
         }
         const notes = [];
         for (const node of selection) {
-          const archived = library.archiveNote(
-            canvasData,
-            node.id,
+          const archived = library.archiveNote(canvasData, {
+            id: node.id,
             board,
-            window.moment().format('YYYY-MM-DD'),
-            this.cardContexts(node, board),
-          );
+            date: window.moment().format('YYYY-MM-DD'),
+            contexts: this.cardContexts(node, board),
+          });
           notes.push(this.freePath(folder + '/', archived.name, '.md'));
           await this.app.vault.create(
             notes[notes.length - 1],
@@ -1824,12 +1825,11 @@ class CanvasBoardPlugin extends Plugin {
       ((node.getData().text || '').match(/\|([^\]]+)\]\]/) || [])[1] ||
       file.basename
     ).trim(); // the card's alias, else the file name
-    const operations = this.boardLibrary.expandOps(
-      canvas.getData(),
-      node.id,
-      { nodes: subcanvas.nodes || [], edges: subcanvas.edges || [] },
-      mode === 'group' ? { group: label } : {},
-    );
+    const operations = this.boardLibrary.expandOps(canvas.getData(), {
+      id: node.id,
+      subcanvas: { nodes: subcanvas.nodes || [], edges: subcanvas.edges || [] },
+      group: mode === 'group' ? label : undefined,
+    });
     const here = this.canvasFile(canvas);
     const isSub = (from) => (target) => {
       const destination = this.app.metadataCache.getFirstLinkpathDest(

@@ -222,27 +222,27 @@ var require_vaultFileIndex = __commonJS({
       load() {
         if (!this.files) {
           this.files = /* @__PURE__ */ new Map();
-          const skip = /* @__PURE__ */ new Set([...SKIP_DIRS, ...settings2().skipFolders || []]);
-          const walk = (folder) => {
-            for (const entry of fileSystem2.readdirSync(vaultPath2(folder), {
-              withFileTypes: true
-            })) {
-              if (entry.isDirectory()) {
-                if (!skip.has(entry.name)) {
-                  walk(path2.posix.join(folder, entry.name));
-                }
-                continue;
-              }
-              const relativePath = path2.posix.join(folder, entry.name);
-              const key = entry.name.endsWith(".md") ? entry.name.slice(0, -3) : entry.name;
-              if (!this.files.has(key)) this.files.set(key, relativePath);
-              this.files.set(relativePath, relativePath);
-              this.files.set(relativePath.replace(/\.md$/, ""), relativePath);
-            }
-          };
-          walk("");
+          this.skipped = /* @__PURE__ */ new Set([...SKIP_DIRS, ...settings2().skipFolders || []]);
+          this.walk("");
         }
         return this.files;
+      }
+      walk(folder) {
+        const entries = fileSystem2.readdirSync(vaultPath2(folder), {
+          withFileTypes: true
+        });
+        for (const entry of entries) {
+          const relativePath = path2.posix.join(folder, entry.name);
+          if (!entry.isDirectory()) this.add(relativePath, entry.name);
+          else if (!this.skipped.has(entry.name)) this.walk(relativePath);
+        }
+      }
+      // The first file found keeps a name shared by several.
+      add(relativePath, name) {
+        const key = name.endsWith(".md") ? name.slice(0, -3) : name;
+        if (!this.files.has(key)) this.files.set(key, relativePath);
+        this.files.set(relativePath, relativePath);
+        this.files.set(relativePath.replace(/\.md$/, ""), relativePath);
       }
     };
     module2.exports = new VaultFileIndex();
@@ -314,25 +314,39 @@ var require_notesFolder = __commonJS({
   }
 });
 
+// src/board/tryEval.js
+var require_tryEval = __commonJS({
+  "src/board/tryEval.js"(exports2, module2) {
+    var { execFileSync } = require("child_process");
+    var NOT_INSTALLED = "ENOENT";
+    function tryEval(binary, code) {
+      try {
+        const out = execFileSync(binary, ["eval", `code=${code}`], {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"]
+        });
+        const match = out.match(/=>\s?([\s\S]*)$/);
+        if (!match) throw new Error(out.trim());
+        return match[1].trim();
+      } catch (error) {
+        return error.code === "ENOENT" ? NOT_INSTALLED : null;
+      }
+    }
+    module2.exports = tryEval;
+    module2.exports.NOT_INSTALLED = NOT_INSTALLED;
+  }
+});
+
 // src/board/obsidianEval.js
 var require_obsidianEval = __commonJS({
   "src/board/obsidianEval.js"(exports2, module2) {
-    var { execFileSync } = require("child_process");
     var { OBSIDIAN } = require_constants();
+    var tryEval = require_tryEval();
+    var { NOT_INSTALLED } = tryEval;
     function obsidianEval(code) {
       for (const binary of OBSIDIAN) {
-        try {
-          const out = execFileSync(binary, ["eval", `code=${code}`], {
-            encoding: "utf8",
-            stdio: ["ignore", "pipe", "pipe"]
-          });
-          const match = out.match(/=>\s?([\s\S]*)$/);
-          if (!match) throw new Error(out.trim());
-          return match[1].trim();
-        } catch (error) {
-          if (error.code === "ENOENT") continue;
-          return null;
-        }
+        const result = tryEval(binary, code);
+        if (result !== NOT_INSTALLED) return result;
       }
       return null;
     }
@@ -508,7 +522,7 @@ var require_tree = __commonJS({
     var cardLinks2 = require_cardLinks();
     var fileSystem2 = require("fs");
     var readBoard2 = require_readBoard();
-    function tree(board, { noteInfo } = {}, depth = 0, seen = /* @__PURE__ */ new Set()) {
+    function tree(board, { noteInfo, depth = 0, seen = /* @__PURE__ */ new Set() } = {}) {
       seen.add(board);
       const canvasData = readBoard2(board);
       return {
@@ -532,7 +546,7 @@ var require_tree = __commonJS({
             };
           }
           if (canvas && !seen.has(canvas) && depth < 2) {
-            card.inside = tree(canvas, { noteInfo }, depth + 1, seen);
+            card.inside = tree(canvas, { noteInfo, depth: depth + 1, seen });
           }
           return card;
         }),
@@ -579,66 +593,122 @@ var require_tree2 = __commonJS({
   }
 });
 
+// src/board/operations/removeNode.js
+var require_removeNode = __commonJS({
+  "src/board/operations/removeNode.js"(exports2, module2) {
+    function removeNode(canvasData, operation) {
+      canvasData.nodes = canvasData.nodes.filter(
+        (node) => node.id !== operation.id
+      );
+      canvasData.edges = canvasData.edges.filter(
+        (edge) => edge.fromNode !== operation.id && edge.toNode !== operation.id
+      );
+    }
+    module2.exports = removeNode;
+  }
+});
+
+// src/board/operations/retype.js
+var require_retype = __commonJS({
+  "src/board/operations/retype.js"(exports2, module2) {
+    var OTHER_TYPE = { file: "text", text: "file" };
+    function retype(node, type, value) {
+      const isRetyped = node.type !== type;
+      node.type = type;
+      node[type] = value;
+      delete node[OTHER_TYPE[type]];
+      return isRetyped;
+    }
+    module2.exports = retype;
+  }
+});
+
+// src/board/operations/setColor.js
+var require_setColor = __commonJS({
+  "src/board/operations/setColor.js"(exports2, module2) {
+    function setColor(node, color) {
+      if (color) node.color = color;
+      else delete node.color;
+    }
+    module2.exports = setColor;
+  }
+});
+
+// src/board/operations/setNode.js
+var require_setNode = __commonJS({
+  "src/board/operations/setNode.js"(exports2, module2) {
+    var retype = require_retype();
+    var setColor = require_setColor();
+    var GEOMETRY = ["x", "y", "width", "height"];
+    function setNode(canvasData, operation) {
+      const node = canvasData.nodes.find((node2) => node2.id === operation.id);
+      if (!node) throw new Error("no node " + operation.id);
+      if (operation.color !== void 0) setColor(node, operation.color);
+      const retyped = [];
+      if (operation.file !== void 0 && retype(node, "file", operation.file)) {
+        retyped.push(node.id);
+      }
+      if (operation.text !== void 0 && retype(node, "text", operation.text)) {
+        retyped.push(node.id);
+      }
+      for (const field of GEOMETRY) {
+        if (operation[field] !== void 0) node[field] = operation[field];
+      }
+      return retyped;
+    }
+    module2.exports = setNode;
+  }
+});
+
+// src/board/operations/updateEdge.js
+var require_updateEdge = __commonJS({
+  "src/board/operations/updateEdge.js"(exports2, module2) {
+    function updateEdge(canvasData, operation, fields) {
+      const edge = canvasData.edges.find((edge2) => edge2.id === operation.id);
+      if (!edge) return;
+      for (const field of fields) edge[field] = operation[field];
+    }
+    module2.exports = updateEdge;
+  }
+});
+
+// src/board/operations/handlers.js
+var require_handlers = __commonJS({
+  "src/board/operations/handlers.js"(exports2, module2) {
+    var removeNode = require_removeNode();
+    var setNode = require_setNode();
+    var updateEdge = require_updateEdge();
+    module2.exports = {
+      set: setNode,
+      add: (canvasData, operation) => {
+        canvasData.nodes.push(operation.node);
+      },
+      remove: removeNode,
+      edge: (canvasData, operation) => {
+        canvasData.edges.push(operation.edge);
+      },
+      unedge: (canvasData, operation) => {
+        canvasData.edges = canvasData.edges.filter(
+          (edge) => edge.id !== operation.id
+        );
+      },
+      sides: (canvasData, operation) => updateEdge(canvasData, operation, ["fromSide", "toSide"]),
+      retarget: (canvasData, operation) => updateEdge(canvasData, operation, ["fromNode", "toNode"]),
+      ends: (canvasData, operation) => updateEdge(canvasData, operation, ["fromEnd", "toEnd"])
+    };
+  }
+});
+
 // src/board/applyOps.js
 var require_applyOps = __commonJS({
   "src/board/applyOps.js"(exports2, module2) {
+    var OPERATION_HANDLERS = require_handlers();
     function applyOps(canvasData, operations) {
       const retyped = [];
       for (const operation of operations) {
-        if (operation.op === "set") {
-          const node = canvasData.nodes.find((node2) => node2.id === operation.id);
-          if (!node) throw new Error("no node " + operation.id);
-          if (operation.color !== void 0) {
-            if (operation.color) node.color = operation.color;
-            else delete node.color;
-          }
-          if (operation.file !== void 0) {
-            if (node.type !== "file") retyped.push(node.id);
-            node.type = "file";
-            node.file = operation.file;
-            delete node.text;
-          }
-          if (operation.text !== void 0) {
-            if (node.type !== "text") retyped.push(node.id);
-            node.type = "text";
-            node.text = operation.text;
-            delete node.file;
-          }
-          for (const field of ["x", "y", "width", "height"]) {
-            if (operation[field] !== void 0) node[field] = operation[field];
-          }
-        } else if (operation.op === "sides") {
-          const edge = canvasData.edges.find((edge2) => edge2.id === operation.id);
-          if (edge) {
-            edge.fromSide = operation.fromSide;
-            edge.toSide = operation.toSide;
-          }
-        } else if (operation.op === "add") canvasData.nodes.push(operation.node);
-        else if (operation.op === "remove") {
-          canvasData.nodes = canvasData.nodes.filter(
-            (node) => node.id !== operation.id
-          );
-          canvasData.edges = canvasData.edges.filter(
-            (edge) => edge.fromNode !== operation.id && edge.toNode !== operation.id
-          );
-        } else if (operation.op === "edge") canvasData.edges.push(operation.edge);
-        else if (operation.op === "retarget") {
-          const edge = canvasData.edges.find((edge2) => edge2.id === operation.id);
-          if (edge) {
-            edge.fromNode = operation.fromNode;
-            edge.toNode = operation.toNode;
-          }
-        } else if (operation.op === "ends") {
-          const edge = canvasData.edges.find((edge2) => edge2.id === operation.id);
-          if (edge) {
-            edge.fromEnd = operation.fromEnd;
-            edge.toEnd = operation.toEnd;
-          }
-        } else if (operation.op === "unedge") {
-          canvasData.edges = canvasData.edges.filter(
-            (edge) => edge.id !== operation.id
-          );
-        }
+        const handler = OPERATION_HANDLERS[operation.op];
+        const retypedIds = handler ? handler(canvasData, operation) : null;
+        if (retypedIds) retyped.push(...retypedIds);
       }
       return retyped;
     }
@@ -793,7 +863,7 @@ var require_archiveNote = __commonJS({
   "src/board/archiveNote.js"(exports2, module2) {
     var noteName = require_noteName();
     var yamlStr = require_yamlStr();
-    function archiveNote2(canvasData, id, board, date, contexts = ["G&A"]) {
+    function archiveNote2(canvasData, { id, board, date, contexts = ["G&A"] }) {
       const node = canvasData.nodes.find((node2) => node2.id === id);
       if (!node) throw new Error("no node " + id);
       const edges = canvasData.edges.filter((edge) => edge.fromNode === id || edge.toNode === id).map(
@@ -887,14 +957,12 @@ var require_withGroupMembers = __commonJS({
   "src/board/withGroupMembers.js"(exports2, module2) {
     function withGroupMembers(canvasData, ids) {
       const pick = new Set(ids);
-      for (const group of canvasData.nodes.filter(
+      const groups = canvasData.nodes.filter(
         (node) => node.type === "group" && pick.has(node.id)
-      )) {
-        for (const node of canvasData.nodes) {
-          if (node.x >= group.x && node.y >= group.y && node.x + node.width <= group.x + group.width && node.y + node.height <= group.y + group.height) {
-            pick.add(node.id);
-          }
-        }
+      );
+      const isInside = (node, group) => node.x >= group.x && node.y >= group.y && node.x + node.width <= group.x + group.width && node.y + node.height <= group.y + group.height;
+      for (const node of canvasData.nodes) {
+        if (groups.some((group) => isInside(node, group))) pick.add(node.id);
       }
       return pick;
     }
@@ -908,7 +976,7 @@ var require_collapseOps = __commonJS({
     var bounds = require_bounds();
     var newId2 = require_newId();
     var withGroupMembers = require_withGroupMembers();
-    function collapseOps2(canvasData, ids, file, label) {
+    function collapseOps2(canvasData, { ids, file, label }) {
       const pick = withGroupMembers(canvasData, ids);
       const moving = canvasData.nodes.filter((node) => pick.has(node.id));
       if (!moving.length) throw new Error("nothing to collapse");
@@ -971,6 +1039,65 @@ var require_defaultDir = __commonJS({
   }
 });
 
+// src/board/groupAround.js
+var require_groupAround = __commonJS({
+  "src/board/groupAround.js"(exports2, module2) {
+    var newId2 = require_newId();
+    var PADDING = 30;
+    function groupAround(nodes, label) {
+      const x = Math.min(...nodes.map((node) => node.x)) - PADDING;
+      const y = Math.min(...nodes.map((node) => node.y)) - PADDING;
+      const right = Math.max(...nodes.map((node) => node.x + node.width));
+      const bottom = Math.max(...nodes.map((node) => node.y + node.height));
+      return {
+        id: newId2(),
+        type: "group",
+        label,
+        x,
+        y,
+        width: right + PADDING - x,
+        height: bottom + PADDING - y
+      };
+    }
+    module2.exports = groupAround;
+  }
+});
+
+// src/board/overlapsAny.js
+var require_overlapsAny = __commonJS({
+  "src/board/overlapsAny.js"(exports2, module2) {
+    var GAP = 40;
+    function overlapsAny(moving, others, offset) {
+      const isNear = (card, other) => card.x + offset.x < other.x + other.width + GAP && card.x + offset.x + card.width + GAP > other.x && card.y + offset.y < other.y + other.height + GAP && card.y + offset.y + card.height + GAP > other.y;
+      return moving.some((card) => others.some((other) => isNear(card, other)));
+    }
+    module2.exports = overlapsAny;
+  }
+});
+
+// src/board/centeredFreeOffset.js
+var require_centeredFreeOffset = __commonJS({
+  "src/board/centeredFreeOffset.js"(exports2, module2) {
+    var bounds = require_bounds();
+    var overlapsAny = require_overlapsAny();
+    var STEP = 40;
+    var MAX_STEPS = 200;
+    function centeredFreeOffset(nodes, card, others) {
+      const box = bounds(nodes);
+      const offset = {
+        x: Math.round(card.x + (card.width - box.w) / 2) - box.x,
+        y: Math.round(card.y + (card.height - box.h) / 2) - box.y
+      };
+      for (let step = 0; step < MAX_STEPS; step++) {
+        if (!overlapsAny(nodes, others, offset)) break;
+        offset.x += STEP;
+      }
+      return offset;
+    }
+    module2.exports = centeredFreeOffset;
+  }
+});
+
 // src/board/byReading.js
 var require_byReading = __commonJS({
   "src/board/byReading.js"(exports2, module2) {
@@ -979,81 +1106,75 @@ var require_byReading = __commonJS({
   }
 });
 
+// src/board/firstInReading.js
+var require_firstInReading = __commonJS({
+  "src/board/firstInReading.js"(exports2, module2) {
+    var byReading = require_byReading();
+    function firstInReading(nodes) {
+      return nodes.filter((node) => node.type !== "group").sort(byReading)[0] || nodes[0];
+    }
+    module2.exports = firstInReading;
+  }
+});
+
+// src/board/retargetOps.js
+var require_retargetOps = __commonJS({
+  "src/board/retargetOps.js"(exports2, module2) {
+    function retargetOps(edges, fromId, toId) {
+      return edges.filter((edge) => edge.fromNode === fromId || edge.toNode === fromId).map((edge) => ({
+        op: "retarget",
+        id: edge.id,
+        fromNode: edge.fromNode === fromId ? toId : edge.fromNode,
+        toNode: edge.toNode === fromId ? toId : edge.toNode
+      }));
+    }
+    module2.exports = retargetOps;
+  }
+});
+
 // src/board/expandOps.js
 var require_expandOps = __commonJS({
   "src/board/expandOps.js"(exports2, module2) {
-    var bounds = require_bounds();
-    var byReading = require_byReading();
+    var groupAround = require_groupAround();
     var newId2 = require_newId();
-    function expandOps2(canvasData, id, subcanvas, { group } = {}) {
+    var centeredFreeOffset = require_centeredFreeOffset();
+    var firstInReading = require_firstInReading();
+    var retargetOps = require_retargetOps();
+    function expandOps2(canvasData, { id, subcanvas, group }) {
       const card = canvasData.nodes.find((node) => node.id === id);
       if (!card) throw new Error("no node " + id);
       if (!subcanvas.nodes.length) throw new Error("empty subcanvas");
       const taken = new Set(
-        canvasData.nodes.map((node) => node.id).concat(canvasData.edges.map((edge) => edge.id))
+        [...canvasData.nodes, ...canvasData.edges].map((item) => item.id)
       );
+      const freeId = (itemId) => taken.has(itemId) ? newId2() : itemId;
       const ids = new Map(
-        subcanvas.nodes.map((node) => [
-          node.id,
-          taken.has(node.id) ? newId2() : node.id
-        ])
+        subcanvas.nodes.map((node) => [node.id, freeId(node.id)])
       );
-      const box = bounds(subcanvas.nodes);
       const others = canvasData.nodes.filter((node) => node.id !== id);
-      let offsetX = Math.round(card.x + (card.width - box.w) / 2) - box.x;
-      const offsetY = Math.round(card.y + (card.height - box.h) / 2) - box.y;
-      const hits = () => subcanvas.nodes.some(
-        (subNode) => others.some(
-          (node) => subNode.x + offsetX < node.x + node.width + 40 && subNode.x + offsetX + subNode.width + 40 > node.x && subNode.y + offsetY < node.y + node.height + 40 && subNode.y + offsetY + subNode.height + 40 > node.y
-        )
-      );
-      for (let attempt = 0; attempt < 200 && hits(); attempt++) offsetX += 40;
+      const offset = centeredFreeOffset(subcanvas.nodes, card, others);
       const nodes = subcanvas.nodes.map((node) => ({
         ...node,
         id: ids.get(node.id),
-        x: node.x + offsetX,
-        y: node.y + offsetY
+        x: node.x + offset.x,
+        y: node.y + offset.y
       }));
-      let first = nodes.filter((node) => node.type !== "group").sort(byReading)[0] || nodes[0];
-      const operations = [];
-      if (group) {
-        const padding = 30;
-        const groupX = Math.min(...nodes.map((node) => node.x)) - padding, groupY = Math.min(...nodes.map((node) => node.y)) - padding;
-        first = {
-          id: newId2(),
-          type: "group",
-          label: group,
-          x: groupX,
-          y: groupY,
-          width: Math.max(...nodes.map((node) => node.x + node.width)) + padding - groupX,
-          height: Math.max(...nodes.map((node) => node.y + node.height)) + padding - groupY
-        };
-        operations.push({ op: "add", node: first });
-      }
-      operations.push(...nodes.map((node) => ({ op: "add", node })));
-      for (const edge of subcanvas.edges) {
-        operations.push({
-          op: "edge",
-          edge: {
-            ...edge,
-            id: taken.has(edge.id) ? newId2() : edge.id,
-            fromNode: ids.get(edge.fromNode),
-            toNode: ids.get(edge.toNode)
-          }
-        });
-      }
-      for (const edge of canvasData.edges) {
-        if (edge.fromNode === id || edge.toNode === id) {
-          operations.push({
-            op: "retarget",
-            id: edge.id,
-            fromNode: edge.fromNode === id ? first.id : edge.fromNode,
-            toNode: edge.toNode === id ? first.id : edge.toNode
-          });
-        }
-      }
-      operations.push({ op: "remove", id });
-      return group ? Object.assign(operations, { group: first.id }) : operations;
+      const frame = group ? groupAround(nodes, group) : null;
+      const target = frame || firstInReading(nodes);
+      const edges = subcanvas.edges.map((edge) => ({
+        ...edge,
+        id: freeId(edge.id),
+        fromNode: ids.get(edge.fromNode),
+        toNode: ids.get(edge.toNode)
+      }));
+      const operations = [
+        ...frame ? [{ op: "add", node: frame }] : [],
+        ...nodes.map((node) => ({ op: "add", node })),
+        ...edges.map((edge) => ({ op: "edge", edge })),
+        ...retargetOps(canvasData.edges, id, target.id),
+        { op: "remove", id }
+      ];
+      return frame ? Object.assign(operations, { group: frame.id }) : operations;
     }
     module2.exports = expandOps2;
   }
@@ -1084,7 +1205,7 @@ var require_extractOps = __commonJS({
   "src/board/extractOps.js"(exports2, module2) {
     var fitHeight2 = require_fitHeight();
     var newId2 = require_newId();
-    function extractOps2(canvasData, id, part, from) {
+    function extractOps2(canvasData, { id, part, from }) {
       const card = canvasData.nodes.find((node2) => node2.id === id);
       if (!card || card.type !== "text") {
         throw new Error("extract takes one text card");
@@ -1138,49 +1259,38 @@ var require_freePath = __commonJS({
   }
 });
 
-// src/board/layoutOps.js
-var require_layoutOps = __commonJS({
-  "src/board/layoutOps.js"(exports2, module2) {
-    var { SIDES: SIDES2 } = require_constants();
+// src/board/isBackEdge.js
+var require_isBackEdge = __commonJS({
+  "src/board/isBackEdge.js"(exports2, module2) {
+    function isBackEdge(edge, flow) {
+      return flow === "in" || /depends on/i.test(edge.label || "");
+    }
+    module2.exports = isBackEdge;
+  }
+});
+
+// src/board/dagrePlacement.js
+var require_dagrePlacement = __commonJS({
+  "src/board/dagrePlacement.js"(exports2, module2) {
     var fitHeight2 = require_fitHeight();
-    function layoutOps2(canvasData, { ids, direction = "TB", isFitToText = false, dagre, flow = "out" }) {
-      const cards = canvasData.nodes.filter((node) => node.type !== "group");
-      const pick = new Set(ids && ids.length ? ids : cards.map((node) => node.id));
-      const moving = cards.filter((node) => pick.has(node.id));
-      const fixed = cards.filter((node) => !pick.has(node.id));
-      if (!moving.length) return [];
+    var isBackEdge = require_isBackEdge();
+    var GRAPH = { nodesep: 40, ranksep: 80, marginx: 0, marginy: 0 };
+    function dagrePlacement(moving, inner, layout) {
+      const { dagre, direction, flow, isFitToText } = layout;
       const graph = new dagre.graphlib.Graph();
-      graph.setGraph({
-        rankdir: direction,
-        nodesep: 40,
-        ranksep: 80,
-        marginx: 0,
-        marginy: 0
-      });
+      graph.setGraph({ ...GRAPH, rankdir: direction });
       graph.setDefaultEdgeLabel(() => ({}));
-      const size = (node) => ({
-        width: node.width,
-        height: isFitToText && node.type === "text" ? fitHeight2(node.text, node.width) : node.height
-      });
-      for (const node of moving) graph.setNode(node.id, size(node));
-      const inner = canvasData.edges.filter(
-        (edge) => pick.has(edge.fromNode) && pick.has(edge.toNode)
-      );
-      const back = (edge) => flow === "in" || /depends on/i.test(edge.label || "");
+      for (const node of moving) {
+        const isFitted = isFitToText && node.type === "text";
+        const height = isFitted ? fitHeight2(node.text, node.width) : node.height;
+        graph.setNode(node.id, { width: node.width, height });
+      }
       for (const edge of inner) {
-        back(edge) ? graph.setEdge(edge.toNode, edge.fromNode) : graph.setEdge(edge.fromNode, edge.toNode);
+        const [source, target] = isBackEdge(edge, flow) ? [edge.toNode, edge.fromNode] : [edge.fromNode, edge.toNode];
+        graph.setEdge(source, target);
       }
       dagre.layout(graph);
-      const box = (nodes) => nodes.reduce(
-        (box2, node) => ({
-          x0: Math.min(box2.x0, node.x),
-          y0: Math.min(box2.y0, node.y),
-          x1: Math.max(box2.x1, node.x + node.width),
-          y1: Math.max(box2.y1, node.y + node.height)
-        }),
-        { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
-      );
-      const placed = moving.map((node) => {
+      return moving.map((node) => {
         const position = graph.node(node.id);
         return {
           id: node.id,
@@ -1190,38 +1300,104 @@ var require_layoutOps = __commonJS({
           height: position.height
         };
       });
-      const placedBox = box(placed), was = box(moving);
-      const shiftX = Math.round(
-        (was.x0 + was.x1 - placedBox.x0 - placedBox.x1) / 2
-      ), shiftY = Math.round((was.y0 + was.y1 - placedBox.y0 - placedBox.y1) / 2);
-      let offsetX = shiftX, offsetY = shiftY;
-      const hits = () => placed.some(
-        (placedNode) => fixed.some(
-          (node) => placedNode.x + offsetX < node.x + node.width + 40 && placedNode.x + offsetX + placedNode.width + 40 > node.x && placedNode.y + offsetY < node.y + node.height + 40 && placedNode.y + offsetY + placedNode.height + 40 > node.y
-        )
+    }
+    module2.exports = dagrePlacement;
+  }
+});
+
+// src/board/nearestFreeOffset.js
+var require_nearestFreeOffset = __commonJS({
+  "src/board/nearestFreeOffset.js"(exports2, module2) {
+    var bounds = require_bounds();
+    var overlapsAny = require_overlapsAny();
+    var STEP = 40;
+    var MAX_STEPS = 400;
+    var ACROSS_ROWS = /* @__PURE__ */ new Set(["LR", "RL"]);
+    function nearestFreeOffset(placed, { moving, fixed, direction }) {
+      const before = bounds(moving);
+      const after = bounds(placed);
+      const center = {
+        x: Math.round((2 * before.x + before.w - 2 * after.x - after.w) / 2),
+        y: Math.round((2 * before.y + before.h - 2 * after.y - after.h) / 2)
+      };
+      const axis = ACROSS_ROWS.has(direction) ? "y" : "x";
+      const offset = { ...center };
+      for (let attempt = 1; attempt <= MAX_STEPS; attempt++) {
+        if (!overlapsAny(placed, fixed, offset)) break;
+        const side = attempt % 2 ? 1 : -1;
+        offset[axis] = center[axis] + side * Math.ceil(attempt / 2) * STEP;
+      }
+      return offset;
+    }
+    module2.exports = nearestFreeOffset;
+  }
+});
+
+// src/board/layoutOps.js
+var require_layoutOps = __commonJS({
+  "src/board/layoutOps.js"(exports2, module2) {
+    var { SIDES: SIDES2 } = require_constants();
+    var dagrePlacement = require_dagrePlacement();
+    var isBackEdge = require_isBackEdge();
+    var nearestFreeOffset = require_nearestFreeOffset();
+    function layoutOps2(canvasData, options) {
+      const { ids, direction = "TB", flow = "out" } = options;
+      const cards = canvasData.nodes.filter((node) => node.type !== "group");
+      const pick = new Set(ids && ids.length ? ids : cards.map((node) => node.id));
+      const moving = cards.filter((node) => pick.has(node.id));
+      const fixed = cards.filter((node) => !pick.has(node.id));
+      if (!moving.length) return [];
+      const inner = canvasData.edges.filter(
+        (edge) => pick.has(edge.fromNode) && pick.has(edge.toNode)
       );
-      for (let attempt = 1; attempt <= 400 && hits(); attempt++) {
-        const step = (attempt % 2 ? 1 : -1) * Math.ceil(attempt / 2) * 40;
-        if (direction === "LR" || direction === "RL") offsetY = shiftY + step;
-        else offsetX = shiftX + step;
-      }
-      const operations = placed.map((placedNode) => ({
-        op: "set",
-        id: placedNode.id,
-        x: placedNode.x + offsetX,
-        y: placedNode.y + offsetY,
-        width: placedNode.width,
-        height: placedNode.height
-      }));
+      const layout = { ...options, direction, flow };
+      const placed = dagrePlacement(moving, inner, layout);
+      const offset = nearestFreeOffset(placed, { moving, fixed, direction });
       const [fromSide, toSide] = SIDES2[direction];
-      for (const edge of inner) {
-        operations.push(
-          back(edge) ? { op: "sides", id: edge.id, fromSide: toSide, toSide: fromSide } : { op: "sides", id: edge.id, fromSide, toSide }
-        );
-      }
-      return operations;
+      const sides = (edge) => isBackEdge(edge, flow) ? { fromSide: toSide, toSide: fromSide } : { fromSide, toSide };
+      return [
+        ...placed.map((card) => ({
+          op: "set",
+          id: card.id,
+          x: card.x + offset.x,
+          y: card.y + offset.y,
+          width: card.width,
+          height: card.height
+        })),
+        ...inner.map((edge) => ({ op: "sides", id: edge.id, ...sides(edge) }))
+      ];
     }
     module2.exports = layoutOps2;
+  }
+});
+
+// src/board/parseOrNull.js
+var require_parseOrNull = __commonJS({
+  "src/board/parseOrNull.js"(exports2, module2) {
+    function parseOrNull(json) {
+      try {
+        return JSON.parse(json || "{}");
+      } catch {
+        return null;
+      }
+    }
+    module2.exports = parseOrNull;
+  }
+});
+
+// src/board/readOrNull.js
+var require_readOrNull = __commonJS({
+  "src/board/readOrNull.js"(exports2, module2) {
+    var fileSystem2 = require("fs");
+    var vaultPath2 = require_vaultPath();
+    function readOrNull(relativePath) {
+      try {
+        return fileSystem2.readFileSync(vaultPath2(relativePath), "utf8");
+      } catch {
+        return null;
+      }
+    }
+    module2.exports = readOrNull;
   }
 });
 
@@ -1232,9 +1408,12 @@ var require_relinkText = __commonJS({
     function relinkText(text, hits, replace) {
       return (text || "").replace(
         /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
-        (link, target, subpath, alias) => hits(target.trim()) ? replace(
-          alias || path2.posix.basename(target.trim()).replace(/\.canvas$/, "")
-        ) : link
+        (link, ...groups) => {
+          const [target, , alias] = groups;
+          if (!hits(target.trim())) return link;
+          const name = path2.posix.basename(target.trim()).replace(/\.canvas$/, "");
+          return replace(alias || name);
+        }
       );
     }
     module2.exports = relinkText;
@@ -1244,43 +1423,120 @@ var require_relinkText = __commonJS({
 // src/board/linksTo.js
 var require_linksTo = __commonJS({
   "src/board/linksTo.js"(exports2, module2) {
-    var vaultPath2 = require_vaultPath();
     var findFile = require_findFile();
-    var fileSystem2 = require("fs");
+    var parseOrNull = require_parseOrNull();
     var path2 = require("path");
+    var readOrNull = require_readOrNull();
     var relinkText = require_relinkText();
     var vaultFileIndex = require_vaultFileIndex();
+    var LINKABLE = /\.(md|canvas)$/;
     function linksTo2(relativePath, board, skipId) {
-      const out = [];
       const hits = (target) => findFile(target) === relativePath;
+      const isLinking = (text) => relinkText(text, hits, () => "\0") !== (text || "");
+      const isLinkingCard = (node) => node.type === "file" ? node.file === relativePath : isLinking(node.text);
+      const linksIn = (file, source) => {
+        if (file.endsWith(".md")) return isLinking(source) ? [file] : [];
+        const nodes = (parseOrNull(source) || {}).nodes || [];
+        return nodes.filter((node) => !(file === board && node.id === skipId)).filter(isLinkingCard).map((node) => `${file} (${node.id})`);
+      };
+      const name = path2.posix.basename(relativePath);
+      const found = [];
       for (const file of vaultFileIndex.paths()) {
-        if (file === relativePath || !/\.(md|canvas)$/.test(file)) continue;
-        let source;
-        try {
-          source = fileSystem2.readFileSync(vaultPath2(file), "utf8");
-        } catch (error) {
-          continue;
-        }
-        if (!source.includes(path2.posix.basename(relativePath))) continue;
-        if (file.endsWith(".md")) {
-          if (relinkText(source, hits, () => "\0") !== source) out.push(file);
-          continue;
-        }
-        let canvasData;
-        try {
-          canvasData = JSON.parse(source || "{}");
-        } catch (error) {
-          continue;
-        }
-        for (const node of canvasData.nodes || []) {
-          if (!(file === board && node.id === skipId) && (node.type === "file" ? node.file === relativePath : relinkText(node.text, hits, () => "\0") !== (node.text || ""))) {
-            out.push(`${file} (${node.id})`);
-          }
-        }
+        if (file === relativePath || !LINKABLE.test(file)) continue;
+        const source = readOrNull(file);
+        if (source && source.includes(name)) found.push(...linksIn(file, source));
       }
-      return out;
+      return found;
     }
     module2.exports = linksTo2;
+  }
+});
+
+// src/board/centerDistance.js
+var require_centerDistance = __commonJS({
+  "src/board/centerDistance.js"(exports2, module2) {
+    function centerDistance(first, second) {
+      const center = (node) => [node.x + node.width / 2, node.y + node.height / 2];
+      const [firstX, firstY] = center(first);
+      const [secondX, secondY] = center(second);
+      return Math.hypot(firstX - secondX, firstY - secondY);
+    }
+    module2.exports = centerDistance;
+  }
+});
+
+// src/board/isTwoWay.js
+var require_isTwoWay = __commonJS({
+  "src/board/isTwoWay.js"(exports2, module2) {
+    function isTwoWay(edge) {
+      return edge.fromEnd === "arrow" && edge.toEnd !== "none";
+    }
+    module2.exports = isTwoWay;
+  }
+});
+
+// src/board/keptEdgeOps.js
+var require_keptEdgeOps = __commonJS({
+  "src/board/keptEdgeOps.js"(exports2, module2) {
+    var isTwoWay = require_isTwoWay();
+    function keptEdgeOps(links, { keep, gone }) {
+      const sorted = [...links].sort(
+        (first, second) => first.length - second.length
+      );
+      const best = sorted.find((link) => isTwoWay(link.edge)) || sorted[0];
+      const hasBothWays = links.some((link) => link.isOutgoing) && links.some((link) => !link.isOutgoing);
+      const operations = sorted.filter((link) => link !== best).map((link) => ({ op: "unedge", id: link.edge.id }));
+      const { edge } = best;
+      if (gone.has(edge.fromNode) || gone.has(edge.toNode)) {
+        operations.push({
+          op: "retarget",
+          id: edge.id,
+          fromNode: gone.has(edge.fromNode) ? keep.id : edge.fromNode,
+          toNode: gone.has(edge.toNode) ? keep.id : edge.toNode
+        });
+      }
+      if (hasBothWays && !isTwoWay(edge)) {
+        operations.push({
+          op: "ends",
+          id: edge.id,
+          fromEnd: "arrow",
+          toEnd: "arrow"
+        });
+      }
+      return operations;
+    }
+    module2.exports = keptEdgeOps;
+  }
+});
+
+// src/board/mergeEdgeOps.js
+var require_mergeEdgeOps = __commonJS({
+  "src/board/mergeEdgeOps.js"(exports2, module2) {
+    var centerDistance = require_centerDistance();
+    var keptEdgeOps = require_keptEdgeOps();
+    function mergeEdgeOps(canvasData, { keep, gone }) {
+      const merged = /* @__PURE__ */ new Set([keep.id, ...gone]);
+      const nodeById = (id) => canvasData.nodes.find((node) => node.id === id);
+      const operations = [];
+      const linksByOther = /* @__PURE__ */ new Map();
+      for (const edge of canvasData.edges) {
+        const isOutgoing = merged.has(edge.fromNode);
+        const isIncoming = merged.has(edge.toNode);
+        const isInside = isOutgoing && isIncoming;
+        const touchesGone = gone.has(edge.fromNode) || gone.has(edge.toNode);
+        if (isInside && touchesGone) operations.push({ op: "unedge", id: edge.id });
+        if (isInside || !isOutgoing && !isIncoming) continue;
+        const [mine, other] = isOutgoing ? [edge.fromNode, edge.toNode] : [edge.toNode, edge.fromNode];
+        const length = centerDistance(nodeById(mine), nodeById(other) || keep);
+        if (!linksByOther.has(other)) linksByOther.set(other, []);
+        linksByOther.get(other).push({ edge, isOutgoing, length });
+      }
+      for (const links of linksByOther.values()) {
+        operations.push(...keptEdgeOps(links, { keep, gone }));
+      }
+      return operations;
+    }
+    module2.exports = mergeEdgeOps;
   }
 });
 
@@ -1298,6 +1554,7 @@ var require_mergeOps = __commonJS({
   "src/board/mergeOps.js"(exports2, module2) {
     var byReading = require_byReading();
     var fitHeight2 = require_fitHeight();
+    var mergeEdgeOps = require_mergeEdgeOps();
     var mostUrgent = require_mostUrgent();
     function mergeOps2(canvasData, ids) {
       const cards = canvasData.nodes.filter((node) => ids.includes(node.id)).sort(byReading);
@@ -1307,71 +1564,15 @@ var require_mergeOps = __commonJS({
       }
       const [keep, ...rest] = cards;
       const gone = new Set(rest.map((node) => node.id));
-      const all = new Set(cards.map((node) => node.id));
       const text = cards.map((node) => node.text.trim()).join("\n\n");
       const width = Math.max(...cards.map((node) => node.width));
-      const operations = [
-        {
-          op: "set",
-          id: keep.id,
-          text,
-          color: mostUrgent(cards.map((node) => node.color || "")),
-          width,
-          height: fitHeight2(text, width)
-        }
+      const color = mostUrgent(cards.map((node) => node.color || ""));
+      const height = fitHeight2(text, width);
+      return [
+        { op: "set", id: keep.id, text, color, width, height },
+        ...mergeEdgeOps(canvasData, { keep, gone }),
+        ...rest.map((node) => ({ op: "remove", id: node.id }))
       ];
-      const center = (node) => [node.x + node.width / 2, node.y + node.height / 2];
-      const distance = (first, second) => Math.hypot(
-        center(first)[0] - center(second)[0],
-        center(first)[1] - center(second)[1]
-      );
-      const twoWay = (edge) => edge.fromEnd === "arrow" && edge.toEnd !== "none";
-      const byOther = /* @__PURE__ */ new Map();
-      for (const edge of canvasData.edges) {
-        if (!all.has(edge.fromNode) && !all.has(edge.toNode)) continue;
-        if (all.has(edge.fromNode) && all.has(edge.toNode)) {
-          if (gone.has(edge.fromNode) || gone.has(edge.toNode)) {
-            operations.push({ op: "unedge", id: edge.id });
-          }
-          continue;
-        }
-        const out = all.has(edge.fromNode), other = out ? edge.toNode : edge.fromNode;
-        const length = distance(
-          canvasData.nodes.find(
-            (node) => node.id === (out ? edge.fromNode : edge.toNode)
-          ),
-          canvasData.nodes.find((node) => node.id === other) || keep
-        );
-        if (!byOther.has(other)) byOther.set(other, []);
-        byOther.get(other).push({ edge, out, length });
-      }
-      for (const list of byOther.values()) {
-        list.sort((first, second) => first.length - second.length);
-        const best = list.find((x) => twoWay(x.edge)) || list[0];
-        const both = list.some((x) => x.out) && list.some((x) => !x.out);
-        for (const x of list) {
-          if (x !== best) operations.push({ op: "unedge", id: x.edge.id });
-        }
-        const edge = best.edge;
-        if (gone.has(edge.fromNode) || gone.has(edge.toNode)) {
-          operations.push({
-            op: "retarget",
-            id: edge.id,
-            fromNode: gone.has(edge.fromNode) ? keep.id : edge.fromNode,
-            toNode: gone.has(edge.toNode) ? keep.id : edge.toNode
-          });
-        }
-        if (both && !twoWay(edge)) {
-          operations.push({
-            op: "ends",
-            id: edge.id,
-            fromEnd: "arrow",
-            toEnd: "arrow"
-          });
-        }
-      }
-      for (const node of rest) operations.push({ op: "remove", id: node.id });
-      return operations;
     }
     module2.exports = mergeOps2;
   }
@@ -1380,7 +1581,7 @@ var require_mergeOps = __commonJS({
 // src/board/place.js
 var require_place = __commonJS({
   "src/board/place.js"(exports2, module2) {
-    function place2(canvasData, near, width, height) {
+    function place2(canvasData, { near, width, height }) {
       const nearNode = canvasData.nodes.find((node) => node.id === near);
       if (!nearNode) throw new Error("no node " + near);
       const overlaps = (x, y) => canvasData.nodes.some(
@@ -4690,7 +4891,7 @@ var option = (name) => {
     }
     case "add": {
       const width = Number(option("--width") || 320), height = Number(option("--height") || fitHeight(option("--text"), width));
-      const position = place(readBoard(board), option("--near"), width, height);
+      const position = place(readBoard(board), { near: option("--near"), width, height });
       const node = { id: newId(), type: "text", text: option("--text") || "", x: position.x, y: position.y, width, height };
       const color = colorArg(option("--color"));
       if (color) node.color = color;
@@ -4725,7 +4926,7 @@ var option = (name) => {
       const name = option("--name");
       if (!name) throw new Error("collapse needs --name");
       const file = freePath(path.posix.dirname(board), name, ".canvas");
-      const { operations, subcanvas, id } = collapseOps(readBoard(board), (option("--ids") || "").split(",").filter(Boolean), file, name);
+      const { operations, subcanvas, id } = collapseOps(readBoard(board), { ids: (option("--ids") || "").split(",").filter(Boolean), file, label: name });
       fileSystem.writeFileSync(vaultPath(file), serialize(subcanvas));
       writeOps(board, operations);
       console.log(file, id);
@@ -4737,7 +4938,7 @@ var option = (name) => {
       const subcanvas = card && cardLinks(card).canvas;
       if (!subcanvas) throw new Error("card links no canvas");
       const others = args.includes("--keep") ? [] : linksTo(subcanvas, board, rest[0]);
-      writeOps(board, expandOps(readBoard(board), rest[0], readBoard(subcanvas)));
+      writeOps(board, expandOps(readBoard(board), { id: rest[0], subcanvas: readBoard(subcanvas) }));
       if (args.includes("--keep")) console.log("unpacked (copy), kept", subcanvas);
       else if (others.length) console.log("unpacked, kept", subcanvas, "- still linked from:", others.join(", "));
       else {
@@ -4753,14 +4954,14 @@ var option = (name) => {
       console.log(writeOps(board, splitOps(readBoard(board), rest[0], option("--by") || "paragraph")));
       break;
     case "extract":
-      console.log(writeOps(board, extractOps(readBoard(board), rest[0], option("--text") || "")));
+      console.log(writeOps(board, extractOps(readBoard(board), { id: rest[0], part: option("--text") || "" })));
       break;
     case "archive": {
       const canvasData = readBoard(board);
       const ids = rest[0].split(",");
       for (const id of ids) {
         const node = canvasData.nodes.find((node2) => node2.id === id);
-        const archived = archiveNote(canvasData, id, board, today(), node && cardContexts(node));
+        const archived = archiveNote(canvasData, { id, board, date: today(), contexts: node && cardContexts(node) });
         const folder = archiveDir(board, settings());
         const file = freePath(folder, archived.name, ".md");
         fileSystem.mkdirSync(vaultPath(folder), { recursive: true });

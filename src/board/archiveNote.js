@@ -2,7 +2,7 @@ const noteName = require('./noteName.js');
 const yamlStr = require('./yamlStr.js');
 
 // Returns { name, content, ops }. `contexts`: the context of the note the archived card links, else G&A.
-function archiveNote(canvasData, id, board, date, contexts = ['G&A']) {
+function archiveNote(canvasData, { id, board, date, contexts = ['G&A'] }) {
   const node = canvasData.nodes.find((node) => node.id === id);
   if (!node) throw new Error('no node ' + id);
   const edges = canvasData.edges
