@@ -31,7 +31,7 @@ a.el = el;
 a.refresh();
 assert.strictEqual(el.shown, false, 'hidden in a regular note');
 assert.strictEqual(el.text, '');
-a.record(['Plans.canvas#a']);
+a.record(['Board.canvas#a']);
 assert.strictEqual(a.pace(), 1);
 assert.strictEqual(el.shown, false);
 canvas = {};
