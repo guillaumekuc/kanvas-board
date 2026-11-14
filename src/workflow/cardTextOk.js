@@ -1,5 +1,3 @@
-// --- Check --------------------------------------------------------------------------------------------
-
 // Structure only, never content: the invariants the skill states. A check that
 // never fires in a month gets deleted; a new one only after the same defect
 // shows up twice. A card the agent wrote: a wish (≤ 3 lines), `[[Note]] ·

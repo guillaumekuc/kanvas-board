@@ -171,7 +171,8 @@ class ApmCounter {
       this.element.addClass('apm-' + state);
       this.state = state;
     }
-    const text = `${pace} ${rateName(settings.windowMinutes)} · PB ${settings.pb}`;
+    const text =
+      `${pace} ${rateName(settings.windowMinutes)} · PB ` + `${settings.pb}`;
     if (this.text !== text) {
       this.element.setText(text);
       this.text = text;

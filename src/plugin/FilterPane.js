@@ -163,7 +163,9 @@ class FilterPane {
       const chip = this.colorsEl.createDiv({
         cls: 'canvas-board-swatch',
         attr: {
-          'aria-label': `${label} · ${count} cards · click to ${action} · shift-click to select`,
+          'aria-label':
+            `${label} · ${count} cards · click to ${action} · shift-click ` +
+            `to select`,
         },
       });
       chip.toggleClass('is-out', isOut);

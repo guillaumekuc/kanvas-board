@@ -13,7 +13,9 @@ module.exports = {
       if (prefixPattern.test(identifier.name)) return;
       context.report({
         node: identifier,
-        message: `Boolean '${identifier.name}' should start with ${prefixes.join(' / ')}.`,
+        message:
+          `Boolean '${identifier.name}' should start with ` +
+          `${prefixes.join(' / ')}.`,
       });
     };
     return {

@@ -14,10 +14,18 @@ const DOT = {
 };
 
 const STEPS = [
-  '**1. Write a wish**\nOne card, one thing you want done, in your own words. Uncolored cards are ideas: the agent never touches them.',
-  '**2. Color it**\nCyan: the agent carries it to done. Purple: one step (a brief, then a plan), then it hands back. Color hotkeys: Settings > Kanvas board > Hotkeys.',
-  '**3. Run a pass**\nCommand "Kanvas board: Run pass". A terminal opens with the agent on this board; it turns the cards it takes orange.',
-  "**4. Answer**\nYellow: a question or a review for you, in the card's note. Answer there, color the card cyan or purple again, run the next pass.",
+  '**1. Write a wish**\nOne card, one thing you want done, in ' +
+    'your own words. Uncolored cards are ideas: the agent never ' +
+    'touches them.',
+  '**2. Color it**\nCyan: the agent carries it to done. Purple: ' +
+    'one step (a brief, then a plan), then it hands back. Color ' +
+    'hotkeys: Settings > Kanvas board > Hotkeys.',
+  '**3. Run a pass**\nCommand "Kanvas board: Run pass". A ' +
+    'terminal opens with the agent on this board; it turns the ' +
+    'cards it takes orange.',
+  '**4. Answer**\nYellow: a question or a review for you, in ' +
+    "the card's note. Answer there, color the card cyan or purple " +
+    'again, run the next pass.',
 ];
 
 const TRY_IT =

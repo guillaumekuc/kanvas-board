@@ -45,7 +45,8 @@ class CanvasBoardSettings extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Hotkeys')
       .setDesc(
-        'Every canvas board command can have a key; buttons and menu items show it.',
+        'Every canvas board command can have a key; buttons and menu ' +
+          'items show it.',
       )
       .addButton((button) =>
         button.setButtonText('Open hotkeys').onClick(() => {
@@ -65,7 +66,8 @@ class CanvasBoardSettings extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Starter board')
       .setDesc(
-        'A board with the color legend and first steps: the default board if it does not exist yet, else "Starter board.canvas".',
+        'A board with the color legend and first steps: the default ' +
+          'board if it does not exist yet, else "Starter board.canvas".',
       )
       .addButton((button) =>
         button
@@ -74,28 +76,42 @@ class CanvasBoardSettings extends PluginSettingTab {
       );
     this.addTextSetting(
       'Default board',
-      'Board used by "Run pass" when the active tab is not a canvas, and by "Open the board" (ribbon).',
+      'Board used by "Run pass" when the active tab is not a ' +
+        'canvas, and by "Open the board" (ribbon).',
       'defaultBoard',
     );
     this.addTextSetting(
       'Card count warning',
-      'The status bar card count turns to the warning color past this many cards (0: never).',
+      'The status bar card count turns to the warning color past ' +
+        'this many cards (0: never).',
       'cardWarning',
     );
     this.addTextSetting(
       'Stale after (days)',
-      'A yellow card whose note is untouched this many days gets a warning badge with its age; the roll-up adds "· Nd" from the same value (0: never).',
+      'A yellow card whose note is untouched this many days gets a ' +
+        'warning badge with its age; the roll-up adds "· Nd" from the ' +
+        'same value (0: never).',
       'staleDays',
     );
     this.addTextSetting(
       'Agent notes folder',
-      'Where the agent creates the notes and plan canvases for cards. Changing it does not move anything: rename the folder in Obsidian first, so links follow.',
+      'Where the agent creates the notes and plan canvases for ' +
+        'cards. Changing it does not move anything: rename the folder ' +
+        'in Obsidian first, so links follow.',
       'notesFolder',
     );
+    this.displayArchive();
+  }
+
+  displayArchive() {
+    const { containerEl } = this;
     new Setting(containerEl)
       .setName('Archive')
       .setDesc(
-        'Where "Archive selected cards" puts the notes: a "<board> archive" folder next to each board, or one folder for all boards. Changing it does not move notes already archived; restore works from any folder.',
+        'Where "Archive selected cards" puts the notes: a "<board> ' +
+          'archive" folder next to each board, or one folder for all ' +
+          'boards. Changing it does not move notes already archived; ' +
+          'restore works from any folder.',
       )
       .addDropdown((dropdown) =>
         dropdown
@@ -120,7 +136,11 @@ class CanvasBoardSettings extends PluginSettingTab {
   displayWorkflow() {
     const { containerEl } = this;
     this.addHeading('Workflow').setDesc(
-      'What each color does and its label, shown in tooltips, the filter pane and the color commands. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.',
+      'What each color does and its label, shown in tooltips, the ' +
+        'filter pane and the color commands. Toggle on: the color ' +
+        'triggers the agent, so "Run pass" starts if the board has ' +
+        'such a card and the agent takes those cards. All off: the ' +
+        'agent never starts.',
     );
     const goColors = parseColors(this.plugin.settings.passColors);
     for (const [name, meaning] of WORKFLOW) {
@@ -174,12 +194,17 @@ class CanvasBoardSettings extends PluginSettingTab {
     this.addHeading('Pass');
     this.addTextSetting(
       'Claude path',
-      'Empty: ~/.local/bin/claude (claude.exe on Windows) if it exists, else claude on PATH.',
+      'Empty: ~/.local/bin/claude (claude.exe on Windows) if it ' +
+        'exists, else claude on PATH.',
       'claudePath',
     );
     this.addTextSetting(
       'Terminal command',
-      'Starts the pass. Empty: Windows Terminal, macOS Terminal, or the first known terminal on Linux (gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm, foot, xterm). Otherwise {vault}, {board}, {claude} are replaced; quote parts with spaces.',
+      'Starts the pass. Empty: Windows Terminal, macOS Terminal, or ' +
+        'the first known terminal on Linux (gnome-terminal, konsole, ' +
+        'xfce4-terminal, kitty, alacritty, wezterm, foot, xterm). ' +
+        'Otherwise {vault}, {board}, {claude} are replaced; quote ' +
+        'parts with spaces.',
       'terminal',
     );
     // The instructions the agent follows on a pass, edited here; the file stays
@@ -188,7 +213,11 @@ class CanvasBoardSettings extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Agent instructions')
       .setDesc(
-        "What the agent does on a pass. Saved when the field loses focus, to .claude/skills/canvas-board/SKILL.md (where Claude Code reads it; any agent can be pointed at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin's version.",
+        'What the agent does on a pass. Saved when the field loses ' +
+          'focus, to .claude/skills/canvas-board/SKILL.md (where Claude ' +
+          'Code reads it; any agent can be pointed at it). Written once ' +
+          'from the plugin, then yours: plugin updates never overwrite ' +
+          "it. Reset brings back the plugin's version.",
       )
       .addButton((button) =>
         button
@@ -204,7 +233,11 @@ class CanvasBoardSettings extends PluginSettingTab {
             this.display();
           }),
       );
-    const editor = containerEl.createEl('textarea', {
+    this.addSkillEditor(skillFile);
+  }
+
+  addSkillEditor(skillFile) {
+    const editor = this.containerEl.createEl('textarea', {
       cls: 'canvas-board-skill-editor',
       attr: { spellcheck: 'false', rows: '24' },
     });
@@ -221,7 +254,8 @@ class CanvasBoardSettings extends PluginSettingTab {
         new Notice('Kanvas board: agent instructions saved');
       } catch (error) {
         new Notice(
-          `Kanvas board: could not save the agent instructions (${error.message})`,
+          `Kanvas board: could not save the agent instructions ` +
+            `(${error.message})`,
         );
       }
     });
@@ -230,7 +264,8 @@ class CanvasBoardSettings extends PluginSettingTab {
   displayApm() {
     const { containerEl } = this;
     this.addHeading('APM counter').setDesc(
-      'Canvas cards touched in a rolling window, in the status bar while a canvas is the active tab.',
+      'Canvas cards touched in a rolling window, in the status bar ' +
+        'while a canvas is the active tab.',
     );
     const apm = this.plugin.apm;
     const apmSettings = apm.settings;
@@ -238,7 +273,8 @@ class CanvasBoardSettings extends PluginSettingTab {
       .setName('Personal best')
       .setDesc(
         apmSettings.pb
-          ? `${apmSettings.pb} cards in ${apmSettings.windowMinutes} min${apmSettings.pbDate ? `, set ${apmSettings.pbDate}` : ''}.`
+          ? `${apmSettings.pb} cards in ${apmSettings.windowMinutes} ` +
+              `min${apmSettings.pbDate ? `, set ${apmSettings.pbDate}` : ''}.`
           : 'None yet.',
       )
       .addButton((button) =>
@@ -253,7 +289,8 @@ class CanvasBoardSettings extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Window (minutes)')
       .setDesc(
-        'Cards are counted over this rolling window. Changing it resets the personal best: the numbers are not comparable.',
+        'Cards are counted over this rolling window. Changing it ' +
+          'resets the personal best: the numbers are not comparable.',
       )
       .addText((component) => {
         component.setValue(String(apmSettings.windowMinutes));
@@ -273,7 +310,8 @@ class CanvasBoardSettings extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Alert below')
       .setDesc(
-        'Percent of the personal best under which the counter turns red and pulses. Not in the first window of a session.',
+        'Percent of the personal best under which the counter turns ' +
+          'red and pulses. Not in the first window of a session.',
       )
       .addSlider((slider) =>
         slider
@@ -289,7 +327,8 @@ class CanvasBoardSettings extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Idle after (minutes)')
       .setDesc(
-        'Without an action for this long, the alert stops and the counter dims. It also dims while Obsidian is not focused.',
+        'Without an action for this long, the alert stops and the ' +
+          'counter dims. It also dims while Obsidian is not focused.',
       )
       .addText((component) =>
         component
@@ -310,7 +349,11 @@ class CanvasBoardSettings extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Layout direction')
       .setDesc(
-        'Tidy layout and agent-made plan canvases: the card a branch starts from comes first, following arrows in the fold direction ("depends on" prerequisites too). Shift-click the Tidy layout button, or commands "Tidy layout direction: …", switch it on the fly.',
+        'Tidy layout and agent-made plan canvases: the card a branch ' +
+          'starts from comes first, following arrows in the fold ' +
+          'direction ("depends on" prerequisites too). Shift-click the ' +
+          'Tidy layout button, or commands "Tidy layout direction: …", ' +
+          'switch it on the fly.',
       )
       .addDropdown((dropdown) =>
         dropdown
@@ -327,7 +370,10 @@ class CanvasBoardSettings extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Fold direction')
       .setDesc(
-        'Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Tidy layout reads branches the same way. Commands "Fold direction: …" switch it on the fly.',
+        'Fold branch hides the cards the card points to (outgoing) or ' +
+          'the cards pointing to it (incoming), and so on down the ' +
+          'branch. Tidy layout reads branches the same way. Commands ' +
+          '"Fold direction: …" switch it on the fly.',
       )
       .addDropdown((dropdown) =>
         dropdown
@@ -341,7 +387,8 @@ class CanvasBoardSettings extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Hide cards under hidden tags')
       .setDesc(
-        'Hiding a tag in the filter pane also hides the branch of each card that has it, in the fold direction.',
+        'Hiding a tag in the filter pane also hides the branch of ' +
+          'each card that has it, in the fold direction.',
       )
       .addToggle((component) =>
         component

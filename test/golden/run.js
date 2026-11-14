@@ -33,7 +33,8 @@ if (process.argv.includes('--update')) {
   assert.deepStrictEqual(
     failed,
     [],
-    `actual output in ${operatingSystem.tmpdir()}/kanvas-golden-<scenario>.json`,
+    `actual output in ` +
+      `${operatingSystem.tmpdir()}/kanvas-golden-<scenario>.json`,
   );
   console.log(`golden: ${Object.keys(expected).length} scenarios match`);
 }

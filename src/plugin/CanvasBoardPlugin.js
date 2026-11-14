@@ -198,8 +198,9 @@ class CanvasBoardPlugin extends Plugin {
     const colorCommand =
       this.app.commands &&
       this.app.commands.commands[`${this.manifest.id}:color-${row[2]}`];
+    const commandName = this.colorCommandName(name);
     if (colorCommand) {
-      colorCommand.name = `${this.manifest.name}: ${this.colorCommandName(name)}`;
+      colorCommand.name = `${this.manifest.name}: ${commandName}`;
     }
     for (const canvas of this.panes.keys()) this.refreshView(canvas);
   }
@@ -843,7 +844,8 @@ class CanvasBoardPlugin extends Plugin {
     const unit = `day${age === 1 ? '' : 's'}`;
     badge.setAttr(
       'aria-label',
-      `Waiting on you · note untouched for ${age} ${unit} (stale after ${days})`,
+      `Waiting on you · note untouched for ${age} ${unit} (stale ` +
+        `after ${days})`,
     );
   }
 
@@ -880,7 +882,8 @@ class CanvasBoardPlugin extends Plugin {
   dotStyle(color) {
     return !color
       ? ''
-      : `background: ${color.startsWith('#') ? color : `var(--canvas-color-${color})`}`;
+      : `background: ` +
+          `${color.startsWith('#') ? color : `var(--canvas-color-${color})`}`;
   }
 
   // Template cards are centered on the visible canvas, whatever is selected;
@@ -1038,7 +1041,8 @@ class CanvasBoardPlugin extends Plugin {
 
   freePath(folder, name, extension) {
     for (let attempt = 1; ; attempt++) {
-      const candidate = `${folder}${name}${attempt > 1 ? ' ' + attempt : ''}${extension}`;
+      const suffix = attempt > 1 ? ` ${attempt}` : '';
+      const candidate = `${folder}${name}${suffix}${extension}`;
       if (!this.app.vault.getAbstractFileByPath(candidate)) return candidate;
     }
   }
@@ -1190,7 +1194,8 @@ class CanvasBoardPlugin extends Plugin {
         goColorSet.has(COLOR_NUM[colorName]),
       );
       new Notice(
-        `Kanvas board: nothing to do on ${board} (no ${names.join(' or ')} card)`,
+        `Kanvas board: nothing to do on ${board} (no ` +
+          `${names.join(' or ')} card)`,
       );
       return;
     }
@@ -1198,7 +1203,8 @@ class CanvasBoardPlugin extends Plugin {
     const launch = terminalLaunch(template, { vault, board, claude });
     if (!launch) {
       new Notice(
-        'Kanvas board: no terminal found to start the pass. Set "Terminal command" in the plugin settings.',
+        'Kanvas board: no terminal found to start the pass. Set ' +
+          '"Terminal command" in the plugin settings.',
         10000,
       );
       return;
@@ -1210,7 +1216,8 @@ class CanvasBoardPlugin extends Plugin {
     new Notice(
       createFragment((fragment) => {
         fragment.appendText(
-          'Kanvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. ',
+          'Kanvas board: the agent did not start, no color triggers it. ' +
+            'Turn one on in Settings > Workflow. ',
         );
         const button = fragment.createEl('button', {
           cls: 'canvas-board-notice-undo',

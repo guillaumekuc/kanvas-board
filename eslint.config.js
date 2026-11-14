@@ -1,5 +1,5 @@
-// Code quality pass: each rule maps to one card on Canvas board Workspace.canvas.
-// Not automatable, so reviewed by hand: comments explain why, GoF patterns named.
+// Code quality pass: each rule maps to one of User's rules. Not automatable,
+// so reviewed by hand: comments explain why, GoF patterns named.
 const globals = require('globals');
 const stylePlugin = require('./style/plugin.js');
 const glossary = require('./style/glossary.js');
@@ -44,7 +44,7 @@ module.exports = [
       'no-implicit-globals': 'error',
       'no-global-assign': 'error',
       'style/no-module-state': 'error',
-      // From Codebase taste decisions (User, round 1): <= 3 parameters, 80 columns, semicolons
+      // User's taste decisions: <= 3 parameters, 80 columns, semicolons
       'max-params': ['error', 3],
       'max-len': ['error', { code: 80, ignoreUrls: true }],
       semi: ['error', 'always'],

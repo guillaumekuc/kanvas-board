@@ -30,7 +30,9 @@ function defaultLaunch({ vault, board, claude }) {
         '-e',
         'activate',
         '-e',
-        'do script "cd " & quoted form of item 1 of argv & " && " & quoted form of item 2 of argv & " " & quoted form of item 3 of argv',
+        'do script "cd " & quoted form of item 1 of argv & " && " & ' +
+          'quoted form of item 2 of argv & " " & quoted form of item 3 ' +
+          'of argv',
         '-e',
         'end tell',
         '-e',

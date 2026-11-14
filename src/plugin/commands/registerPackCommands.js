@@ -31,7 +31,8 @@ function registerPackCommands(plugin) {
           plugin.edit(canvas, operations);
           plugin.undoNotice(
             canvas,
-            `packed ${selection.length} card${selection.length > 1 ? 's' : ''} into ${file}`,
+            `packed ${selection.length} ` +
+              `card${selection.length > 1 ? 's' : ''} into ${file}`,
             { files: [file] },
           );
         },

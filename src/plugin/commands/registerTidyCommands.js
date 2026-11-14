@@ -15,7 +15,8 @@ function registerTidyCommands(plugin) {
       if (!checking) {
         if (canvas.selection.size < 2) {
           new Notice(
-            'Tidy layout: select the cards to tidy first (2 or more; Ctrl+A for the whole canvas).',
+            'Tidy layout: select the cards to tidy first (2 or more; ' +
+              'Ctrl+A for the whole canvas).',
           );
           return true;
         }
