@@ -133,8 +133,10 @@ class CanvasBoardSettings extends PluginSettingTab {
             .onChange(async (isOn) => {
               if (isOn) goColors.add(colorNumber);
               else goColors.delete(colorNumber);
-              this.plugin.settings.passColors = WORKFLOW.map(([node]) => node)
-                .filter((node) => goColors.has(COLOR_NUM[node]))
+              this.plugin.settings.passColors = WORKFLOW.map(
+                ([colorName]) => colorName,
+              )
+                .filter((colorName) => goColors.has(COLOR_NUM[colorName]))
                 .join(' ');
               await this.plugin.saveData(this.plugin.settings);
             }),
@@ -224,9 +226,9 @@ class CanvasBoardSettings extends PluginSettingTab {
       .addText((component) => {
         component.setValue(String(apmSettings.windowMinutes));
         component.inputEl.addEventListener('change', async () => {
-          const node = Number(component.getValue());
-          if (!(node > 0) || node === apmSettings.windowMinutes) return;
-          await apm.setWindow(node);
+          const minutes = Number(component.getValue());
+          if (!(minutes > 0) || minutes === apmSettings.windowMinutes) return;
+          await apm.setWindow(minutes);
           this.display();
         });
       });
@@ -255,9 +257,9 @@ class CanvasBoardSettings extends PluginSettingTab {
         component
           .setValue(String(apmSettings.idleMinutes))
           .onChange(async (value) => {
-            const node = Number(value);
-            if (!(node > 0)) return;
-            apmSettings.idleMinutes = node;
+            const minutes = Number(value);
+            if (!(minutes > 0)) return;
+            apmSettings.idleMinutes = minutes;
             await this.plugin.saveData(this.plugin.settings);
             apm.refresh();
           }),

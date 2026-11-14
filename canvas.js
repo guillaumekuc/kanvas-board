@@ -494,8 +494,8 @@ var require_staleDays = __commonJS({
   "src/workflow/staleDays.js"(exports2, module2) {
     var settings2 = require_settings();
     var staleDays = () => {
-      const node = Number(settings2().staleDays);
-      return Number.isFinite(node) && settings2().staleDays !== void 0 ? node : 7;
+      const days = Number(settings2().staleDays);
+      return Number.isFinite(days) && settings2().staleDays !== void 0 ? days : 7;
     };
     module2.exports = staleDays;
   }
