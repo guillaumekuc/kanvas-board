@@ -6,7 +6,7 @@ const fitHeight = require('./fitHeight.js');
 // Shared with the plugin, which passes its own dagre.
 function layoutOps(
   canvasData,
-  { ids, direction = 'TB', fit = false, dagre, flow = 'out' },
+  { ids, direction = 'TB', isFitToText = false, dagre, flow = 'out' },
 ) {
   const cards = canvasData.nodes.filter((node) => node.type !== 'group');
   const pick = new Set(ids && ids.length ? ids : cards.map((node) => node.id));
@@ -25,7 +25,7 @@ function layoutOps(
   const size = (node) => ({
     width: node.width,
     height:
-      fit && node.type === 'text'
+      isFitToText && node.type === 'text'
         ? fitHeight(node.text, node.width)
         : node.height,
   });

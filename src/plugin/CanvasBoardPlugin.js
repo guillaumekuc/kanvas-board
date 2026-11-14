@@ -11,6 +11,7 @@ const ApmCounter = require('../apm/ApmCounter.js');
 const boardLibrary = require('./boardLibrary.js');
 const CanvasBoardSettings = require('./CanvasBoardSettings.js');
 const dagre = require('../../dagre.min.js');
+const emptyViewState = require('./emptyViewState.js');
 const loadSettings = require('../apm/loadSettings.js');
 const claudeBin = require('./claudeBin.js');
 const defaultLaunch = require('./defaultLaunch.js');
@@ -79,11 +80,11 @@ class CanvasBoardPlugin extends Plugin {
         return 'obsidian';
       },
     };
-    this.syncSkill(pluginDir);
+    this.installSkill(pluginDir);
     this.addCommand({
       id: 'reset-skill',
       name: "Reset agent skill to the plugin's version (overwrites your edits)",
-      callback: () => this.syncSkill(pluginDir, true),
+      callback: () => this.resetSkill(pluginDir),
     });
 
     for (const [name, color, key] of COLORS) {
@@ -1209,15 +1210,15 @@ class CanvasBoardPlugin extends Plugin {
   }
 
   // Filter state of an open canvas. `create` false only reads (an empty state, not stored).
-  viewState(canvas, create = true) {
-    const empty = () => ({
-      xcolors: new Set(),
-      xtags: new Set(),
-      hidden: new Set(),
-    });
-    let state = this.views.get(canvas);
-    if (state || !create) return state || empty();
-    state = empty();
+  // The view state if the canvas has one yet, else an empty one (not kept).
+  peekViewState(canvas) {
+    return this.views.get(canvas) || emptyViewState();
+  }
+
+  viewState(canvas) {
+    const existing = this.views.get(canvas);
+    if (existing) return existing;
+    const state = emptyViewState();
     this.views.set(canvas, state);
     // Hidden cards never stay selected (select all, drag to select), so Delete never hits a card you can't see.
     const plugin = this;
@@ -1252,12 +1253,12 @@ class CanvasBoardPlugin extends Plugin {
   }
 
   isHidden(canvas, node) {
-    return this.viewState(canvas, false).hidden.has(node.id);
+    return this.peekViewState(canvas).hidden.has(node.id);
   }
 
   // Clears the filter and unfolds every card (one undo step for the folds).
   showAll(canvas) {
-    const state = this.viewState(canvas, false);
+    const state = this.peekViewState(canvas);
     state.xcolors.clear();
     state.xtags.clear();
     const folds = this.folds(canvas);
@@ -1554,7 +1555,7 @@ class CanvasBoardPlugin extends Plugin {
 
   // Status bar and closed pane: only how many cards are hidden (filter and folds); the pane says by what.
   viewLabel(canvas) {
-    const hiddenCount = this.viewState(canvas, false).hidden.size;
+    const hiddenCount = this.peekViewState(canvas).hidden.size;
     return hiddenCount
       ? `${hiddenCount} card${hiddenCount > 1 ? 's' : ''} hidden`
       : '';
@@ -1641,13 +1642,13 @@ class CanvasBoardPlugin extends Plugin {
       byColor[colorName] = (byColor[colorName] || 0) + 1;
     }
     const max = Number(this.settings.cardWarning) || 0;
-    const over = max > 0 && cards.length > max;
+    const isOverLimit = max > 0 && cards.length > max;
     const selectedCount = [...canvas.selection].filter((x) => !x.from).length; // cards and groups, not edges
     // Only the card count takes the warning color, not the selected count.
     this.countEl.empty();
     this.countEl.createSpan({
       text: `${cards.length} cards`,
-      cls: over ? 'canvas-board-over' : '',
+      cls: isOverLimit ? 'canvas-board-over' : '',
     }); // warning color, see styles.css
     if (selectedCount) this.countEl.appendText(` · ${selectedCount} selected`);
     this.countEl.setAttr(
@@ -1673,22 +1674,33 @@ class CanvasBoardPlugin extends Plugin {
     );
   }
 
-  syncSkill(pluginDir, force = false) {
-    const source = path.join(pluginDir, 'skill', 'SKILL.md');
-    const skillTarget = this.skillPath();
+  // The vault's copy of the skill is the user's to edit: written only when missing.
+  installSkill(pluginDir) {
     try {
-      if (!force && fileSystem.existsSync(skillTarget)) return;
-      fileSystem.mkdirSync(path.dirname(skillTarget), { recursive: true });
-      fileSystem.copyFileSync(source, skillTarget);
-      if (force) {
-        new Notice("Kanvas board: agent skill reset to the plugin's version");
-      }
+      if (fileSystem.existsSync(this.skillPath())) return;
+      this.copySkill(pluginDir);
     } catch (error) {
       console.error('canvas-board: skill sync failed', error);
-      if (force) {
-        new Notice(`Kanvas board: skill reset failed (${error.message})`);
-      }
     }
+  }
+
+  resetSkill(pluginDir) {
+    try {
+      this.copySkill(pluginDir);
+      new Notice("Kanvas board: agent skill reset to the plugin's version");
+    } catch (error) {
+      console.error('canvas-board: skill sync failed', error);
+      new Notice(`Kanvas board: skill reset failed (${error.message})`);
+    }
+  }
+
+  copySkill(pluginDir) {
+    const skillTarget = this.skillPath();
+    fileSystem.mkdirSync(path.dirname(skillTarget), { recursive: true });
+    fileSystem.copyFileSync(
+      path.join(pluginDir, 'skill', 'SKILL.md'),
+      skillTarget,
+    );
   }
 
   // One undo step: the state before is pushed (unless the history already ends with it), then the edited data

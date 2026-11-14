@@ -125,11 +125,11 @@ var require_constants2 = __commonJS({
 var require_band = __commonJS({
   "src/apm/band.js"(exports2, module2) {
     var { MIN_PB } = require_constants2();
-    function band(pace, personalBest, lowPercent, warmingUp = false) {
+    function band(pace, { personalBest, lowPercent, isWarmingUp = false }) {
       if (personalBest < MIN_PB) return "calibrating";
       if (pace >= personalBest) return "best";
       const ratio = pace / personalBest * 100;
-      if (ratio < lowPercent) return warmingUp ? "calibrating" : "low";
+      if (ratio < lowPercent) return isWarmingUp ? "calibrating" : "low";
       if (ratio < 50) return "orange";
       if (ratio < 75) return "yellow";
       return "green";
@@ -328,18 +328,17 @@ var require_ApmCounter = __commonJS({
           this.lastSave = now;
           this.save();
         }
-        const shown = !!this.plugin.activeCanvas();
-        if (this.shown !== shown) {
-          this.element.toggle(shown);
-          this.shown = shown;
+        const isShown = !!this.plugin.activeCanvas();
+        if (this.isShown !== isShown) {
+          this.element.toggle(isShown);
+          this.isShown = isShown;
         }
-        if (!shown) return;
-        const state = this.isIdle(now) ? "idle" : band(
-          pace,
-          settings.pb,
-          settings.lowPercent,
-          now - this.sessionStart < settings.windowMinutes * MINUTE_MS
-        );
+        if (!isShown) return;
+        const state = this.isIdle(now) ? "idle" : band(pace, {
+          personalBest: settings.pb,
+          lowPercent: settings.lowPercent,
+          isWarmingUp: now - this.sessionStart < settings.windowMinutes * MINUTE_MS
+        });
         if (this.state !== state) {
           if (this.state) this.element.removeClass("apm-" + this.state);
           this.element.addClass("apm-" + state);
@@ -816,7 +815,7 @@ var require_layoutOps = __commonJS({
   "src/board/layoutOps.js"(exports2, module2) {
     var { SIDES } = require_constants3();
     var fitHeight = require_fitHeight();
-    function layoutOps(canvasData, { ids, direction = "TB", fit = false, dagre, flow = "out" }) {
+    function layoutOps(canvasData, { ids, direction = "TB", isFitToText = false, dagre, flow = "out" }) {
       const cards = canvasData.nodes.filter((node) => node.type !== "group");
       const pick = new Set(ids && ids.length ? ids : cards.map((node) => node.id));
       const moving = cards.filter((node) => pick.has(node.id));
@@ -833,7 +832,7 @@ var require_layoutOps = __commonJS({
       graph.setDefaultEdgeLabel(() => ({}));
       const size = (node) => ({
         width: node.width,
-        height: fit && node.type === "text" ? fitHeight(node.text, node.width) : node.height
+        height: isFitToText && node.type === "text" ? fitHeight(node.text, node.width) : node.height
       });
       for (const node of moving) graph.setNode(node.id, size(node));
       const inner = canvasData.edges.filter(
@@ -1318,12 +1317,11 @@ var require_CanvasBoardSettings = __commonJS({
           "What the agent does on a pass. Saved when the field loses focus, to .claude/skills/canvas-board/SKILL.md (where Claude Code reads it; any agent can be pointed at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin's version."
         ).addButton(
           (button) => button.setButtonText("Reset").setWarning().onClick(() => {
-            this.plugin.syncSkill(
+            this.plugin.resetSkill(
               path.join(
                 this.app.vault.adapter.basePath,
                 this.plugin.manifest.dir
-              ),
-              true
+              )
             );
             this.display();
           })
@@ -4534,6 +4532,16 @@ var require_dagre_min = __commonJS({
   }
 });
 
+// src/plugin/emptyViewState.js
+var require_emptyViewState = __commonJS({
+  "src/plugin/emptyViewState.js"(exports2, module2) {
+    function emptyViewState() {
+      return { xcolors: /* @__PURE__ */ new Set(), xtags: /* @__PURE__ */ new Set(), hidden: /* @__PURE__ */ new Set() };
+    }
+    module2.exports = emptyViewState;
+  }
+});
+
 // src/apm/loadSettings.js
 var require_loadSettings = __commonJS({
   "src/apm/loadSettings.js"(exports2, module2) {
@@ -4730,16 +4738,16 @@ var require_FilterPane = __commonJS({
         }
         return tags;
       }
-      toggle(open = !this.isOpen) {
-        this.isOpen = open;
-        this.element.toggleClass("is-open", open);
+      toggle(isOpening = !this.isOpen) {
+        this.isOpen = isOpening;
+        this.element.toggleClass("is-open", isOpening);
         this.key = "";
         this.update();
       }
       // Redraws the chips and lists only when something changed (called every 2 s), never the text fields.
       update() {
         const { plugin, canvas } = this;
-        const viewSnapshot = plugin.viewState(canvas, false);
+        const viewSnapshot = plugin.peekViewState(canvas);
         const counts = {};
         for (const node of canvas.nodes.values()) {
           const data = node.getData();
@@ -5158,17 +5166,17 @@ var require_NamePrompt = __commonJS({
         this.setTitle(this.title);
         const { suggestions, overwrite } = this.options;
         let value = "";
-        let button, suggest, picked = false;
+        let button, suggest, isPicked = false;
         const clean = (value2) => value2.trim().replace(/[\\/:#^|[\]]/g, "");
         const nameOf = (value2) => suggestions && suggestions.some(
           (suggestion) => suggestion.toLowerCase() === value2.trim().toLowerCase()
         ) ? value2.trim() : clean(value2);
         const refresh = () => {
           if (!button) return;
-          const over = !!(overwrite && value.trim() && overwrite(nameOf(value)));
-          button.setButtonText(over ? "Overwrite" : "Create");
-          button.buttonEl.toggleClass("mod-warning", over);
-          button.buttonEl.toggleClass("mod-cta", !over);
+          const isOverwrite = !!(overwrite && value.trim() && overwrite(nameOf(value)));
+          button.setButtonText(isOverwrite ? "Overwrite" : "Create");
+          button.buttonEl.toggleClass("mod-warning", isOverwrite);
+          button.buttonEl.toggleClass("mod-cta", !isOverwrite);
         };
         const submit = () => {
           const name = nameOf(value);
@@ -5192,15 +5200,15 @@ var require_NamePrompt = __commonJS({
                 text.setValue(suggestion);
                 value = suggestion;
                 refresh();
-                picked = true;
+                isPicked = true;
                 setTimeout(() => {
-                  picked = false;
+                  isPicked = false;
                 }, 0);
               }
             );
           }
           text.inputEl.addEventListener("keydown", (event) => {
-            if (event.key !== "Enter" || picked || suggest && suggest.suggestEl && suggest.suggestEl.isConnected) {
+            if (event.key !== "Enter" || isPicked || suggest && suggest.suggestEl && suggest.suggestEl.isConnected) {
               return;
             }
             event.preventDefault();
@@ -5321,6 +5329,7 @@ var require_CanvasBoardPlugin = __commonJS({
     var boardLibrary = require_boardLibrary();
     var CanvasBoardSettings = require_CanvasBoardSettings();
     var dagre = require_dagre_min();
+    var emptyViewState = require_emptyViewState();
     var loadSettings = require_loadSettings();
     var claudeBin = require_claudeBin();
     var defaultLaunch = require_defaultLaunch();
@@ -5389,11 +5398,11 @@ var require_CanvasBoardPlugin = __commonJS({
             return "obsidian";
           }
         };
-        this.syncSkill(pluginDir);
+        this.installSkill(pluginDir);
         this.addCommand({
           id: "reset-skill",
           name: "Reset agent skill to the plugin's version (overwrites your edits)",
-          callback: () => this.syncSkill(pluginDir, true)
+          callback: () => this.resetSkill(pluginDir)
         });
         for (const [name, color, key] of COLORS) {
           this.addCommand({
@@ -6391,15 +6400,14 @@ Shift-click: next direction`,
         }
       }
       // Filter state of an open canvas. `create` false only reads (an empty state, not stored).
-      viewState(canvas, create = true) {
-        const empty = () => ({
-          xcolors: /* @__PURE__ */ new Set(),
-          xtags: /* @__PURE__ */ new Set(),
-          hidden: /* @__PURE__ */ new Set()
-        });
-        let state = this.views.get(canvas);
-        if (state || !create) return state || empty();
-        state = empty();
+      // The view state if the canvas has one yet, else an empty one (not kept).
+      peekViewState(canvas) {
+        return this.views.get(canvas) || emptyViewState();
+      }
+      viewState(canvas) {
+        const existing = this.views.get(canvas);
+        if (existing) return existing;
+        const state = emptyViewState();
         this.views.set(canvas, state);
         const plugin = this;
         const original = canvas.updateSelection;
@@ -6426,11 +6434,11 @@ Shift-click: next direction`,
         return state;
       }
       isHidden(canvas, node) {
-        return this.viewState(canvas, false).hidden.has(node.id);
+        return this.peekViewState(canvas).hidden.has(node.id);
       }
       // Clears the filter and unfolds every card (one undo step for the folds).
       showAll(canvas) {
-        const state = this.viewState(canvas, false);
+        const state = this.peekViewState(canvas);
         state.xcolors.clear();
         state.xtags.clear();
         const folds = this.folds(canvas);
@@ -6707,7 +6715,7 @@ Shift-click: next direction`,
       }
       // Status bar and closed pane: only how many cards are hidden (filter and folds); the pane says by what.
       viewLabel(canvas) {
-        const hiddenCount = this.viewState(canvas, false).hidden.size;
+        const hiddenCount = this.peekViewState(canvas).hidden.size;
         return hiddenCount ? `${hiddenCount} card${hiddenCount > 1 ? "s" : ""} hidden` : "";
       }
       updateViewLabel(canvas) {
@@ -6768,12 +6776,12 @@ Shift-click: next direction`,
           byColor[colorName] = (byColor[colorName] || 0) + 1;
         }
         const max = Number(this.settings.cardWarning) || 0;
-        const over = max > 0 && cards.length > max;
+        const isOverLimit = max > 0 && cards.length > max;
         const selectedCount = [...canvas.selection].filter((x) => !x.from).length;
         this.countEl.empty();
         this.countEl.createSpan({
           text: `${cards.length} cards`,
-          cls: over ? "canvas-board-over" : ""
+          cls: isOverLimit ? "canvas-board-over" : ""
         });
         if (selectedCount) this.countEl.appendText(` \xB7 ${selectedCount} selected`);
         this.countEl.setAttr(
@@ -6794,22 +6802,31 @@ Shift-click: next direction`,
           "SKILL.md"
         );
       }
-      syncSkill(pluginDir, force = false) {
-        const source = path.join(pluginDir, "skill", "SKILL.md");
-        const skillTarget = this.skillPath();
+      // The vault's copy of the skill is the user's to edit: written only when missing.
+      installSkill(pluginDir) {
         try {
-          if (!force && fileSystem.existsSync(skillTarget)) return;
-          fileSystem.mkdirSync(path.dirname(skillTarget), { recursive: true });
-          fileSystem.copyFileSync(source, skillTarget);
-          if (force) {
-            new Notice("Kanvas board: agent skill reset to the plugin's version");
-          }
+          if (fileSystem.existsSync(this.skillPath())) return;
+          this.copySkill(pluginDir);
         } catch (error) {
           console.error("canvas-board: skill sync failed", error);
-          if (force) {
-            new Notice(`Kanvas board: skill reset failed (${error.message})`);
-          }
         }
+      }
+      resetSkill(pluginDir) {
+        try {
+          this.copySkill(pluginDir);
+          new Notice("Kanvas board: agent skill reset to the plugin's version");
+        } catch (error) {
+          console.error("canvas-board: skill sync failed", error);
+          new Notice(`Kanvas board: skill reset failed (${error.message})`);
+        }
+      }
+      copySkill(pluginDir) {
+        const skillTarget = this.skillPath();
+        fileSystem.mkdirSync(path.dirname(skillTarget), { recursive: true });
+        fileSystem.copyFileSync(
+          path.join(pluginDir, "skill", "SKILL.md"),
+          skillTarget
+        );
       }
       // One undo step: the state before is pushed (unless the history already ends with it), then the edited data
       // is set, which pushes it, so Ctrl+Z and Ctrl+Y each take one step. `d` is passed when the caller already changed it (extract).

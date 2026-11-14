@@ -97,9 +97,9 @@ class FilterPane {
     return tags;
   }
 
-  toggle(open = !this.isOpen) {
-    this.isOpen = open;
-    this.element.toggleClass('is-open', open);
+  toggle(isOpening = !this.isOpen) {
+    this.isOpen = isOpening;
+    this.element.toggleClass('is-open', isOpening);
     this.key = '';
     this.update();
   }
@@ -107,7 +107,7 @@ class FilterPane {
   // Redraws the chips and lists only when something changed (called every 2 s), never the text fields.
   update() {
     const { plugin, canvas } = this;
-    const viewSnapshot = plugin.viewState(canvas, false);
+    const viewSnapshot = plugin.peekViewState(canvas);
     const counts = {};
     for (const node of canvas.nodes.values()) {
       const data = node.getData();

@@ -74,7 +74,7 @@ const option = name => { const index = args.indexOf(name); return index >= 0 ? a
       const ids = (option('--ids') || '').split(',').filter(Boolean);
       const direction = (option('--dir') || defaultDir()).toUpperCase();
       if (!SIDES[direction]) { console.error(`layout: --dir must be TB, LR, BT or RL, not ${direction}`); process.exit(1); }
-      const operations = layoutOps(readBoard(board), { ids, direction, fit: args.includes('--fit'), dagre: require('../../dagre.min.js'), flow: settings().foldDirection });
+      const operations = layoutOps(readBoard(board), { ids, direction, isFitToText: args.includes('--fit'), dagre: require('../../dagre.min.js'), flow: settings().foldDirection });
       console.log(writeOps(board, operations), operations.filter(operation => operation.op === 'set').length, 'cards');
       break;
     }
