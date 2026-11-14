@@ -3,6 +3,7 @@ module.exports = [
   require('./registerColorCommands.js'),
   require('./registerTidyCommands.js'),
   require('./registerPackCommands.js'),
+  require('./registerUnpackCommands.js'),
   require('./registerMergeSplitCommands.js'),
   require('./registerExtractCommand.js'),
   require('./registerArchiveCommand.js'),
