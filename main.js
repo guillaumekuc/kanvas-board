@@ -1,4 +1,4 @@
-// Canvas board: color hotkeys for selected canvas cards, a command that opens a terminal running the
+// Kanvas board (Canvas + Kanban): color hotkeys for selected canvas cards, a command that opens a terminal running the
 // canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
 // to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (pack, unpack dissolve / copy, merge,
 // split, extract), archive/restore, view tools (search current canvas, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. Writes skill/SKILL.md to
@@ -202,7 +202,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		// Each is also a right-click item (label `menu`) on the cards it applies to.
 		// `menu` is [title, Lucide icon], or null for a command with no menu item.
 		const actions = this.actions = [];
-		const runAction = this.runAction = (run, canvas, sel) => Promise.resolve(run(canvas, sel)).catch(e => new Notice(`Canvas board: ${e.message}`));
+		const runAction = this.runAction = (run, canvas, sel) => Promise.resolve(run(canvas, sel)).catch(e => new Notice(`Kanvas board: ${e.message}`));
 		const canvasCommand = (id, name, menu, test, run) => {
 			actions.push({ id, menu, test, run });
 			this.addCommand({
@@ -236,7 +236,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			const file = this.linkedCanvas(node);
 			const links = await this.subcanvasLinks(file, canvas, node.id);
 			if (!links.length) return this.unpack(canvas, node, file, 'dissolve');
-			new UnpackChoice(this.app, file, links, mode => this.unpack(canvas, node, file, mode, links).catch(e => new Notice(`Canvas board: ${e.message}`))).open();
+			new UnpackChoice(this.app, file, links, mode => this.unpack(canvas, node, file, mode, links).catch(e => new Notice(`Kanvas board: ${e.message}`))).open();
 		});
 		canvasCommand('unpack-copy', 'Unpack subcanvas (copy)', ['Unpack subcanvas (copy)', 'copy'], linked, (canvas, [node]) =>
 			this.unpack(canvas, node, this.linkedCanvas(node), 'copy'));
@@ -300,7 +300,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 					if (!checking) {
 						this.settings.foldDirection = dir;
 						this.saveData(this.settings);
-						new Notice(`Canvas board: fold direction ${label}`);
+						new Notice(`Kanvas board: fold direction ${label}`);
 					}
 					return true;
 				},
@@ -315,11 +315,11 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			new NamePrompt(this.app, 'Template name', async name => {
 				const content = JSON.stringify((({ nodes, edges }) => ({ nodes, edges }))(canvas.getSelectionData()), null, '\t');
 				const old = existing.get(name.toLowerCase());
-				if (old) { await this.app.vault.modify(old, content); new Notice(`Canvas board: template ${old.path} overwritten`); return; }
+				if (old) { await this.app.vault.modify(old, content); new Notice(`Kanvas board: template ${old.path} overwritten`); return; }
 				if (!this.app.vault.getAbstractFileByPath(cb.TEMPLATE_DIR)) await this.app.vault.createFolder(cb.TEMPLATE_DIR);
 				const file = this.freePath(cb.TEMPLATE_DIR + '/', name, '.canvas');
 				await this.app.vault.create(file, content);
-				new Notice(`Canvas board: template saved to ${file}`);
+				new Notice(`Kanvas board: template saved to ${file}`);
 			}, { suggestions: [...existing.values()].map(templateName), overwrite: v => existing.has(v.toLowerCase()) }).open();
 		});
 		// Selection tools: the selection grows to related cards (visible ones only: hidden cards never stay selected).
@@ -352,7 +352,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				if (!canvas) return false;
 				if (!checking) {
 					const files = this.app.vault.getFiles().filter(f => f.extension === 'canvas' && f.path.startsWith(cb.TEMPLATE_DIR + '/'));
-					if (!files.length) new Notice(`Canvas board: no template in ${cb.TEMPLATE_DIR} (Save selected cards as a template)`);
+					if (!files.length) new Notice(`Kanvas board: no template in ${cb.TEMPLATE_DIR} (Save selected cards as a template)`);
 					else new Picker(this.app, 'Template', files, f => f.basename, f => this.insertTemplate(canvas, f)).open();
 				}
 				return true;
@@ -424,14 +424,14 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			checkCallback: checking => {
 				const file = this.app.workspace.getActiveFile();
 				if (!isArchived(file)) return false;
-				if (!checking) this.restore(file).catch(e => new Notice(`Canvas board: ${e.message}`));
+				if (!checking) this.restore(file).catch(e => new Notice(`Kanvas board: ${e.message}`));
 				return true;
 			},
 		});
 		// Right-click on an archive note: a link to it, the file explorer, its tab.
 		this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
 			if (isArchived(file)) menu.addItem(item => item.setTitle('Restore archived card').setIcon('archive-restore').setSection('canvas-board')
-				.onClick(() => this.restore(file).catch(e => new Notice(`Canvas board: ${e.message}`))));
+				.onClick(() => this.restore(file).catch(e => new Notice(`Kanvas board: ${e.message}`))));
 		}));
 
 		this.addCommand({
@@ -449,7 +449,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			name: 'Create a starter board (color legend and first cards)',
 			callback: () => this.createStarterBoard(),
 		});
-		this.addRibbonIcon('kanban-square', 'Open the board (Canvas board)', () => this.openBoard());
+		this.addRibbonIcon('kanban-square', 'Open the board (Kanvas board)', () => this.openBoard());
 
 		// Card count of the active canvas in the status bar: boards get hard to manage past a threshold.
 		// Next to it, the active filter and folds; click to change them.
@@ -542,10 +542,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const h = canvas.history;
 		const at = h ? h.current : null;
 		const frag = createFragment(f => {
-			f.appendText(`Canvas board: ${msg} `);
+			f.appendText(`Kanvas board: ${msg} `);
 			const b = f.createEl('button', { cls: 'canvas-board-notice-undo', text: 'Undo' });
 			b.addEventListener('click', async () => {
-				if (!h || h.current !== at) { new Notice('Canvas board: the board changed since, use Ctrl+Z'); return; }
+				if (!h || h.current !== at) { new Notice('Kanvas board: the board changed since, use Ctrl+Z'); return; }
 				canvas.undo();
 				for (const p of files) { const file = this.app.vault.getAbstractFileByPath(p); if (file) await this.app.fileManager.trashFile(file); }
 				if (restore && !this.app.vault.getAbstractFileByPath(restore.path)) await this.app.vault.create(restore.path, restore.content);
@@ -561,7 +561,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const file = this.app.vault.getAbstractFileByPath(board);
 		if (!file) {
 			new Notice(createFragment(f => {
-				f.appendText(`Canvas board: ${board} not found (setting "Default board"). `);
+				f.appendText(`Kanvas board: ${board} not found (setting "Default board"). `);
 				const b = f.createEl('button', { cls: 'canvas-board-notice-undo', text: 'Create a starter board' });
 				b.addEventListener('click', () => this.createStarterBoard());
 			}), 10000);
@@ -594,8 +594,8 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		});
 		const steps = [
 			'**1. Write a wish**\nOne card, one thing you want done, in your own words. Uncolored cards are ideas: the agent never touches them.',
-			'**2. Color it**\nCyan: the agent carries it to done. Purple: one step (a brief, then a plan), then it hands back. Color hotkeys: Settings > Canvas board > Hotkeys.',
-			'**3. Run a pass**\nCommand "Canvas board: Run pass". A terminal opens with the agent on this board; it turns the cards it takes orange.',
+			'**2. Color it**\nCyan: the agent carries it to done. Purple: one step (a brief, then a plan), then it hands back. Color hotkeys: Settings > Kanvas board > Hotkeys.',
+			'**3. Run a pass**\nCommand "Kanvas board: Run pass". A terminal opens with the agent on this board; it turns the cards it takes orange.',
 			'**4. Answer**\nYellow: a question or a review for you, in the card\'s note. Answer there, color the card cyan or purple again, run the next pass.',
 		];
 		const x0 = W + 160;
@@ -613,9 +613,9 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			if (dir !== '.' && !vault.getAbstractFileByPath(dir)) await vault.createFolder(dir);
 			const file = await vault.create(board, JSON.stringify({ nodes, edges }, null, '\t'));
 			await this.app.workspace.getLeaf(false).openFile(file);
-			new Notice(`Canvas board: starter board created (${board})`);
+			new Notice(`Kanvas board: starter board created (${board})`);
 		} catch (e) {
-			new Notice(`Canvas board: could not create the starter board (${e.message})`);
+			new Notice(`Kanvas board: could not create the starter board (${e.message})`);
 		}
 	}
 
@@ -623,7 +623,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		this.settings.layoutDirection = dir;
 		await this.saveData(this.settings);
 		for (const leaf of this.app.workspace.getLeavesOfType('canvas')) this.decorate(leaf.view);
-		new Notice(`Canvas board: tidy layout ${LAYOUT_DIRS[dir].name}`);
+		new Notice(`Kanvas board: tidy layout ${LAYOUT_DIRS[dir].name}`);
 	}
 
 	cycleLayoutDirection() {
@@ -1031,10 +1031,10 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			if (!force && fs.existsSync(dest)) return;
 			fs.mkdirSync(path.dirname(dest), { recursive: true });
 			fs.copyFileSync(src, dest);
-			if (force) new Notice('Canvas board: agent skill reset to the plugin\'s version');
+			if (force) new Notice('Kanvas board: agent skill reset to the plugin\'s version');
 		} catch (e) {
 			console.error('canvas-board: skill sync failed', e);
-			if (force) new Notice(`Canvas board: skill reset failed (${e.message})`);
+			if (force) new Notice(`Kanvas board: skill reset failed (${e.message})`);
 		}
 	}
 
@@ -1170,7 +1170,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			return JSON.stringify(d, null, '\t');
 		});
 		await this.app.fileManager.trashFile(note);
-		new Notice(`Canvas board: card restored on ${file.path}`);
+		new Notice(`Kanvas board: card restored on ${file.path}`);
 	}
 
 	openCanvas(board) {
@@ -1211,7 +1211,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		const go = parseColors(this.settings.passColors);
 		if (!go.size) {
 			new Notice(createFragment(f => {
-				f.appendText('Canvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. ');
+				f.appendText('Kanvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. ');
 				const b = f.createEl('button', { cls: 'canvas-board-notice-undo', text: 'Open settings' });
 				b.addEventListener('click', () => { this.app.setting.open(); this.app.setting.openTabById(this.manifest.id); });
 			}), 10000);
@@ -1219,7 +1219,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 		}
 		if (!(await this.hasGoCards(board, go))) {
 			const names = Object.keys(COLOR_NUM).filter(k => go.has(COLOR_NUM[k]));
-			new Notice(`Canvas board: nothing to do on ${board} (no ${names.join(' or ')} card)`);
+			new Notice(`Kanvas board: nothing to do on ${board} (no ${names.join(' or ')} card)`);
 			return;
 		}
 		const vars = { vault, board, claude };
@@ -1229,17 +1229,17 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 				.map(a => a.replace(/^"|"$/g, '').replace(/\{(vault|board|claude)\}/g, (_, k) => vars[k])))
 			: defaultLaunch(vars);
 		if (!launch) {
-			new Notice('Canvas board: no terminal found to start the pass. Set "Terminal command" in the plugin settings.', 10000);
+			new Notice('Kanvas board: no terminal found to start the pass. Set "Terminal command" in the plugin settings.', 10000);
 			return;
 		}
 		const [cmd, cmdArgs] = launch;
 		try {
 			const child = spawn(cmd, cmdArgs, { cwd: vault, detached: true, stdio: 'ignore' });
-			child.on('error', e => new Notice(`Canvas board: could not start the pass (${e.message})`));
+			child.on('error', e => new Notice(`Kanvas board: could not start the pass (${e.message})`));
 			child.unref();
-			new Notice(`Canvas board: pass started on ${board}`);
+			new Notice(`Kanvas board: pass started on ${board}`);
 		} catch (e) {
-			new Notice(`Canvas board: could not start the pass (${e.message})`);
+			new Notice(`Kanvas board: could not start the pass (${e.message})`);
 		}
 	}
 };
@@ -1302,7 +1302,7 @@ class NamePrompt extends Modal {
 			const name = nameOf(value);
 			if (!name) return;
 			this.close();
-			Promise.resolve(this.onSubmit(name)).catch(e => new Notice(`Canvas board: ${e.message}`));
+			Promise.resolve(this.onSubmit(name)).catch(e => new Notice(`Kanvas board: ${e.message}`));
 		};
 		new Setting(this.contentEl).addText(t => {
 			t.onChange(v => { value = v; refresh(); });
@@ -1360,7 +1360,7 @@ class Picker extends FuzzySuggestModal {
 
 	getItems() { return this.items; }
 	getItemText(item) { return this.label(item); }
-	onChooseItem(item) { Promise.resolve(this.onChoose(item)).catch(e => new Notice(`Canvas board: ${e.message}`)); }
+	onChooseItem(item) { Promise.resolve(this.onChoose(item)).catch(e => new Notice(`Kanvas board: ${e.message}`)); }
 }
 
 // Offsets of `query` in `text`, ignoring case.
@@ -1488,7 +1488,7 @@ class FindBar {
 	selectAll() {
 		const { canvas, plugin, matches } = this;
 		if (!matches.length) return;
-		if (matches.some(n => plugin.isHidden(canvas, n))) { plugin.showAll(canvas); new Notice('Canvas board: filter and folds cleared to show the cards'); }
+		if (matches.some(n => plugin.isHidden(canvas, n))) { plugin.showAll(canvas); new Notice('Kanvas board: filter and folds cleared to show the cards'); }
 		for (const n of matches) n.nodeEl.addClass('is-current');
 		canvas.updateSelection(() => { canvas.selection.clear(); for (const n of matches) canvas.selection.add(n); });
 		canvas.zoomToSelection();
@@ -1533,7 +1533,7 @@ class FindBar {
 		const node = this.matches[this.index];
 		if (!node) return;
 		for (const n of this.matches) n.nodeEl.toggleClass('is-current', n === node);
-		if (plugin.isHidden(canvas, node)) { plugin.showAll(canvas); new Notice('Canvas board: filter and folds cleared to show the card'); }
+		if (plugin.isHidden(canvas, node)) { plugin.showAll(canvas); new Notice('Kanvas board: filter and folds cleared to show the card'); }
 		canvas.selectOnly(node);
 		canvas.zoomToSelection();
 		this.revealing = node;
@@ -1629,7 +1629,7 @@ class FilterPane {
 		this.key = key;
 		const apply = () => plugin.refreshView(canvas);
 		const toggle = (set, x) => { if (set.has(x)) set.delete(x); else set.add(x); apply(); };
-		const select = keep => { if (!plugin.selectMore(canvas, [...canvas.selection], keep)) new Notice('Canvas board: no visible card to select'); };
+		const select = keep => { if (!plugin.selectMore(canvas, [...canvas.selection], keep)) new Notice('Kanvas board: no visible card to select'); };
 
 		// Dots only, on one line; the name and card count are in the tooltip.
 		this.colorsEl.empty();
@@ -1691,7 +1691,7 @@ class CanvasBoardSettings extends PluginSettingTab {
 			.onClick(() => {
 				this.app.setting.openTabById('hotkeys');
 				const tab = this.app.setting.activeTab;
-				if (tab && tab.searchComponent) { tab.searchComponent.setValue('Canvas board'); if (tab.setQuery) tab.setQuery('Canvas board'); }
+				if (tab && tab.searchComponent) { tab.searchComponent.setValue(this.plugin.manifest.name); if (tab.setQuery) tab.setQuery(this.plugin.manifest.name); }
 			}));
 		heading('Board');
 		new Setting(containerEl).setName('Starter board').setDesc('A board with the color legend and first steps: the default board if it does not exist yet, else "Starter board.canvas".').addButton(b => b
@@ -1745,9 +1745,9 @@ class CanvasBoardSettings extends PluginSettingTab {
 			try {
 				fs.mkdirSync(path.dirname(skillFile), { recursive: true });
 				fs.writeFileSync(skillFile, editor.value);
-				new Notice('Canvas board: agent instructions saved');
+				new Notice('Kanvas board: agent instructions saved');
 			} catch (e) {
-				new Notice(`Canvas board: could not save the agent instructions (${e.message})`);
+				new Notice(`Kanvas board: could not save the agent instructions (${e.message})`);
 			}
 		});
 		heading('APM counter').setDesc('Canvas cards touched in a rolling window, in the status bar while a canvas is the active tab.');

@@ -1,10 +1,10 @@
 ---
 name: canvas-board
-description: Run one agent pass over the planning canvas (the default board, or the one named, and the plan canvases it links): take every cyan or purple card up the ladder (wish → brief → plan → done), recolor it, roll statuses up and report what needs User. Use for "/canvas-board", "run a pass", "recheck the board", or when the Obsidian "Canvas board: run pass" command opens a session.
+description: Run one agent pass over the planning canvas (the default board, or the one named, and the plan canvases it links): take every cyan or purple card up the ladder (wish → brief → plan → done), recolor it, roll statuses up and report what needs User. Use for "/canvas-board", "run a pass", "recheck the board", or when the Obsidian "Kanvas board: run pass" command opens a session.
 argument-hint: "[board path, default: plugin setting \"Default board\"]"
 ---
 
-# Canvas board pass
+# Kanvas board pass
 
 This skill holds the steps; read `Wiki/G&A/PKM/SOP - Canvas Board.md` only for an edge case it does not cover. **The card color is the state**: notes carry no board fields beyond `context`.
 
