@@ -898,9 +898,10 @@ class CanvasBoardPlugin extends Plugin {
         path.posix.dirname(board) === '.'
           ? ''
           : `${path.posix.dirname(board)}/`;
-      let node = 1;
-      do board = `${folder}Starter board${node > 1 ? ` ${node}` : ''}.canvas`;
-      while (vault.getAbstractFileByPath(board) && ++node);
+      let suffix = 1;
+      do
+        board = `${folder}Starter board${suffix > 1 ? ` ${suffix}` : ''}.canvas`;
+      while (vault.getAbstractFileByPath(board) && ++suffix);
     }
     const id = () =>
       Array.from({ length: 16 }, () =>
@@ -1494,14 +1495,14 @@ class CanvasBoardPlugin extends Plugin {
     const days = Number(this.settings.staleDays) || 0;
     const board = canvas.view && canvas.view.file ? canvas.view.file.path : '';
     for (const node of canvas.nodes.values()) {
-      const canvasData = node.getData();
+      const nodeData = node.getData();
       let age = -1;
-      if (days > 0 && canvasData.color === '3') {
+      if (days > 0 && nodeData.color === '3') {
         let file = null;
-        if (canvasData.type === 'file') {
-          file = this.app.vault.getAbstractFileByPath(canvasData.file);
-        } else if (canvasData.type === 'text') {
-          const match = /\[\[([^\]|#]+)/.exec(canvasData.text || '');
+        if (nodeData.type === 'file') {
+          file = this.app.vault.getAbstractFileByPath(nodeData.file);
+        } else if (nodeData.type === 'text') {
+          const match = /\[\[([^\]|#]+)/.exec(nodeData.text || '');
           if (match) {
             file = this.app.metadataCache.getFirstLinkpathDest(
               match[1].trim(),
@@ -1543,8 +1544,10 @@ class CanvasBoardPlugin extends Plugin {
 
   // Status bar and closed pane: only how many cards are hidden (filter and folds); the pane says by what.
   viewLabel(canvas) {
-    const node = this.viewState(canvas, false).hidden.size;
-    return node ? `${node} card${node > 1 ? 's' : ''} hidden` : '';
+    const hiddenCount = this.viewState(canvas, false).hidden.size;
+    return hiddenCount
+      ? `${hiddenCount} card${hiddenCount > 1 ? 's' : ''} hidden`
+      : '';
   }
 
   updateViewLabel(canvas) {
@@ -1554,15 +1557,15 @@ class CanvasBoardPlugin extends Plugin {
   }
 
   cardText(node) {
-    const canvasData = node.getData();
+    const nodeData = node.getData();
     return String(
-      (canvasData.type === 'text'
-        ? canvasData.text
-        : canvasData.type === 'file'
-          ? canvasData.file
-          : canvasData.type === 'link'
-            ? canvasData.url
-            : canvasData.label) || '',
+      (nodeData.type === 'text'
+        ? nodeData.text
+        : nodeData.type === 'file'
+          ? nodeData.file
+          : nodeData.type === 'link'
+            ? nodeData.url
+            : nodeData.label) || '',
     );
   }
 
@@ -1911,11 +1914,11 @@ class CanvasBoardPlugin extends Plugin {
   }
 
   linkedCanvas(node) {
-    const canvasData = node.getData();
+    const nodeData = node.getData();
     const target =
-      canvasData.type === 'file'
-        ? canvasData.file
-        : ((canvasData.text || '').match(/\[\[([^\]|#]+\.canvas)/) || [])[1];
+      nodeData.type === 'file'
+        ? nodeData.file
+        : ((nodeData.text || '').match(/\[\[([^\]|#]+\.canvas)/) || [])[1];
     if (!target || !target.endsWith('.canvas')) return null;
     return (
       this.app.vault.getAbstractFileByPath(target) ||
@@ -1933,11 +1936,11 @@ class CanvasBoardPlugin extends Plugin {
 
   // Context of the note a card links (its `context:` list), so its archive note keeps the same context.
   cardContexts(node, board) {
-    const canvasData = node.getData();
+    const nodeData = node.getData();
     const target =
-      canvasData.type === 'file'
-        ? canvasData.file
-        : ((canvasData.text || '').match(/\[\[([^\]|#]+)/) || [])[1];
+      nodeData.type === 'file'
+        ? nodeData.file
+        : ((nodeData.text || '').match(/\[\[([^\]|#]+)/) || [])[1];
     const file =
       target &&
       this.app.metadataCache.getFirstLinkpathDest(target.trim(), board);

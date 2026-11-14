@@ -992,12 +992,12 @@ var require_mergeOps = __commonJS({
 var require_plainLines = __commonJS({
   "src/board/plainLines.js"(exports2, module2) {
     function plainLines(text) {
-      const name = (node) => node.replace(/\.(md|canvas)$/, "").split("/").pop();
+      const name = (linkTarget) => linkTarget.replace(/\.(md|canvas)$/, "").split("/").pop();
       return String(text || "").split("\n").map(
         (line) => line.replace(/!?\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(
           /!?\[\[([^\]#]*)#\^?([^\]]+)\]\]/g,
-          (match, node, heading) => node ? `${name(node)} \u203A ${heading}` : heading
-        ).replace(/!?\[\[([^\]]+)\]\]/g, (match, node) => name(node)).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/, "").replace(/\*\*|__|~~|==|`/g, "").replace(/(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g, "$1$2").replace(/\s+/g, " ").trim()
+          (match, linkTarget, heading) => linkTarget ? `${name(linkTarget)} \u203A ${heading}` : heading
+        ).replace(/!?\[\[([^\]]+)\]\]/g, (match, linkTarget) => name(linkTarget)).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/, "").replace(/\*\*|__|~~|==|`/g, "").replace(/(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g, "$1$2").replace(/\s+/g, " ").trim()
       ).filter(Boolean);
     }
     module2.exports = plainLines;
@@ -1291,7 +1291,9 @@ var require_CanvasBoardSettings = __commonJS({
               (component) => component.setTooltip("Triggers the agent").setValue(goColors.has(colorNumber)).onChange(async (isOn) => {
                 if (isOn) goColors.add(colorNumber);
                 else goColors.delete(colorNumber);
-                this.plugin.settings.passColors = WORKFLOW.map(([node]) => node).filter((node) => goColors.has(COLOR_NUM[node])).join(" ");
+                this.plugin.settings.passColors = WORKFLOW.map(
+                  ([colorName]) => colorName
+                ).filter((colorName) => goColors.has(COLOR_NUM[colorName])).join(" ");
                 await this.plugin.saveData(this.plugin.settings);
               })
             );
@@ -1361,9 +1363,9 @@ var require_CanvasBoardSettings = __commonJS({
         ).addText((component) => {
           component.setValue(String(apmSettings.windowMinutes));
           component.inputEl.addEventListener("change", async () => {
-            const node = Number(component.getValue());
-            if (!(node > 0) || node === apmSettings.windowMinutes) return;
-            await apm.setWindow(node);
+            const minutes = Number(component.getValue());
+            if (!(minutes > 0) || minutes === apmSettings.windowMinutes) return;
+            await apm.setWindow(minutes);
             this.display();
           });
         });
@@ -1380,9 +1382,9 @@ var require_CanvasBoardSettings = __commonJS({
           "Without an action for this long, the alert stops and the counter dims. It also dims while Obsidian is not focused."
         ).addText(
           (component) => component.setValue(String(apmSettings.idleMinutes)).onChange(async (value) => {
-            const node = Number(value);
-            if (!(node > 0)) return;
-            apmSettings.idleMinutes = node;
+            const minutes = Number(value);
+            if (!(minutes > 0)) return;
+            apmSettings.idleMinutes = minutes;
             await this.plugin.saveData(this.plugin.settings);
             apm.refresh();
           })
@@ -6095,10 +6097,10 @@ var require_CanvasBoardPlugin = __commonJS({
         let board = this.settings.defaultBoard;
         if (vault.getAbstractFileByPath(board)) {
           const folder = path.posix.dirname(board) === "." ? "" : `${path.posix.dirname(board)}/`;
-          let node = 1;
+          let suffix = 1;
           do
-            board = `${folder}Starter board${node > 1 ? ` ${node}` : ""}.canvas`;
-          while (vault.getAbstractFileByPath(board) && ++node);
+            board = `${folder}Starter board${suffix > 1 ? ` ${suffix}` : ""}.canvas`;
+          while (vault.getAbstractFileByPath(board) && ++suffix);
         }
         const id = () => Array.from(
           { length: 16 },
@@ -6646,14 +6648,14 @@ Shift-click: next direction`,
         const days = Number(this.settings.staleDays) || 0;
         const board = canvas.view && canvas.view.file ? canvas.view.file.path : "";
         for (const node of canvas.nodes.values()) {
-          const canvasData = node.getData();
+          const nodeData = node.getData();
           let age = -1;
-          if (days > 0 && canvasData.color === "3") {
+          if (days > 0 && nodeData.color === "3") {
             let file = null;
-            if (canvasData.type === "file") {
-              file = this.app.vault.getAbstractFileByPath(canvasData.file);
-            } else if (canvasData.type === "text") {
-              const match = /\[\[([^\]|#]+)/.exec(canvasData.text || "");
+            if (nodeData.type === "file") {
+              file = this.app.vault.getAbstractFileByPath(nodeData.file);
+            } else if (nodeData.type === "text") {
+              const match = /\[\[([^\]|#]+)/.exec(nodeData.text || "");
               if (match) {
                 file = this.app.metadataCache.getFirstLinkpathDest(
                   match[1].trim(),
@@ -6694,8 +6696,8 @@ Shift-click: next direction`,
       }
       // Status bar and closed pane: only how many cards are hidden (filter and folds); the pane says by what.
       viewLabel(canvas) {
-        const node = this.viewState(canvas, false).hidden.size;
-        return node ? `${node} card${node > 1 ? "s" : ""} hidden` : "";
+        const hiddenCount = this.viewState(canvas, false).hidden.size;
+        return hiddenCount ? `${hiddenCount} card${hiddenCount > 1 ? "s" : ""} hidden` : "";
       }
       updateViewLabel(canvas) {
         const label = canvas ? this.viewLabel(canvas) : "";
@@ -6703,9 +6705,9 @@ Shift-click: next direction`,
         this.viewEl.toggle(!!label);
       }
       cardText(node) {
-        const canvasData = node.getData();
+        const nodeData = node.getData();
         return String(
-          (canvasData.type === "text" ? canvasData.text : canvasData.type === "file" ? canvasData.file : canvasData.type === "link" ? canvasData.url : canvasData.label) || ""
+          (nodeData.type === "text" ? nodeData.text : nodeData.type === "file" ? nodeData.file : nodeData.type === "link" ? nodeData.url : nodeData.label) || ""
         );
       }
       // Background of a color dot: a preset canvas color ('1'…'6'), a custom hex, or none.
@@ -6990,8 +6992,8 @@ Shift-click: next direction`,
         );
       }
       linkedCanvas(node) {
-        const canvasData = node.getData();
-        const target = canvasData.type === "file" ? canvasData.file : ((canvasData.text || "").match(/\[\[([^\]|#]+\.canvas)/) || [])[1];
+        const nodeData = node.getData();
+        const target = nodeData.type === "file" ? nodeData.file : ((nodeData.text || "").match(/\[\[([^\]|#]+\.canvas)/) || [])[1];
         if (!target || !target.endsWith(".canvas")) return null;
         return this.app.vault.getAbstractFileByPath(target) || this.app.metadataCache.getFirstLinkpathDest(target.trim(), "");
       }
@@ -7001,8 +7003,8 @@ Shift-click: next direction`,
       }
       // Context of the note a card links (its `context:` list), so its archive note keeps the same context.
       cardContexts(node, board) {
-        const canvasData = node.getData();
-        const target = canvasData.type === "file" ? canvasData.file : ((canvasData.text || "").match(/\[\[([^\]|#]+)/) || [])[1];
+        const nodeData = node.getData();
+        const target = nodeData.type === "file" ? nodeData.file : ((nodeData.text || "").match(/\[\[([^\]|#]+)/) || [])[1];
         const file = target && this.app.metadataCache.getFirstLinkpathDest(target.trim(), board);
         const frontmatter = file && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
         const contexts = frontmatter && frontmatter.context ? [].concat(frontmatter.context).map(String) : [];
