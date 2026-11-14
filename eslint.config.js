@@ -29,6 +29,9 @@ module.exports = [
       // K&R braces
       'brace-style': ['error', '1tbs', { allowSingleLine: true }],
       curly: ['error', 'multi-line'],
+      // Function declarations, not functions stored in consts (arrows that
+      // need the enclosing this stay arrows)
+      'func-style': ['error', 'declaration'],
       // Tiny functions, 60-line cap
       'max-lines-per-function': [
         'error',
