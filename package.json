@@ -7,7 +7,9 @@
     "test": "node test/apm.test.js && node test/golden/run.js && node test/plugin/run.js",
     "check:style": "eslint .",
     "check:style:summary": "node style/summary.js",
-    "check": "npm run build && npm test && npm run check:style"
+    "check": "npm run build && npm test && npm run check:style",
+    "hooks": "git config core.hooksPath hooks",
+    "format": "prettier --write src test style build.js eslint.config.js"
   },
   "author": "",
   "license": "ISC",
