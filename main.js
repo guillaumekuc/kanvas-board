@@ -8,6 +8,7 @@
 const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, AbstractInputSuggest, Scope, setIcon } = require('obsidian');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // [color name, canvas color, command key, default label]. Labels can be edited in Settings > Workflow.
@@ -21,7 +22,8 @@ const COLORS = [
 	['purple', '6', '6', 'Clarify'],
 ];
 
-// {vault} {board} {claude} are replaced; quoted parts stay one argument.
+// Terminal command: empty = the platform's terminal (defaultLaunch); else {vault} {board} {claude} are replaced
+// and quoted parts stay one argument.
 const DEFAULTS = {
 	defaultBoard: 'Board.canvas',
 	claudePath: '',
@@ -31,7 +33,7 @@ const DEFAULTS = {
 	staleDays: '7', // yellow cards whose note is untouched this long get a warning badge (and the rollup's `· Nd`)
 	hideTagBranches: true, // a hidden tag also hides the cards below its cards (in the fold direction)
 	foldDirection: 'out', // fold hides the cards a card points to (out) or the cards pointing to it (in)
-	terminal: 'wt.exe -w canvas-board new-tab -d "{vault}" --title "pass {board}" "{claude}" "/canvas-board {board}"',
+	terminal: '',
 	passColors: 'cyan purple', // cards that start a pass (and that tree --active takes, see workflow.js); empty = never
 	notesFolder: 'Board notes', // where the agent keeps the notes it makes for cards (read by workflow.js and the skill)
 	archiveMode: 'board', // board: archive notes in "<board> archive/" next to each board; global: all in archiveFolder
@@ -58,6 +60,44 @@ const LAYOUT_DIRS = {
 };
 // The icon's next rotation for a direction: the shortest way there, so cycling keeps turning the same way.
 const nextTurn = (current, target) => current + ((target - current) % 360 + 540) % 360 - 180;
+
+// The pass's terminal when the "Terminal command" setting is empty: [command, args], or null (no terminal found).
+// Windows Terminal; macOS Terminal.app through AppleScript (paths passed as argv, quoted by the shell);
+// on Linux the first known terminal on PATH. `claude` runs in the vault folder with the skill as its prompt.
+const onPath = bin => String(process.env.PATH || '').split(path.delimiter).some(d => d && fs.existsSync(path.join(d, bin)));
+const LINUX_TERMINALS = [ // [binary, (vault, command) => args]
+	['gnome-terminal', (v, c) => [`--working-directory=${v}`, '--', ...c]],
+	['konsole', (v, c) => ['--workdir', v, '-e', ...c]],
+	['xfce4-terminal', (v, c) => ['--working-directory', v, '-x', ...c]],
+	['kitty', (v, c) => ['--directory', v, ...c]],
+	['alacritty', (v, c) => ['--working-directory', v, '-e', ...c]],
+	['wezterm', (v, c) => ['start', '--cwd', v, '--', ...c]],
+	['foot', (v, c) => [`--working-directory=${v}`, ...c]],
+	['x-terminal-emulator', (v, c) => ['-e', ...c]],
+	['xterm', (v, c) => ['-e', ...c]],
+];
+function defaultLaunch({ vault, board, claude }) {
+	const prompt = `/canvas-board ${board}`;
+	if (process.platform === 'win32') return ['wt.exe', ['-w', 'canvas-board', 'new-tab', '-d', vault, '--title', `pass ${board}`, claude, prompt]];
+	if (process.platform === 'darwin') return ['osascript', [
+		'-e', 'on run argv',
+		'-e', 'tell application "Terminal"',
+		'-e', 'activate',
+		'-e', 'do script "cd " & quoted form of item 1 of argv & " && " & quoted form of item 2 of argv & " " & quoted form of item 3 of argv',
+		'-e', 'end tell',
+		'-e', 'end run',
+		vault, claude, prompt,
+	]];
+	const found = LINUX_TERMINALS.find(([bin]) => onPath(bin));
+	return found ? [found[0], found[1](vault, [claude, prompt])] : null;
+}
+
+// Claude Code: the setting, else the native installer's ~/.local/bin/claude(.exe), else `claude` on PATH.
+function claudeBin(setting) {
+	if (setting) return setting;
+	const local = path.join(os.homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
+	return fs.existsSync(local) ? local : 'claude';
+}
 
 module.exports = class CanvasBoardPlugin extends Plugin {
 	async onload() {
@@ -1100,8 +1140,7 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 
 	async runPass() {
 		const vault = this.app.vault.adapter.basePath;
-		const local = path.join(process.env.USERPROFILE || '', '.local', 'bin', 'claude.exe');
-		const claude = this.settings.claudePath || (fs.existsSync(local) ? local : 'claude');
+		const claude = claudeBin(this.settings.claudePath);
 		const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
 		const board = view && view.getViewType() === 'canvas' && view.file ? view.file.path : this.settings.defaultBoard;
 		const go = parseColors(this.settings.passColors);
@@ -1119,10 +1158,18 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 			return;
 		}
 		const vars = { vault, board, claude };
-		const [cmd, ...cmdArgs] = (this.settings.terminal.match(/"[^"]*"|\S+/g) || [])
-			.map(a => a.replace(/^"|"$/g, '').replace(/\{(vault|board|claude)\}/g, (_, k) => vars[k]));
+		const template = String(this.settings.terminal || '').trim();
+		const launch = template
+			? (([c, ...a]) => [c, a])((template.match(/"[^"]*"|\S+/g) || [])
+				.map(a => a.replace(/^"|"$/g, '').replace(/\{(vault|board|claude)\}/g, (_, k) => vars[k])))
+			: defaultLaunch(vars);
+		if (!launch) {
+			new Notice('Canvas board: no terminal found to start the pass. Set "Terminal command" in the plugin settings.', 10000);
+			return;
+		}
+		const [cmd, cmdArgs] = launch;
 		try {
-			const child = spawn(cmd, cmdArgs, { detached: true, stdio: 'ignore' });
+			const child = spawn(cmd, cmdArgs, { cwd: vault, detached: true, stdio: 'ignore' });
 			child.on('error', e => new Notice(`Canvas board: could not start the pass (${e.message})`));
 			child.unref();
 			new Notice(`Canvas board: pass started on ${board}`);
@@ -1616,8 +1663,8 @@ class CanvasBoardSettings extends PluginSettingTab {
 				}));
 		}
 		heading('Pass');
-		text('Claude path', 'Empty: ~/.local/bin/claude.exe if it exists, else claude on PATH.', 'claudePath');
-		text('Terminal command', 'Starts the pass. {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
+		text('Claude path', 'Empty: ~/.local/bin/claude (claude.exe on Windows) if it exists, else claude on PATH.', 'claudePath');
+		text('Terminal command', 'Starts the pass. Empty: Windows Terminal, macOS Terminal, or the first known terminal on Linux (gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm, foot, xterm). Otherwise {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
 		new Setting(containerEl).setName('Agent skill').setDesc('.claude/skills/canvas-board/SKILL.md is written once from the plugin, then it is yours: plugin updates never overwrite it. Reset brings back the plugin\'s version.').addButton(b => b
 			.setButtonText('Reset skill')
 			.setWarning()
