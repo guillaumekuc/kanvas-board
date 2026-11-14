@@ -391,8 +391,7 @@ class CanvasBoardPlugin extends Plugin {
     tidy.setAttr(
       'aria-label',
       this.keyedLabel(
-        `Tidy layout: ${direction.name}
-Shift-click: next direction`,
+        `Tidy layout: ${direction.name}\nShift-click: next direction`,
         'tidy-layout',
       ),
     );
