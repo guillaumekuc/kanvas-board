@@ -153,8 +153,8 @@ class CanvasBoardPlugin extends Plugin {
     // Each is also a right-click item (label `menu`) on the cards it applies to.
     // `menu` is [title, Lucide icon], or null for a command with no menu item.
     const actions = (this.actions = []);
-    const runAction = (this.runAction = (run, canvas, sel) =>
-      Promise.resolve(run(canvas, sel)).catch(
+    const runAction = (this.runAction = (run, canvas, selection) =>
+      Promise.resolve(run(canvas, selection)).catch(
         (error) => new Notice(`Kanvas board: ${error.message}`),
       ));
     const canvasCommand = (id, name, menu, test, run) => {
@@ -177,8 +177,8 @@ class CanvasBoardPlugin extends Plugin {
       'collapse',
       'Pack into subcanvas',
       ['Pack into subcanvas', 'package'],
-      (canvas, sel) => sel.length > 0,
-      (canvas, sel) =>
+      (canvas, selection) => selection.length > 0,
+      (canvas, selection) =>
         new NamePrompt(this.app, 'Subcanvas name', async (name) => {
           const board = this.activeFile();
           const folder =
@@ -186,17 +186,20 @@ class CanvasBoardPlugin extends Plugin {
               ? board.parent.path + '/'
               : '';
           const file = this.freePath(folder, name, '.canvas');
-          const { operations, sub } = library.collapseOps(
+          const { operations, sub: subcanvas } = library.collapseOps(
             canvas.getData(),
-            sel.map((node) => node.id),
+            selection.map((node) => node.id),
             file,
             name,
           );
-          await this.app.vault.create(file, JSON.stringify(sub, null, '\t'));
+          await this.app.vault.create(
+            file,
+            JSON.stringify(subcanvas, null, '\t'),
+          );
           this.edit(canvas, operations);
           this.undoNotice(
             canvas,
-            `packed ${sel.length} card${sel.length > 1 ? 's' : ''} into ${file}`,
+            `packed ${selection.length} card${selection.length > 1 ? 's' : ''} into ${file}`,
             [file],
           );
         }).open(),
@@ -204,8 +207,8 @@ class CanvasBoardPlugin extends Plugin {
 
     // Unpack (dissolve) = cut and paste: the cards come out, the file goes to the trash. Other links to the file
     // (cards on any canvas, notes) would break: then a choice. Unpack (copy) = copy and paste: the file stays.
-    const linked = (canvas, sel) =>
-      sel.length === 1 && !!this.linkedCanvas(sel[0]);
+    const linked = (canvas, selection) =>
+      selection.length === 1 && !!this.linkedCanvas(selection[0]);
     canvasCommand(
       'expand',
       'Unpack subcanvas (dissolve)',
@@ -235,13 +238,13 @@ class CanvasBoardPlugin extends Plugin {
       'merge',
       'Merge selected cards',
       ['Merge cards', 'merge'],
-      (canvas, sel) => sel.length > 1 && sel.every(isText),
-      (canvas, sel) =>
+      (canvas, selection) => selection.length > 1 && selection.every(isText),
+      (canvas, selection) =>
         this.edit(
           canvas,
           library.mergeOps(
             canvas.getData(),
-            sel.map((node) => node.id),
+            selection.map((node) => node.id),
           ),
         ),
     );
@@ -258,8 +261,10 @@ class CanvasBoardPlugin extends Plugin {
         `split-${separator}`,
         `Split card by ${label}`,
         separator === 'bullet' ? ['Split by top-level bullet', 'split'] : null,
-        (canvas, sel) =>
-          sel.length === 1 && isText(sel[0]) && !sel[0].isEditing,
+        (canvas, selection) =>
+          selection.length === 1 &&
+          isText(selection[0]) &&
+          !selection[0].isEditing,
         (canvas, [node]) =>
           this.edit(
             canvas,
@@ -273,8 +278,10 @@ class CanvasBoardPlugin extends Plugin {
       'extract',
       'Extract current selection to a new card',
       ['Extract current selection to a new card', 'text-select'],
-      (canvas, sel) =>
-        sel.length === 1 && sel[0].isEditing && !!this.cardEditor(sel[0]),
+      (canvas, selection) =>
+        selection.length === 1 &&
+        selection[0].isEditing &&
+        !!this.cardEditor(selection[0]),
       (canvas, [node]) => {
         const editor = this.cardEditor(node);
         const part = editor.getSelection();
@@ -298,8 +305,8 @@ class CanvasBoardPlugin extends Plugin {
       'archive',
       'Archive selected cards',
       ['Archive', 'archive'],
-      (canvas, sel) => sel.length > 0,
-      async (canvas, sel) => {
+      (canvas, selection) => selection.length > 0,
+      async (canvas, selection) => {
         const board = this.activeFile().path;
         const canvasData = canvas.getData();
         const folder = library.archiveDir(board, this.settings);
@@ -307,7 +314,7 @@ class CanvasBoardPlugin extends Plugin {
           await this.app.vault.createFolder(folder);
         }
         const notes = [];
-        for (const node of sel) {
+        for (const node of selection) {
           const archived = library.archiveNote(
             canvasData,
             node.id,
@@ -323,11 +330,11 @@ class CanvasBoardPlugin extends Plugin {
         }
         this.edit(
           canvas,
-          sel.map((node) => ({ op: 'remove', id: node.id })),
+          selection.map((node) => ({ op: 'remove', id: node.id })),
         );
         this.undoNotice(
           canvas,
-          `archived ${sel.length} card${sel.length > 1 ? 's' : ''}`,
+          `archived ${selection.length} card${selection.length > 1 ? 's' : ''}`,
           notes,
         );
       },
@@ -344,12 +351,12 @@ class CanvasBoardPlugin extends Plugin {
       'fold',
       'Fold branch',
       ['Fold branch', 'chevrons-down-up'],
-      (canvas, sel) => sel.some((node) => canFold(canvas, node)),
-      (canvas, sel) =>
+      (canvas, selection) => selection.some((node) => canFold(canvas, node)),
+      (canvas, selection) =>
         this.setFolds(
           canvas,
           new Map(
-            sel
+            selection
               .filter((node) => canFold(canvas, node))
               .map((node) => [node.id, this.settings.foldDirection]),
           ),
@@ -375,14 +382,16 @@ class CanvasBoardPlugin extends Plugin {
         id,
         name,
         menu,
-        (canvas, sel) =>
-          sel.some((node) => this.unfoldTargets(canvas, node.id).length),
-        (canvas, sel) =>
+        (canvas, selection) =>
+          selection.some((node) => this.unfoldTargets(canvas, node.id).length),
+        (canvas, selection) =>
           this.unfold(
             canvas,
             [
               ...new Set(
-                sel.flatMap((node) => this.unfoldTargets(canvas, node.id)),
+                selection.flatMap((node) =>
+                  this.unfoldTargets(canvas, node.id),
+                ),
               ),
             ],
             levels,
@@ -424,7 +433,7 @@ class CanvasBoardPlugin extends Plugin {
       'template-save',
       'Save selected cards as a template',
       ['Save as template', 'layout-template'],
-      (canvas, sel) => sel.length > 0,
+      (canvas, selection) => selection.length > 0,
       (canvas) => {
         const existing = new Map(
           templates().map((file) => [templateName(file).toLowerCase(), file]),
@@ -466,9 +475,9 @@ class CanvasBoardPlugin extends Plugin {
     );
     // Selection tools: the selection grows to related cards (visible ones only: hidden cards never stay selected).
     // Children: every level down, in the fold direction. The selected cards stay selected.
-    const cards = (sel) =>
-      sel.filter((node) => !node.from && node.getData().type !== 'group');
-    const selectMore = (this.selectMore = (canvas, sel, keep) => {
+    const cards = (selection) =>
+      selection.filter((node) => !node.from && node.getData().type !== 'group');
+    const selectMore = (this.selectMore = (canvas, selection, keep) => {
       const add = [...canvas.nodes.values()].filter(
         (node) =>
           node.getData().type !== 'group' &&
@@ -477,13 +486,13 @@ class CanvasBoardPlugin extends Plugin {
       );
       canvas.updateSelection(() => {
         canvas.selection.clear();
-        for (const node of [...sel, ...add]) canvas.selection.add(node);
+        for (const node of [...selection, ...add]) canvas.selection.add(node);
       });
       return add.length;
     });
-    const childIds = (canvas, sel) =>
+    const childIds = (canvas, selection) =>
       new Set(
-        cards(sel).flatMap((node) =>
+        cards(selection).flatMap((node) =>
           this.branchLevels(
             canvas,
             node.id,
@@ -495,28 +504,28 @@ class CanvasBoardPlugin extends Plugin {
       'select-children',
       'Select children (all levels down, in the fold direction)',
       ['Select children', 'list-tree'],
-      (canvas, sel) =>
-        [...childIds(canvas, sel)].some(
+      (canvas, selection) =>
+        [...childIds(canvas, selection)].some(
           (id) =>
             canvas.nodes.get(id) &&
             !this.isHidden(canvas, canvas.nodes.get(id)) &&
             !canvas.selection.has(canvas.nodes.get(id)),
         ),
-      (canvas, sel) => {
-        const ids = childIds(canvas, sel);
-        selectMore(canvas, sel, (node) => ids.has(node.id));
+      (canvas, selection) => {
+        const ids = childIds(canvas, selection);
+        selectMore(canvas, selection, (node) => ids.has(node.id));
       },
     );
-    const tagsOf = (sel) =>
-      new Set(cards(sel).flatMap((node) => [...this.cardTagSet(node)]));
+    const tagsOf = (selection) =>
+      new Set(cards(selection).flatMap((node) => [...this.cardTagSet(node)]));
     canvasCommand(
       'select-same-tag',
       'Select cards with the same tag',
       ['Select same tag', 'tag'],
-      (canvas, sel) => tagsOf(sel).size > 0,
-      (canvas, sel) => {
-        const tags = tagsOf(sel);
-        selectMore(canvas, sel, (node) =>
+      (canvas, selection) => tagsOf(selection).size > 0,
+      (canvas, selection) => {
+        const tags = tagsOf(selection);
+        selectMore(canvas, selection, (node) =>
           [...this.cardTagSet(node)].some((tag) => tags.has(tag)),
         );
       },
@@ -525,12 +534,12 @@ class CanvasBoardPlugin extends Plugin {
       'select-same-color',
       'Select cards with the same color',
       ['Select same color', 'palette'],
-      (canvas, sel) => cards(sel).length > 0,
-      (canvas, sel) => {
+      (canvas, selection) => cards(selection).length > 0,
+      (canvas, selection) => {
         const colors = new Set(
-          cards(sel).map((node) => node.getData().color || ''),
+          cards(selection).map((node) => node.getData().color || ''),
         );
-        selectMore(canvas, sel, (node) =>
+        selectMore(canvas, selection, (node) =>
           colors.has(node.getData().color || ''),
         );
       },
@@ -613,15 +622,15 @@ class CanvasBoardPlugin extends Plugin {
     });
 
     // Right-click on one card, on a selection, or inside a card being edited (Extract).
-    const addActions = (menu, canvas, sel) => {
+    const addActions = (menu, canvas, selection) => {
       for (const action of actions) {
-        if (action.menu && action.test(canvas, sel)) {
+        if (action.menu && action.test(canvas, selection)) {
           menu.addItem((item) =>
             item
               .setTitle(this.keyedTitle(action.menu[0], action.id))
               .setIcon(action.menu[1])
               .setSection('canvas-board')
-              .onClick(() => runAction(action.run, canvas, sel)),
+              .onClick(() => runAction(action.run, canvas, selection)),
           );
         }
       }
@@ -790,10 +799,11 @@ class CanvasBoardPlugin extends Plugin {
     else delete labels[name];
     await this.saveData(this.settings);
     const row = COLORS.find((colorRow) => colorRow[0] === name);
-    const cmd =
+    const colorCommand =
       this.app.commands &&
       this.app.commands.commands[`${this.manifest.id}:color-${row[2]}`];
-    if (cmd) cmd.name = `${this.manifest.name}: ${this.colorCommandName(name)}`;
+    if (colorCommand)
+      colorCommand.name = `${this.manifest.name}: ${this.colorCommandName(name)}`;
     for (const canvas of this.panes.keys()) this.refreshView(canvas);
   }
 
@@ -834,7 +844,7 @@ class CanvasBoardPlugin extends Plugin {
   undoNotice(canvas, message, files = [], restore = null) {
     const history = canvas.history;
     const historyIndex = history ? history.current : null;
-    const frag = createFragment((fragment) => {
+    const noticeContent = createFragment((fragment) => {
       fragment.appendText(`Kanvas board: ${message} `);
       const button = fragment.createEl('button', {
         cls: 'canvas-board-notice-undo',
@@ -855,7 +865,7 @@ class CanvasBoardPlugin extends Plugin {
         }
       });
     });
-    new Notice(frag, 8000);
+    new Notice(noticeContent, 8000);
   }
 
   async openBoard() {
@@ -1112,10 +1122,10 @@ class CanvasBoardPlugin extends Plugin {
     // Selection toolbar: Fold, Unfold, Archive after the canvas's own buttons, when they apply.
     const menu = canvas.menu;
     if (menu && menu.render && !menu.canvasBoardRender) {
-      const orig = (menu.canvasBoardRender = menu.render);
+      const original = (menu.canvasBoardRender = menu.render);
       const plugin = this;
       menu.render = function (...values) {
-        const result = orig.apply(this, values);
+        const result = original.apply(this, values);
         try {
           plugin.menuButtons(canvas);
         } catch (error) {
@@ -1151,9 +1161,9 @@ class CanvasBoardPlugin extends Plugin {
 
   menuButtons(canvas) {
     const element = canvas.menu.menuEl;
-    const sel = [...canvas.selection];
+    const selection = [...canvas.selection];
     if (
-      !sel.length ||
+      !selection.length ||
       !element.childElementCount ||
       element.querySelector('.canvas-board-menu-btn')
     ) {
@@ -1161,7 +1171,7 @@ class CanvasBoardPlugin extends Plugin {
     }
     for (const id of ['fold', 'unfold', 'archive']) {
       const action = this.actions.find((x) => x.id === id);
-      if (!action || !action.test(canvas, sel)) continue;
+      if (!action || !action.test(canvas, selection)) continue;
       const button = element.createEl('button', {
         cls: 'clickable-icon canvas-board-menu-btn',
         attr: {
@@ -1211,9 +1221,9 @@ class CanvasBoardPlugin extends Plugin {
     this.views.set(canvas, state);
     // Hidden cards never stay selected (select all, drag to select), so Delete never hits a card you can't see.
     const plugin = this;
-    const orig = canvas.updateSelection;
+    const original = canvas.updateSelection;
     canvas.updateSelection = function (callback) {
-      const result = orig.call(this, () => {
+      const result = original.call(this, () => {
         callback();
         for (const x of [...this.selection]) {
           if (
@@ -1578,8 +1588,8 @@ class CanvasBoardPlugin extends Plugin {
 
   // Template cards are centered on the visible canvas, whatever is selected; they end up selected.
   async insertTemplate(canvas, file) {
-    const tpl = JSON.parse(await this.app.vault.read(file));
-    const nodes = tpl.nodes || [];
+    const template = JSON.parse(await this.app.vault.read(file));
+    const nodes = template.nodes || [];
     const viewport = canvas.getViewportBBox();
     const width = nodes.length
       ? Math.max(...nodes.map((node) => node.x + node.width)) -
@@ -1593,7 +1603,7 @@ class CanvasBoardPlugin extends Plugin {
       x: Math.round((viewport.minX + viewport.maxX - width) / 2),
       y: Math.round((viewport.minY + viewport.maxY - height) / 2),
     };
-    const operations = this.boardLibrary.templateOps(tpl, origin);
+    const operations = this.boardLibrary.templateOps(template, origin);
     this.edit(canvas, operations);
     const added = operations
       .filter((operation) => operation.op === 'add')
@@ -1632,14 +1642,14 @@ class CanvasBoardPlugin extends Plugin {
     }
     const max = Number(this.settings.cardWarning) || 0;
     const over = max > 0 && cards.length > max;
-    const sel = [...canvas.selection].filter((x) => !x.from).length; // cards and groups, not edges
+    const selectedCount = [...canvas.selection].filter((x) => !x.from).length; // cards and groups, not edges
     // Only the card count takes the warning color, not the selected count.
     this.countEl.empty();
     this.countEl.createSpan({
       text: `${cards.length} cards`,
       cls: over ? 'canvas-board-over' : '',
     }); // warning color, see styles.css
-    if (sel) this.countEl.appendText(` · ${sel} selected`);
+    if (selectedCount) this.countEl.appendText(` · ${selectedCount} selected`);
     this.countEl.setAttr(
       'aria-label',
       (over ? `over ${max} · ` : '') +
@@ -1665,11 +1675,11 @@ class CanvasBoardPlugin extends Plugin {
 
   syncSkill(pluginDir, force = false) {
     const source = path.join(pluginDir, 'skill', 'SKILL.md');
-    const dest = this.skillPath();
+    const skillTarget = this.skillPath();
     try {
-      if (!force && fileSystem.existsSync(dest)) return;
-      fileSystem.mkdirSync(path.dirname(dest), { recursive: true });
-      fileSystem.copyFileSync(source, dest);
+      if (!force && fileSystem.existsSync(skillTarget)) return;
+      fileSystem.mkdirSync(path.dirname(skillTarget), { recursive: true });
+      fileSystem.copyFileSync(source, skillTarget);
       if (force) {
         new Notice("Kanvas board: agent skill reset to the plugin's version");
       }
@@ -1713,9 +1723,9 @@ class CanvasBoardPlugin extends Plugin {
     return view && view.file;
   }
 
-  freePath(folder, name, ext) {
+  freePath(folder, name, extension) {
     for (let attempt = 1; ; attempt++) {
-      const candidate = `${folder}${name}${attempt > 1 ? ' ' + attempt : ''}${ext}`;
+      const candidate = `${folder}${name}${attempt > 1 ? ' ' + attempt : ''}${extension}`;
       if (!this.app.vault.getAbstractFileByPath(candidate)) return candidate;
     }
   }
@@ -1791,9 +1801,9 @@ class CanvasBoardPlugin extends Plugin {
   // mode: dissolve (file to trash, other links break), copy (file kept), group (cards in a group named after the
   // file, other links redirected: cards on this board get an edge to the group, other cards and notes link this board).
   async unpack(canvas, node, file, mode, links = []) {
-    const sub = JSON.parse((await this.app.vault.read(file)) || '{}');
+    const subcanvas = JSON.parse((await this.app.vault.read(file)) || '{}');
     const content = JSON.stringify(
-      { nodes: sub.nodes || [], edges: sub.edges || [] },
+      { nodes: subcanvas.nodes || [], edges: subcanvas.edges || [] },
       null,
       '\t',
     );
@@ -1804,7 +1814,7 @@ class CanvasBoardPlugin extends Plugin {
     const operations = this.boardLibrary.expandOps(
       canvas.getData(),
       node.id,
-      { nodes: sub.nodes || [], edges: sub.edges || [] },
+      { nodes: subcanvas.nodes || [], edges: subcanvas.edges || [] },
       mode === 'group' ? { group: label } : {},
     );
     const here = this.canvasFile(canvas);
@@ -1893,7 +1903,7 @@ class CanvasBoardPlugin extends Plugin {
       }
     }
     if (mode !== 'copy') await this.app.fileManager.trashFile(file);
-    const cardCount = (sub.nodes || []).length,
+    const cardCount = (subcanvas.nodes || []).length,
       linkCount = links.length,
       plural = (x) => (x > 1 ? 's' : '');
     const what = {
@@ -2017,11 +2027,11 @@ class CanvasBoardPlugin extends Plugin {
       for (const match of (node.text || '').matchAll(
         /\[\[([^\]|#]+\.canvas)/g,
       )) {
-        const dest = this.app.metadataCache.getFirstLinkpathDest(
+        const linkedFile = this.app.metadataCache.getFirstLinkpathDest(
           match[1].trim(),
           board,
         );
-        if (dest && (await read(dest.path)).some(isGo)) return true;
+        if (linkedFile && (await read(linkedFile.path)).some(isGo)) return true;
       }
     }
     return false;
@@ -2086,9 +2096,9 @@ class CanvasBoardPlugin extends Plugin {
       );
       return;
     }
-    const [cmd, cmdArgs] = launch;
+    const [command, commandArguments] = launch;
     try {
-      const child = spawn(cmd, cmdArgs, {
+      const child = spawn(command, commandArguments, {
         cwd: vault,
         detached: true,
         stdio: 'ignore',

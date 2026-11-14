@@ -5,24 +5,27 @@ const newId = require('./newId.js');
 // The reverse (unpack): the subcanvas's cards come back centered on the card, shifted right until they overlap nothing;
 // edges on the card go to the first of them in reading order. The caller trashes the .canvas file (dissolve) or
 // keeps it (copy). With `group` (a label), a group is drawn around them and the edges on the card go to it.
-function expandOps(canvasData, id, sub, { group } = {}) {
+function expandOps(canvasData, id, subcanvas, { group } = {}) {
   const card = canvasData.nodes.find((node) => node.id === id);
   if (!card) throw new Error('no node ' + id);
-  if (!sub.nodes.length) throw new Error('empty subcanvas');
+  if (!subcanvas.nodes.length) throw new Error('empty subcanvas');
   const taken = new Set(
     canvasData.nodes
       .map((node) => node.id)
       .concat(canvasData.edges.map((edge) => edge.id)),
   );
   const ids = new Map(
-    sub.nodes.map((node) => [node.id, taken.has(node.id) ? newId() : node.id]),
+    subcanvas.nodes.map((node) => [
+      node.id,
+      taken.has(node.id) ? newId() : node.id,
+    ]),
   );
-  const box = bounds(sub.nodes);
+  const box = bounds(subcanvas.nodes);
   const others = canvasData.nodes.filter((node) => node.id !== id);
   let offsetX = Math.round(card.x + (card.width - box.w) / 2) - box.x;
   const offsetY = Math.round(card.y + (card.height - box.h) / 2) - box.y;
   const hits = () =>
-    sub.nodes.some((subNode) =>
+    subcanvas.nodes.some((subNode) =>
       others.some(
         (node) =>
           subNode.x + offsetX < node.x + node.width + 40 &&
@@ -32,7 +35,7 @@ function expandOps(canvasData, id, sub, { group } = {}) {
       ),
     );
   for (let attempt = 0; attempt < 200 && hits(); attempt++) offsetX += 40;
-  const nodes = sub.nodes.map((node) => ({
+  const nodes = subcanvas.nodes.map((node) => ({
     ...node,
     id: ids.get(node.id),
     x: node.x + offsetX,
@@ -65,7 +68,7 @@ function expandOps(canvasData, id, sub, { group } = {}) {
     operations.push({ op: 'add', node: first });
   }
   operations.push(...nodes.map((node) => ({ op: 'add', node })));
-  for (const edge of sub.edges) {
+  for (const edge of subcanvas.edges) {
     operations.push({
       op: 'edge',
       edge: {

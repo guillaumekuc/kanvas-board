@@ -3,7 +3,7 @@ const activeTree = require('../workflow/activeTree.js');
 const check = require('../workflow/check.js');
 const rollup = require('../workflow/rollup.js');
 const workflowTree = require('../workflow/tree.js');
-const abs = require('../board/abs.js');
+const vaultPath = require('../board/vaultPath.js');
 const archiveDir = require('../board/archiveDir.js');
 const archiveNote = require('../board/archiveNote.js');
 const cardContexts = require('../board/cardContexts.js');
@@ -37,11 +37,11 @@ const positional = args.filter((argument, index) => !argument.startsWith('--') &
 const option = name => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : undefined; };
 
 {
-  const [cmd, boardArg, ...rest] = positional;
+  const [command, boardArg, ...rest] = positional;
   const board = boardArg || String(settings().defaultBoard || '').trim() || DEFAULT_BOARD;
   const print = x => console.log(JSON.stringify(x, null, 2));
 
-  switch (cmd) {
+  switch (command) {
     case 'read': print(readBoard(board)); break;
     case 'tree': print(args.includes('--active') ? activeTree(workflowTree(board)) : workflowTree(board)); break;
     case 'set': {
@@ -83,8 +83,8 @@ const option = name => { const index = args.indexOf(name); return index >= 0 ? a
       const name = option('--name');
       if (!name) throw new Error('collapse needs --name');
       const file = freePath(path.posix.dirname(board), name, '.canvas');
-      const { operations, sub, id } = collapseOps(readBoard(board), (option('--ids') || '').split(',').filter(Boolean), file, name);
-      fileSystem.writeFileSync(abs(file), serialize(sub));
+      const { operations, sub: subcanvas, id } = collapseOps(readBoard(board), (option('--ids') || '').split(',').filter(Boolean), file, name);
+      fileSystem.writeFileSync(vaultPath(file), serialize(subcanvas));
       writeOps(board, operations);
       console.log(file, id);
       break;
@@ -92,13 +92,13 @@ const option = name => { const index = args.indexOf(name); return index >= 0 ? a
     case 'unpack':
     case 'expand': {
       const card = readBoard(board).nodes.find(node => node.id === rest[0]);
-      const sub = card && cardLinks(card).canvas;
-      if (!sub) throw new Error('card links no canvas');
-      const others = args.includes('--keep') ? [] : linksTo(sub, board, rest[0]);
-      writeOps(board, expandOps(readBoard(board), rest[0], readBoard(sub)));
-      if (args.includes('--keep')) console.log('unpacked (copy), kept', sub);
-      else if (others.length) console.log('unpacked, kept', sub, '- still linked from:', others.join(', '));
-      else { toTrash(sub); console.log('unpacked (dissolve), trashed', sub); }
+      const subcanvas = card && cardLinks(card).canvas;
+      if (!subcanvas) throw new Error('card links no canvas');
+      const others = args.includes('--keep') ? [] : linksTo(subcanvas, board, rest[0]);
+      writeOps(board, expandOps(readBoard(board), rest[0], readBoard(subcanvas)));
+      if (args.includes('--keep')) console.log('unpacked (copy), kept', subcanvas);
+      else if (others.length) console.log('unpacked, kept', subcanvas, '- still linked from:', others.join(', '));
+      else { toTrash(subcanvas); console.log('unpacked (dissolve), trashed', subcanvas); }
       break;
     }
     case 'merge': console.log(writeOps(board, mergeOps(readBoard(board), (option('--ids') || '').split(',').filter(Boolean)))); break;
@@ -112,15 +112,15 @@ const option = name => { const index = args.indexOf(name); return index >= 0 ? a
         const archived = archiveNote(canvasData, id, board, today(), node && cardContexts(node));
         const folder = archiveDir(board, settings());
         const file = freePath(folder, archived.name, '.md');
-        fileSystem.mkdirSync(abs(folder), { recursive: true });
-        fileSystem.writeFileSync(abs(file), archived.content);
+        fileSystem.mkdirSync(vaultPath(folder), { recursive: true });
+        fileSystem.writeFileSync(vaultPath(file), archived.content);
         console.log(file);
       }
       writeOps(board, ids.map(id => ({ op: 'remove', id })));
       break;
     }
     case 'restore': { // positional is the archive note, not a board
-      const source = fileSystem.readFileSync(abs(boardArg), 'utf8');
+      const source = fileSystem.readFileSync(vaultPath(boardArg), 'utf8');
       const target = restoreOps({ nodes: [], edges: [] }, source).board;
       const { operations } = restoreOps(readBoard(target), source);
       console.log(writeOps(target, operations), target, operations[0].node.id);

@@ -13,10 +13,10 @@ class CanvasBoardSettings extends PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    const text = (name, desc, key) =>
+    const text = (name, description, key) =>
       new Setting(containerEl)
         .setName(name)
-        .setDesc(desc)
+        .setDesc(description)
         .addText((component) =>
           component
             .setPlaceholder(DEFAULTS[key])

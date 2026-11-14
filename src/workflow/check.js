@@ -1,5 +1,5 @@
 const { ORANGE_STALE_MS, WORKING } = require('./constants.js');
-const abs = require('../board/abs.js');
+const vaultPath = require('../board/vaultPath.js');
 const cardLinks = require('../board/cardLinks.js');
 const cardTextOk = require('./cardTextOk.js');
 const findFile = require('../board/findFile.js');
@@ -51,7 +51,7 @@ function check(board, ids) {
       } // plan-canvas cards are parts, free text
       const { note, canvas } = cardLinks(node);
       if (note && note.startsWith(folder)) {
-        const source = fileSystem.readFileSync(abs(note), 'utf8');
+        const source = fileSystem.readFileSync(vaultPath(note), 'utf8');
         if (scoped) {
           const frontmatter = (source.match(/^---\n([\s\S]*?)\n---/) || [])[1];
           const keys = frontmatter
@@ -81,7 +81,8 @@ function check(board, ids) {
         }
         if (
           node.color === WORKING &&
-          Date.now() - fileSystem.statSync(abs(note)).mtimeMs > ORANGE_STALE_MS
+          Date.now() - fileSystem.statSync(vaultPath(note)).mtimeMs >
+            ORANGE_STALE_MS
         ) {
           add('orange card, note untouched for 1h+ (interrupted pass?)');
         }

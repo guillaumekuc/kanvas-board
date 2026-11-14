@@ -38,19 +38,19 @@ function restoreOps(canvasData, source) {
   const old = get('card-id');
   const edgeIds = new Set(canvasData.edges.map((edge) => edge.id));
   for (const edgeLine of frontmatter.matchAll(/^ {2}- (".*")$/gm)) {
-    const [eid, from, fromSide, toId, toSide, label] = JSON.parse(
+    const [edgeId, from, fromSide, toId, toSide, label] = JSON.parse(
       edgeLine[1],
     ).split(' | ');
     const fromNode = from === old ? id : from,
       toNode = toId === old ? id : toId;
     if (
-      edgeIds.has(eid) ||
+      edgeIds.has(edgeId) ||
       !(fromNode === id || ids.has(fromNode)) ||
       !(toNode === id || ids.has(toNode))
     ) {
       continue;
     }
-    const edge = { id: eid, fromNode, toNode };
+    const edge = { id: edgeId, fromNode, toNode };
     if (fromSide) edge.fromSide = fromSide;
     if (toSide) edge.toSide = toSide;
     if (label) edge.label = label;

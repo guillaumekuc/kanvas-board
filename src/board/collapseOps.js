@@ -7,7 +7,7 @@ function collapseOps(canvasData, ids, file, label) {
   const moving = canvasData.nodes.filter((node) => pick.has(node.id));
   if (!moving.length) throw new Error('nothing to collapse');
   const box = bounds(moving);
-  const sub = {
+  const subcanvas = {
     nodes: moving.map((node) => ({
       ...node,
       x: node.x - box.x,
@@ -42,7 +42,7 @@ function collapseOps(canvasData, ids, file, label) {
     }
   }
   for (const node of moving) operations.push({ op: 'remove', id: node.id });
-  return { operations, sub, id: card.id };
+  return { operations, sub: subcanvas, id: card.id };
 }
 
 module.exports = collapseOps;

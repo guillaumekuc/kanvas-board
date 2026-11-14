@@ -1,7 +1,7 @@
 const newId = require('./newId.js');
 
-function templateOps(tpl, origin) {
-  const nodes = tpl.nodes || [];
+function templateOps(template, origin) {
+  const nodes = template.nodes || [];
   if (!nodes.length) throw new Error('empty template');
   const minX = Math.min(...nodes.map((node) => node.x)),
     minY = Math.min(...nodes.map((node) => node.y));
@@ -15,7 +15,7 @@ function templateOps(tpl, origin) {
       y: node.y - minY + origin.y,
     },
   }));
-  for (const edge of tpl.edges || []) {
+  for (const edge of template.edges || []) {
     if (ids.has(edge.fromNode) && ids.has(edge.toNode)) {
       operations.push({
         op: 'edge',

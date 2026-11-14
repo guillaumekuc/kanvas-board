@@ -1,9 +1,9 @@
-const abs = require('./abs.js');
+const vaultPath = require('./vaultPath.js');
 const fileSystem = require('fs');
 
 const readFileBoard = (board) => {
   const canvasData = JSON.parse(
-    fileSystem.readFileSync(abs(board), 'utf8') || '{}',
+    fileSystem.readFileSync(vaultPath(board), 'utf8') || '{}',
   );
   canvasData.nodes ||= [];
   canvasData.edges ||= [];

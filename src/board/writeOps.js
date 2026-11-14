@@ -1,4 +1,4 @@
-const abs = require('./abs.js');
+const vaultPath = require('./vaultPath.js');
 const api = require('./api.js');
 const applyOps = require('./applyOps.js');
 const fileSystem = require('fs');
@@ -13,7 +13,7 @@ function writeOps(board, operations) {
   }
   const canvasData = readFileBoard(board);
   applyOps(canvasData, operations);
-  fileSystem.writeFileSync(abs(board), serialize(canvasData));
+  fileSystem.writeFileSync(vaultPath(board), serialize(canvasData));
   return 'file';
 }
 

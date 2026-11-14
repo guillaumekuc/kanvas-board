@@ -41,7 +41,7 @@ function defaultLaunch({ vault, board, claude }) {
       ],
     ];
   }
-  const found = LINUX_TERMINALS.find(([bin]) => onPath(bin));
+  const found = LINUX_TERMINALS.find(([binary]) => onPath(binary));
   return found ? [found[0], found[1](vault, [claude, prompt])] : null;
 }
 

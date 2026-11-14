@@ -173,13 +173,13 @@ var require_activeTree = __commonJS({
   }
 });
 
-// src/board/abs.js
-var require_abs = __commonJS({
-  "src/board/abs.js"(exports2, module2) {
+// src/board/vaultPath.js
+var require_vaultPath = __commonJS({
+  "src/board/vaultPath.js"(exports2, module2) {
     var { ROOT } = require_constants();
     var path2 = require("path");
-    var abs2 = (relativePath) => path2.join(ROOT, relativePath);
-    module2.exports = abs2;
+    var vaultPath2 = (relativePath) => path2.join(ROOT, relativePath);
+    module2.exports = vaultPath2;
   }
 });
 
@@ -205,7 +205,7 @@ var require_settings2 = __commonJS({
 var require_vaultFileIndex = __commonJS({
   "src/board/vaultFileIndex.js"(exports2, module2) {
     var { SKIP_DIRS } = require_constants();
-    var abs2 = require_abs();
+    var vaultPath2 = require_vaultPath();
     var fileSystem2 = require("fs");
     var path2 = require("path");
     var settings2 = require_settings2();
@@ -224,7 +224,7 @@ var require_vaultFileIndex = __commonJS({
           this.files = /* @__PURE__ */ new Map();
           const skip = /* @__PURE__ */ new Set([...SKIP_DIRS, ...settings2().skipFolders || []]);
           const walk = (folder) => {
-            for (const entry of fileSystem2.readdirSync(abs2(folder), {
+            for (const entry of fileSystem2.readdirSync(vaultPath2(folder), {
               withFileTypes: true
             })) {
               if (entry.isDirectory()) {
@@ -233,11 +233,11 @@ var require_vaultFileIndex = __commonJS({
                 }
                 continue;
               }
-              const rel = path2.posix.join(folder, entry.name);
+              const relativePath = path2.posix.join(folder, entry.name);
               const key = entry.name.endsWith(".md") ? entry.name.slice(0, -3) : entry.name;
-              if (!this.files.has(key)) this.files.set(key, rel);
-              this.files.set(rel, rel);
-              this.files.set(rel.replace(/\.md$/, ""), rel);
+              if (!this.files.has(key)) this.files.set(key, relativePath);
+              this.files.set(relativePath, relativePath);
+              this.files.set(relativePath.replace(/\.md$/, ""), relativePath);
             }
           };
           walk("");
@@ -295,10 +295,10 @@ var require_noteContexts = __commonJS({
   "src/board/noteContexts.js"(exports2, module2) {
     function noteContexts(frontmatter) {
       if (!frontmatter) return [];
-      const unq = (value) => value.trim().replace(/^(["'])(.*)\1$/, "$2");
+      const unquote = (value) => value.trim().replace(/^(["'])(.*)\1$/, "$2");
       const match = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m.exec(frontmatter);
       if (!match) return [];
-      return (match[1].trim() ? match[1].replace(/^\[|\]$/g, "").split(",") : match[2].split(/\r?\n/).filter((line) => line.trim()).map((line) => line.replace(/^\s+-\s*/, ""))).map(unq).filter(Boolean);
+      return (match[1].trim() ? match[1].replace(/^\[|\]$/g, "").split(",") : match[2].split(/\r?\n/).filter((line) => line.trim()).map((line) => line.replace(/^\s+-\s*/, ""))).map(unquote).filter(Boolean);
     }
     module2.exports = noteContexts;
   }
@@ -320,9 +320,9 @@ var require_obsidianEval = __commonJS({
     var { execFileSync } = require("child_process");
     var { OBSIDIAN } = require_constants();
     function obsidianEval(code) {
-      for (const bin of OBSIDIAN) {
+      for (const binary of OBSIDIAN) {
         try {
-          const out = execFileSync(bin, ["eval", `code=${code}`], {
+          const out = execFileSync(binary, ["eval", `code=${code}`], {
             encoding: "utf8",
             stdio: ["ignore", "pipe", "pipe"]
           });
@@ -354,11 +354,11 @@ var require_api = __commonJS({
 // src/board/readFileBoard.js
 var require_readFileBoard = __commonJS({
   "src/board/readFileBoard.js"(exports2, module2) {
-    var abs2 = require_abs();
+    var vaultPath2 = require_vaultPath();
     var fileSystem2 = require("fs");
     var readFileBoard = (board) => {
       const canvasData = JSON.parse(
-        fileSystem2.readFileSync(abs2(board), "utf8") || "{}"
+        fileSystem2.readFileSync(vaultPath2(board), "utf8") || "{}"
       );
       canvasData.nodes ||= [];
       canvasData.edges ||= [];
@@ -389,7 +389,7 @@ var require_readBoard = __commonJS({
 var require_check = __commonJS({
   "src/workflow/check.js"(exports2, module2) {
     var { ORANGE_STALE_MS, WORKING } = require_constants2();
-    var abs2 = require_abs();
+    var vaultPath2 = require_vaultPath();
     var cardLinks2 = require_cardLinks();
     var cardTextOk = require_cardTextOk();
     var findFile = require_findFile();
@@ -428,7 +428,7 @@ var require_check = __commonJS({
           }
           const { note, canvas } = cardLinks2(node);
           if (note && note.startsWith(folder)) {
-            const source = fileSystem2.readFileSync(abs2(note), "utf8");
+            const source = fileSystem2.readFileSync(vaultPath2(note), "utf8");
             if (scoped) {
               const frontmatter = (source.match(/^---\n([\s\S]*?)\n---/) || [])[1];
               const keys = frontmatter ? [...frontmatter.matchAll(/^(\w[\w-]*):/gm)].map(
@@ -454,7 +454,7 @@ var require_check = __commonJS({
                 add("green card, note has no ## Output");
               }
             }
-            if (node.color === WORKING && Date.now() - fileSystem2.statSync(abs2(note)).mtimeMs > ORANGE_STALE_MS) {
+            if (node.color === WORKING && Date.now() - fileSystem2.statSync(vaultPath2(note)).mtimeMs > ORANGE_STALE_MS) {
               add("orange card, note untouched for 1h+ (interrupted pass?)");
             }
           }
@@ -504,7 +504,7 @@ var require_staleDays = __commonJS({
 // src/board/tree.js
 var require_tree = __commonJS({
   "src/board/tree.js"(exports2, module2) {
-    var abs2 = require_abs();
+    var vaultPath2 = require_vaultPath();
     var cardLinks2 = require_cardLinks();
     var fileSystem2 = require("fs");
     var readBoard2 = require_readBoard();
@@ -523,7 +523,7 @@ var require_tree = __commonJS({
           };
           if (note) {
             const ageDays = Math.floor(
-              (Date.now() - fileSystem2.statSync(abs2(note)).mtimeMs) / 864e5
+              (Date.now() - fileSystem2.statSync(vaultPath2(note)).mtimeMs) / 864e5
             );
             card.note = {
               path: note,
@@ -550,10 +550,10 @@ var require_tree = __commonJS({
 // src/workflow/noteState.js
 var require_noteState = __commonJS({
   "src/workflow/noteState.js"(exports2, module2) {
-    var abs2 = require_abs();
+    var vaultPath2 = require_vaultPath();
     var fileSystem2 = require("fs");
-    function noteState(rel) {
-      const text = fileSystem2.readFileSync(abs2(rel), "utf8");
+    function noteState(relativePath) {
+      const text = fileSystem2.readFileSync(vaultPath2(relativePath), "utf8");
       const parts = [...text.matchAll(/^\s*- \[([ xX])\] /gm)];
       const done = parts.filter((match) => match[1] !== " ").length;
       const questions = [
@@ -668,7 +668,7 @@ ${canvasData.edges.map(line).join(",\n")}
 // src/board/writeOps.js
 var require_writeOps = __commonJS({
   "src/board/writeOps.js"(exports2, module2) {
-    var abs2 = require_abs();
+    var vaultPath2 = require_vaultPath();
     var api = require_api();
     var applyOps = require_applyOps();
     var fileSystem2 = require("fs");
@@ -682,7 +682,7 @@ var require_writeOps = __commonJS({
       }
       const canvasData = readFileBoard(board);
       applyOps(canvasData, operations);
-      fileSystem2.writeFileSync(abs2(board), serialize2(canvasData));
+      fileSystem2.writeFileSync(vaultPath2(board), serialize2(canvasData));
       return "file";
     }
     module2.exports = writeOps2;
@@ -844,13 +844,13 @@ var require_archiveNote = __commonJS({
 // src/board/cardContexts.js
 var require_cardContexts = __commonJS({
   "src/board/cardContexts.js"(exports2, module2) {
-    var abs2 = require_abs();
+    var vaultPath2 = require_vaultPath();
     var cardLinks2 = require_cardLinks();
     var fileSystem2 = require("fs");
     var noteContexts = require_noteContexts();
     function cardContexts2(node) {
       const { note } = cardLinks2(node);
-      const frontmatter = note && (fileSystem2.readFileSync(abs2(note), "utf8").match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1];
+      const frontmatter = note && (fileSystem2.readFileSync(vaultPath2(note), "utf8").match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1];
       const contexts = noteContexts(frontmatter);
       return contexts.length ? contexts : void 0;
     }
@@ -913,7 +913,7 @@ var require_collapseOps = __commonJS({
       const moving = canvasData.nodes.filter((node) => pick.has(node.id));
       if (!moving.length) throw new Error("nothing to collapse");
       const box = bounds(moving);
-      const sub = {
+      const subcanvas = {
         nodes: moving.map((node) => ({
           ...node,
           x: node.x - box.x,
@@ -946,7 +946,7 @@ var require_collapseOps = __commonJS({
         }
       }
       for (const node of moving) operations.push({ op: "remove", id: node.id });
-      return { operations, sub, id: card.id };
+      return { operations, sub: subcanvas, id: card.id };
     }
     module2.exports = collapseOps2;
   }
@@ -985,27 +985,30 @@ var require_expandOps = __commonJS({
     var bounds = require_bounds();
     var byReading = require_byReading();
     var newId2 = require_newId();
-    function expandOps2(canvasData, id, sub, { group } = {}) {
+    function expandOps2(canvasData, id, subcanvas, { group } = {}) {
       const card = canvasData.nodes.find((node) => node.id === id);
       if (!card) throw new Error("no node " + id);
-      if (!sub.nodes.length) throw new Error("empty subcanvas");
+      if (!subcanvas.nodes.length) throw new Error("empty subcanvas");
       const taken = new Set(
         canvasData.nodes.map((node) => node.id).concat(canvasData.edges.map((edge) => edge.id))
       );
       const ids = new Map(
-        sub.nodes.map((node) => [node.id, taken.has(node.id) ? newId2() : node.id])
+        subcanvas.nodes.map((node) => [
+          node.id,
+          taken.has(node.id) ? newId2() : node.id
+        ])
       );
-      const box = bounds(sub.nodes);
+      const box = bounds(subcanvas.nodes);
       const others = canvasData.nodes.filter((node) => node.id !== id);
       let offsetX = Math.round(card.x + (card.width - box.w) / 2) - box.x;
       const offsetY = Math.round(card.y + (card.height - box.h) / 2) - box.y;
-      const hits = () => sub.nodes.some(
+      const hits = () => subcanvas.nodes.some(
         (subNode) => others.some(
           (node) => subNode.x + offsetX < node.x + node.width + 40 && subNode.x + offsetX + subNode.width + 40 > node.x && subNode.y + offsetY < node.y + node.height + 40 && subNode.y + offsetY + subNode.height + 40 > node.y
         )
       );
       for (let attempt = 0; attempt < 200 && hits(); attempt++) offsetX += 40;
-      const nodes = sub.nodes.map((node) => ({
+      const nodes = subcanvas.nodes.map((node) => ({
         ...node,
         id: ids.get(node.id),
         x: node.x + offsetX,
@@ -1028,7 +1031,7 @@ var require_expandOps = __commonJS({
         operations.push({ op: "add", node: first });
       }
       operations.push(...nodes.map((node) => ({ op: "add", node })));
-      for (const edge of sub.edges) {
+      for (const edge of subcanvas.edges) {
         operations.push({
           op: "edge",
           edge: {
@@ -1119,16 +1122,16 @@ var require_extractOps = __commonJS({
 // src/board/freePath.js
 var require_freePath = __commonJS({
   "src/board/freePath.js"(exports2, module2) {
-    var abs2 = require_abs();
+    var vaultPath2 = require_vaultPath();
     var fileSystem2 = require("fs");
     var path2 = require("path");
-    function freePath2(folder, name, ext) {
+    function freePath2(folder, name, extension) {
       for (let attempt = 1; ; attempt++) {
         const candidate = path2.posix.join(
           folder,
-          `${name}${attempt > 1 ? " " + attempt : ""}${ext}`
+          `${name}${attempt > 1 ? " " + attempt : ""}${extension}`
         );
-        if (!fileSystem2.existsSync(abs2(candidate))) return candidate;
+        if (!fileSystem2.existsSync(vaultPath2(candidate))) return candidate;
       }
     }
     module2.exports = freePath2;
@@ -1229,7 +1232,7 @@ var require_relinkText = __commonJS({
     function relinkText(text, hits, replace) {
       return (text || "").replace(
         /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
-        (link, target, sub, alias) => hits(target.trim()) ? replace(
+        (link, target, subpath, alias) => hits(target.trim()) ? replace(
           alias || path2.posix.basename(target.trim()).replace(/\.canvas$/, "")
         ) : link
       );
@@ -1241,24 +1244,24 @@ var require_relinkText = __commonJS({
 // src/board/linksTo.js
 var require_linksTo = __commonJS({
   "src/board/linksTo.js"(exports2, module2) {
-    var abs2 = require_abs();
+    var vaultPath2 = require_vaultPath();
     var findFile = require_findFile();
     var fileSystem2 = require("fs");
     var path2 = require("path");
     var relinkText = require_relinkText();
     var vaultFileIndex = require_vaultFileIndex();
-    function linksTo2(rel, board, skipId) {
+    function linksTo2(relativePath, board, skipId) {
       const out = [];
-      const hits = (target) => findFile(target) === rel;
+      const hits = (target) => findFile(target) === relativePath;
       for (const file of vaultFileIndex.paths()) {
-        if (file === rel || !/\.(md|canvas)$/.test(file)) continue;
+        if (file === relativePath || !/\.(md|canvas)$/.test(file)) continue;
         let source;
         try {
-          source = fileSystem2.readFileSync(abs2(file), "utf8");
+          source = fileSystem2.readFileSync(vaultPath2(file), "utf8");
         } catch (error) {
           continue;
         }
-        if (!source.includes(path2.posix.basename(rel))) continue;
+        if (!source.includes(path2.posix.basename(relativePath))) continue;
         if (file.endsWith(".md")) {
           if (relinkText(source, hits, () => "\0") !== source) out.push(file);
           continue;
@@ -1270,7 +1273,7 @@ var require_linksTo = __commonJS({
           continue;
         }
         for (const node of canvasData.nodes || []) {
-          if (!(file === board && node.id === skipId) && (node.type === "file" ? node.file === rel : relinkText(node.text, hits, () => "\0") !== (node.text || ""))) {
+          if (!(file === board && node.id === skipId) && (node.type === "file" ? node.file === relativePath : relinkText(node.text, hits, () => "\0") !== (node.text || ""))) {
             out.push(`${file} (${node.id})`);
           }
         }
@@ -1318,7 +1321,7 @@ var require_mergeOps = __commonJS({
         }
       ];
       const center = (node) => [node.x + node.width / 2, node.y + node.height / 2];
-      const dist = (first, second) => Math.hypot(
+      const distance = (first, second) => Math.hypot(
         center(first)[0] - center(second)[0],
         center(first)[1] - center(second)[1]
       );
@@ -1333,7 +1336,7 @@ var require_mergeOps = __commonJS({
           continue;
         }
         const out = all.has(edge.fromNode), other = out ? edge.toNode : edge.fromNode;
-        const length = dist(
+        const length = distance(
           canvasData.nodes.find(
             (node) => node.id === (out ? edge.fromNode : edge.toNode)
           ),
@@ -1437,14 +1440,14 @@ var require_restoreOps = __commonJS({
       const old = get("card-id");
       const edgeIds = new Set(canvasData.edges.map((edge) => edge.id));
       for (const edgeLine of frontmatter.matchAll(/^ {2}- (".*")$/gm)) {
-        const [eid, from, fromSide, toId, toSide, label] = JSON.parse(
+        const [edgeId, from, fromSide, toId, toSide, label] = JSON.parse(
           edgeLine[1]
         ).split(" | ");
         const fromNode = from === old ? id : from, toNode = toId === old ? id : toId;
-        if (edgeIds.has(eid) || !(fromNode === id || ids.has(fromNode)) || !(toNode === id || ids.has(toNode))) {
+        if (edgeIds.has(edgeId) || !(fromNode === id || ids.has(fromNode)) || !(toNode === id || ids.has(toNode))) {
           continue;
         }
-        const edge = { id: eid, fromNode, toNode };
+        const edge = { id: edgeId, fromNode, toNode };
         if (fromSide) edge.fromSide = fromSide;
         if (toSide) edge.toSide = toSide;
         if (label) edge.label = label;
@@ -1509,13 +1512,15 @@ var require_today = __commonJS({
 // src/board/toTrash.js
 var require_toTrash = __commonJS({
   "src/board/toTrash.js"(exports2, module2) {
-    var abs2 = require_abs();
+    var vaultPath2 = require_vaultPath();
     var fileSystem2 = require("fs");
     var path2 = require("path");
-    var toTrash2 = (rel) => {
-      const dest = abs2(path2.posix.join(".trash", path2.posix.basename(rel)));
-      fileSystem2.mkdirSync(path2.dirname(dest), { recursive: true });
-      fileSystem2.renameSync(abs2(rel), dest);
+    var toTrash2 = (relativePath) => {
+      const destination = vaultPath2(
+        path2.posix.join(".trash", path2.posix.basename(relativePath))
+      );
+      fileSystem2.mkdirSync(path2.dirname(destination), { recursive: true });
+      fileSystem2.renameSync(vaultPath2(relativePath), destination);
     };
     module2.exports = toTrash2;
   }
@@ -4632,7 +4637,7 @@ var activeTree = require_activeTree();
 var check = require_check();
 var rollup = require_rollup();
 var workflowTree = require_tree2();
-var abs = require_abs();
+var vaultPath = require_vaultPath();
 var archiveDir = require_archiveDir();
 var archiveNote = require_archiveNote();
 var cardContexts = require_cardContexts();
@@ -4666,10 +4671,10 @@ var option = (name) => {
   return index >= 0 ? args[index + 1] : void 0;
 };
 {
-  const [cmd, boardArg, ...rest] = positional;
+  const [command, boardArg, ...rest] = positional;
   const board = boardArg || String(settings().defaultBoard || "").trim() || DEFAULT_BOARD;
   const print = (x) => console.log(JSON.stringify(x, null, 2));
-  switch (cmd) {
+  switch (command) {
     case "read":
       print(readBoard(board));
       break;
@@ -4720,8 +4725,8 @@ var option = (name) => {
       const name = option("--name");
       if (!name) throw new Error("collapse needs --name");
       const file = freePath(path.posix.dirname(board), name, ".canvas");
-      const { operations, sub, id } = collapseOps(readBoard(board), (option("--ids") || "").split(",").filter(Boolean), file, name);
-      fileSystem.writeFileSync(abs(file), serialize(sub));
+      const { operations, sub: subcanvas, id } = collapseOps(readBoard(board), (option("--ids") || "").split(",").filter(Boolean), file, name);
+      fileSystem.writeFileSync(vaultPath(file), serialize(subcanvas));
       writeOps(board, operations);
       console.log(file, id);
       break;
@@ -4729,15 +4734,15 @@ var option = (name) => {
     case "unpack":
     case "expand": {
       const card = readBoard(board).nodes.find((node) => node.id === rest[0]);
-      const sub = card && cardLinks(card).canvas;
-      if (!sub) throw new Error("card links no canvas");
-      const others = args.includes("--keep") ? [] : linksTo(sub, board, rest[0]);
-      writeOps(board, expandOps(readBoard(board), rest[0], readBoard(sub)));
-      if (args.includes("--keep")) console.log("unpacked (copy), kept", sub);
-      else if (others.length) console.log("unpacked, kept", sub, "- still linked from:", others.join(", "));
+      const subcanvas = card && cardLinks(card).canvas;
+      if (!subcanvas) throw new Error("card links no canvas");
+      const others = args.includes("--keep") ? [] : linksTo(subcanvas, board, rest[0]);
+      writeOps(board, expandOps(readBoard(board), rest[0], readBoard(subcanvas)));
+      if (args.includes("--keep")) console.log("unpacked (copy), kept", subcanvas);
+      else if (others.length) console.log("unpacked, kept", subcanvas, "- still linked from:", others.join(", "));
       else {
-        toTrash(sub);
-        console.log("unpacked (dissolve), trashed", sub);
+        toTrash(subcanvas);
+        console.log("unpacked (dissolve), trashed", subcanvas);
       }
       break;
     }
@@ -4758,15 +4763,15 @@ var option = (name) => {
         const archived = archiveNote(canvasData, id, board, today(), node && cardContexts(node));
         const folder = archiveDir(board, settings());
         const file = freePath(folder, archived.name, ".md");
-        fileSystem.mkdirSync(abs(folder), { recursive: true });
-        fileSystem.writeFileSync(abs(file), archived.content);
+        fileSystem.mkdirSync(vaultPath(folder), { recursive: true });
+        fileSystem.writeFileSync(vaultPath(file), archived.content);
         console.log(file);
       }
       writeOps(board, ids.map((id) => ({ op: "remove", id })));
       break;
     }
     case "restore": {
-      const source = fileSystem.readFileSync(abs(boardArg), "utf8");
+      const source = fileSystem.readFileSync(vaultPath(boardArg), "utf8");
       const target = restoreOps({ nodes: [], edges: [] }, source).board;
       const { operations } = restoreOps(readBoard(target), source);
       console.log(writeOps(target, operations), target, operations[0].node.id);

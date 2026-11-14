@@ -1,4 +1,4 @@
-const abs = require('./abs.js');
+const vaultPath = require('./vaultPath.js');
 const findFile = require('./findFile.js');
 const fileSystem = require('fs');
 const path = require('path');
@@ -6,18 +6,18 @@ const relinkText = require('./relinkText.js');
 const vaultFileIndex = require('./vaultFileIndex.js');
 
 // Cards (any .canvas) and notes (.md) that link `rel`, except card `skipId` on `board`: ['path (card id)' | 'path'].
-function linksTo(rel, board, skipId) {
+function linksTo(relativePath, board, skipId) {
   const out = [];
-  const hits = (target) => findFile(target) === rel;
+  const hits = (target) => findFile(target) === relativePath;
   for (const file of vaultFileIndex.paths()) {
-    if (file === rel || !/\.(md|canvas)$/.test(file)) continue;
+    if (file === relativePath || !/\.(md|canvas)$/.test(file)) continue;
     let source;
     try {
-      source = fileSystem.readFileSync(abs(file), 'utf8');
+      source = fileSystem.readFileSync(vaultPath(file), 'utf8');
     } catch (error) {
       continue;
     }
-    if (!source.includes(path.posix.basename(rel))) continue;
+    if (!source.includes(path.posix.basename(relativePath))) continue;
     if (file.endsWith('.md')) {
       if (relinkText(source, hits, () => '\u0000') !== source) out.push(file);
       continue;
@@ -32,7 +32,7 @@ function linksTo(rel, board, skipId) {
       if (
         !(file === board && node.id === skipId) &&
         (node.type === 'file'
-          ? node.file === rel
+          ? node.file === relativePath
           : relinkText(node.text, hits, () => '\u0000') !== (node.text || ''))
       ) {
         out.push(`${file} (${node.id})`);

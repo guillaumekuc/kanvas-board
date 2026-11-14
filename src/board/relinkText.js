@@ -1,10 +1,10 @@
 const path = require('path');
 
-// Wikilinks (and embeds) in `text` whose target `hits(linkpath)` become `to(label)`; label = alias, else file name.
+// Wikilinks (and embeds) in `text` whose target `hits(linkpath)` become `replace(label)`; label = alias, else file name.
 function relinkText(text, hits, replace) {
   return (text || '').replace(
     /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
-    (link, target, sub, alias) =>
+    (link, target, subpath, alias) =>
       hits(target.trim())
         ? replace(
             alias ||
