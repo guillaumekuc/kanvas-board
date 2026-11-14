@@ -1,0 +1,17 @@
+{
+  "name": "canvas-board",
+  "version": "1.0.0",
+  "description": "Kanvas board plugin: dev tooling only (style check)",
+  "scripts": {
+    "check:style": "eslint .",
+    "check:style:summary": "node style/summary.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "eslint": "^9.39.5",
+    "globals": "^17.14.0"
+  },
+  "private": true
+}
