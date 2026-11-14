@@ -4482,11 +4482,11 @@ var require_isTextNode = __commonJS({
   }
 });
 
-// src/plugin/commands/registerTextCommands.js
-var require_registerTextCommands = __commonJS({
-  "src/plugin/commands/registerTextCommands.js"(exports2, module2) {
+// src/plugin/commands/registerMergeSplitCommands.js
+var require_registerMergeSplitCommands = __commonJS({
+  "src/plugin/commands/registerMergeSplitCommands.js"(exports2, module2) {
     var isTextNode = require_isTextNode();
-    function registerTextCommands(plugin) {
+    function registerMergeSplitCommands(plugin) {
       plugin.addCanvasCommand("merge", "Merge selected cards", {
         menu: ["Merge cards", "merge"],
         test: (canvas, selection) => selection.length > 1 && selection.every(isTextNode),
@@ -4514,6 +4514,15 @@ var require_registerTextCommands = __commonJS({
           )
         });
       }
+    }
+    module2.exports = registerMergeSplitCommands;
+  }
+});
+
+// src/plugin/commands/registerExtractCommand.js
+var require_registerExtractCommand = __commonJS({
+  "src/plugin/commands/registerExtractCommand.js"(exports2, module2) {
+    function registerExtractCommand(plugin) {
       plugin.addCanvasCommand(
         "extract",
         "Extract current selection to a new card",
@@ -4544,15 +4553,14 @@ var require_registerTextCommands = __commonJS({
         }
       );
     }
-    module2.exports = registerTextCommands;
+    module2.exports = registerExtractCommand;
   }
 });
 
-// src/plugin/commands/registerArchiveCommands.js
-var require_registerArchiveCommands = __commonJS({
-  "src/plugin/commands/registerArchiveCommands.js"(exports2, module2) {
-    var { Notice } = require("obsidian");
-    function registerArchiveCommands(plugin) {
+// src/plugin/commands/registerArchiveCommand.js
+var require_registerArchiveCommand = __commonJS({
+  "src/plugin/commands/registerArchiveCommand.js"(exports2, module2) {
+    function registerArchiveCommand(plugin) {
       plugin.addCanvasCommand("archive", "Archive selected cards", {
         menu: ["Archive", "archive"],
         test: (canvas, selection) => selection.length > 0,
@@ -4588,43 +4596,15 @@ var require_registerArchiveCommands = __commonJS({
           );
         }
       });
-      const isArchived = (file) => {
-        const frontmatter = file && file.extension === "md" && (plugin.app.metadataCache.getFileCache(file) || {}).frontmatter;
-        return !!(frontmatter && frontmatter["archived-from"]);
-      };
-      plugin.addCommand({
-        id: "restore",
-        name: "Restore archived card (from its archive note)",
-        checkCallback: (checking) => {
-          const file = plugin.app.workspace.getActiveFile();
-          if (!isArchived(file)) return false;
-          if (!checking) {
-            plugin.restore(file).catch((error) => new Notice(`Kanvas board: ${error.message}`));
-          }
-          return true;
-        }
-      });
-      plugin.registerEvent(
-        plugin.app.workspace.on("file-menu", (menu, file) => {
-          if (isArchived(file)) {
-            menu.addItem(
-              (item) => item.setTitle("Restore archived card").setIcon("archive-restore").setSection("canvas-board").onClick(
-                () => plugin.restore(file).catch((error) => new Notice(`Kanvas board: ${error.message}`))
-              )
-            );
-          }
-        })
-      );
     }
-    module2.exports = registerArchiveCommands;
+    module2.exports = registerArchiveCommand;
   }
 });
 
-// src/plugin/commands/registerFoldCommands.js
-var require_registerFoldCommands = __commonJS({
-  "src/plugin/commands/registerFoldCommands.js"(exports2, module2) {
-    var { Notice } = require("obsidian");
-    function registerFoldCommands(plugin) {
+// src/plugin/commands/registerFoldCommand.js
+var require_registerFoldCommand = __commonJS({
+  "src/plugin/commands/registerFoldCommand.js"(exports2, module2) {
+    function registerFoldCommand(plugin) {
       const canFold = (canvas, node) => !plugin.foldOf(node) && plugin.branchLinks(canvas, plugin.settings.foldDirection).has(node.id);
       plugin.addCanvasCommand("fold", "Fold branch", {
         menu: ["Fold branch", "chevrons-down-up"],
@@ -4636,6 +4616,15 @@ var require_registerFoldCommands = __commonJS({
           )
         )
       });
+    }
+    module2.exports = registerFoldCommand;
+  }
+});
+
+// src/plugin/commands/registerUnfoldCommands.js
+var require_registerUnfoldCommands = __commonJS({
+  "src/plugin/commands/registerUnfoldCommands.js"(exports2, module2) {
+    function registerUnfoldCommands(plugin) {
       for (const [levels, id, name, menu] of [
         [1, "unfold", "Unfold branch 1 level", ["Unfold 1 level", "chevron-down"]],
         [2, "unfold-2", "Unfold branch 2 levels", null],
@@ -4663,6 +4652,16 @@ var require_registerFoldCommands = __commonJS({
           )
         });
       }
+    }
+    module2.exports = registerUnfoldCommands;
+  }
+});
+
+// src/plugin/commands/registerFoldDirectionCommands.js
+var require_registerFoldDirectionCommands = __commonJS({
+  "src/plugin/commands/registerFoldDirectionCommands.js"(exports2, module2) {
+    var { Notice } = require("obsidian");
+    function registerFoldDirectionCommands(plugin) {
       for (const [direction, label] of [
         ["out", "outgoing (cards it points to)"],
         ["in", "incoming (cards pointing to it)"]
@@ -4682,7 +4681,186 @@ var require_registerFoldCommands = __commonJS({
         });
       }
     }
-    module2.exports = registerFoldCommands;
+    module2.exports = registerFoldDirectionCommands;
+  }
+});
+
+// src/plugin/templateFiles.js
+var require_templateFiles = __commonJS({
+  "src/plugin/templateFiles.js"(exports2, module2) {
+    var { TEMPLATE_DIR } = require_constants2();
+    function templateFiles(plugin) {
+      return plugin.app.vault.getFiles().filter(
+        (file) => file.extension === "canvas" && file.path.startsWith(TEMPLATE_DIR + "/")
+      );
+    }
+    module2.exports = templateFiles;
+  }
+});
+
+// src/plugin/templateName.js
+var require_templateName = __commonJS({
+  "src/plugin/templateName.js"(exports2, module2) {
+    var { TEMPLATE_DIR } = require_constants2();
+    function templateName(file) {
+      return file.path.slice(TEMPLATE_DIR.length + 1, -".canvas".length);
+    }
+    module2.exports = templateName;
+  }
+});
+
+// src/plugin/commands/registerTemplateSaveCommand.js
+var require_registerTemplateSaveCommand = __commonJS({
+  "src/plugin/commands/registerTemplateSaveCommand.js"(exports2, module2) {
+    var { Notice } = require("obsidian");
+    var NamePrompt = require_NamePrompt();
+    var templateFiles = require_templateFiles();
+    var templateName = require_templateName();
+    var { TEMPLATE_DIR } = require_constants2();
+    function registerTemplateSaveCommand(plugin) {
+      plugin.addCanvasCommand(
+        "template-save",
+        "Save selected cards as a template",
+        {
+          menu: ["Save as template", "layout-template"],
+          test: (canvas, selection) => selection.length > 0,
+          run: (canvas) => {
+            const existing = new Map(
+              templateFiles(plugin).map((file) => [
+                templateName(file).toLowerCase(),
+                file
+              ])
+            );
+            new NamePrompt(
+              plugin.app,
+              "Template name",
+              async (name) => {
+                const content = JSON.stringify(
+                  (({ nodes, edges }) => ({ nodes, edges }))(
+                    canvas.getSelectionData()
+                  ),
+                  null,
+                  "	"
+                );
+                const old = existing.get(name.toLowerCase());
+                if (old) {
+                  await plugin.app.vault.modify(old, content);
+                  new Notice(`Kanvas board: template ${old.path} overwritten`);
+                  return;
+                }
+                if (!plugin.app.vault.getAbstractFileByPath(TEMPLATE_DIR)) {
+                  await plugin.app.vault.createFolder(TEMPLATE_DIR);
+                }
+                const file = plugin.freePath(TEMPLATE_DIR + "/", name, ".canvas");
+                await plugin.app.vault.create(file, content);
+                new Notice(`Kanvas board: template saved to ${file}`);
+              },
+              {
+                suggestions: [...existing.values()].map(
+                  (file) => templateName(file)
+                ),
+                overwrite: (name) => existing.has(name.toLowerCase())
+              }
+            ).open();
+          }
+        }
+      );
+    }
+    module2.exports = registerTemplateSaveCommand;
+  }
+});
+
+// src/plugin/selectedCards.js
+var require_selectedCards = __commonJS({
+  "src/plugin/selectedCards.js"(exports2, module2) {
+    function selectedCards(selection) {
+      return selection.filter(
+        (node) => !node.from && node.getData().type !== "group"
+      );
+    }
+    module2.exports = selectedCards;
+  }
+});
+
+// src/plugin/commands/registerSelectChildrenCommand.js
+var require_registerSelectChildrenCommand = __commonJS({
+  "src/plugin/commands/registerSelectChildrenCommand.js"(exports2, module2) {
+    var selectedCards = require_selectedCards();
+    function registerSelectChildrenCommand(plugin) {
+      const childIds = (canvas, selection) => new Set(
+        selectedCards(selection).flatMap(
+          (node) => plugin.branchLevels(canvas, node.id, plugin.settings.foldDirection).flat()
+        )
+      );
+      plugin.addCanvasCommand(
+        "select-children",
+        "Select children (all levels down, in the fold direction)",
+        {
+          menu: ["Select children", "list-tree"],
+          test: (canvas, selection) => [...childIds(canvas, selection)].some(
+            (id) => canvas.nodes.get(id) && !plugin.isHidden(canvas, canvas.nodes.get(id)) && !canvas.selection.has(canvas.nodes.get(id))
+          ),
+          run: (canvas, selection) => {
+            const ids = childIds(canvas, selection);
+            plugin.selectMore(canvas, selection, (node) => ids.has(node.id));
+          }
+        }
+      );
+    }
+    module2.exports = registerSelectChildrenCommand;
+  }
+});
+
+// src/plugin/commands/registerSelectSameTagCommand.js
+var require_registerSelectSameTagCommand = __commonJS({
+  "src/plugin/commands/registerSelectSameTagCommand.js"(exports2, module2) {
+    var selectedCards = require_selectedCards();
+    function registerSelectSameTagCommand(plugin) {
+      const tagsOf = (selection) => new Set(
+        selectedCards(selection).flatMap((node) => [...plugin.cardTagSet(node)])
+      );
+      plugin.addCanvasCommand("select-same-tag", "Select cards with the same tag", {
+        menu: ["Select same tag", "tag"],
+        test: (canvas, selection) => tagsOf(selection).size > 0,
+        run: (canvas, selection) => {
+          const tags = tagsOf(selection);
+          plugin.selectMore(
+            canvas,
+            selection,
+            (node) => [...plugin.cardTagSet(node)].some((tag) => tags.has(tag))
+          );
+        }
+      });
+    }
+    module2.exports = registerSelectSameTagCommand;
+  }
+});
+
+// src/plugin/commands/registerSelectSameColorCommand.js
+var require_registerSelectSameColorCommand = __commonJS({
+  "src/plugin/commands/registerSelectSameColorCommand.js"(exports2, module2) {
+    var selectedCards = require_selectedCards();
+    function registerSelectSameColorCommand(plugin) {
+      plugin.addCanvasCommand(
+        "select-same-color",
+        "Select cards with the same color",
+        {
+          menu: ["Select same color", "palette"],
+          test: (canvas, selection) => selectedCards(selection).length > 0,
+          run: (canvas, selection) => {
+            const colors = new Set(
+              selectedCards(selection).map((node) => node.getData().color || "")
+            );
+            plugin.selectMore(
+              canvas,
+              selection,
+              (node) => colors.has(node.getData().color || "")
+            );
+          }
+        }
+      );
+    }
+    module2.exports = registerSelectSameColorCommand;
   }
 });
 
@@ -4714,70 +4892,14 @@ var require_Picker = __commonJS({
   }
 });
 
-// src/plugin/commands/registerTemplateCommands.js
-var require_registerTemplateCommands = __commonJS({
-  "src/plugin/commands/registerTemplateCommands.js"(exports2, module2) {
+// src/plugin/commands/registerTemplateInsertCommand.js
+var require_registerTemplateInsertCommand = __commonJS({
+  "src/plugin/commands/registerTemplateInsertCommand.js"(exports2, module2) {
+    var templateFiles = require_templateFiles();
     var { Notice } = require("obsidian");
-    var NamePrompt = require_NamePrompt();
     var Picker = require_Picker();
-    function registerTemplateCommands(plugin) {
-      const templates = () => plugin.app.vault.getFiles().filter(
-        (file) => file.extension === "canvas" && file.path.startsWith(plugin.boardLibrary.TEMPLATE_DIR + "/")
-      );
-      const templateName = (file) => file.path.slice(
-        plugin.boardLibrary.TEMPLATE_DIR.length + 1,
-        -".canvas".length
-      );
-      plugin.addCanvasCommand(
-        "template-save",
-        "Save selected cards as a template",
-        {
-          menu: ["Save as template", "layout-template"],
-          test: (canvas, selection) => selection.length > 0,
-          run: (canvas) => {
-            const existing = new Map(
-              templates().map((file) => [templateName(file).toLowerCase(), file])
-            );
-            new NamePrompt(
-              plugin.app,
-              "Template name",
-              async (name) => {
-                const content = JSON.stringify(
-                  (({ nodes, edges }) => ({ nodes, edges }))(
-                    canvas.getSelectionData()
-                  ),
-                  null,
-                  "	"
-                );
-                const old = existing.get(name.toLowerCase());
-                if (old) {
-                  await plugin.app.vault.modify(old, content);
-                  new Notice(`Kanvas board: template ${old.path} overwritten`);
-                  return;
-                }
-                if (!plugin.app.vault.getAbstractFileByPath(
-                  plugin.boardLibrary.TEMPLATE_DIR
-                )) {
-                  await plugin.app.vault.createFolder(
-                    plugin.boardLibrary.TEMPLATE_DIR
-                  );
-                }
-                const file = plugin.freePath(
-                  plugin.boardLibrary.TEMPLATE_DIR + "/",
-                  name,
-                  ".canvas"
-                );
-                await plugin.app.vault.create(file, content);
-                new Notice(`Kanvas board: template saved to ${file}`);
-              },
-              {
-                suggestions: [...existing.values()].map(templateName),
-                overwrite: (name) => existing.has(name.toLowerCase())
-              }
-            ).open();
-          }
-        }
-      );
+    var { TEMPLATE_DIR } = require_constants2();
+    function registerTemplateInsertCommand(plugin) {
       plugin.addCommand({
         id: "template-insert",
         name: "Insert cards from template",
@@ -4785,12 +4907,10 @@ var require_registerTemplateCommands = __commonJS({
           const canvas = plugin.activeCanvas();
           if (!canvas) return false;
           if (!checking) {
-            const files = plugin.app.vault.getFiles().filter(
-              (file) => file.extension === "canvas" && file.path.startsWith(plugin.boardLibrary.TEMPLATE_DIR + "/")
-            );
+            const files = templateFiles(plugin);
             if (!files.length) {
               new Notice(
-                `Kanvas board: no template in ${plugin.boardLibrary.TEMPLATE_DIR} (Save selected cards as a template)`
+                `Kanvas board: no template in ${TEMPLATE_DIR} (Save selected cards as a template)`
               );
             } else {
               new Picker(
@@ -4806,77 +4926,7 @@ var require_registerTemplateCommands = __commonJS({
         }
       });
     }
-    module2.exports = registerTemplateCommands;
-  }
-});
-
-// src/plugin/commands/registerSelectCommands.js
-var require_registerSelectCommands = __commonJS({
-  "src/plugin/commands/registerSelectCommands.js"(exports2, module2) {
-    function registerSelectCommands(plugin) {
-      const cards = (selection) => selection.filter((node) => !node.from && node.getData().type !== "group");
-      const selectMore = plugin.selectMore = (canvas, selection, keep) => {
-        const add = [...canvas.nodes.values()].filter(
-          (node) => node.getData().type !== "group" && !plugin.isHidden(canvas, node) && keep(node)
-        );
-        canvas.updateSelection(() => {
-          canvas.selection.clear();
-          for (const node of [...selection, ...add]) canvas.selection.add(node);
-        });
-        return add.length;
-      };
-      const childIds = (canvas, selection) => new Set(
-        cards(selection).flatMap(
-          (node) => plugin.branchLevels(canvas, node.id, plugin.settings.foldDirection).flat()
-        )
-      );
-      plugin.addCanvasCommand(
-        "select-children",
-        "Select children (all levels down, in the fold direction)",
-        {
-          menu: ["Select children", "list-tree"],
-          test: (canvas, selection) => [...childIds(canvas, selection)].some(
-            (id) => canvas.nodes.get(id) && !plugin.isHidden(canvas, canvas.nodes.get(id)) && !canvas.selection.has(canvas.nodes.get(id))
-          ),
-          run: (canvas, selection) => {
-            const ids = childIds(canvas, selection);
-            selectMore(canvas, selection, (node) => ids.has(node.id));
-          }
-        }
-      );
-      const tagsOf = (selection) => new Set(cards(selection).flatMap((node) => [...plugin.cardTagSet(node)]));
-      plugin.addCanvasCommand("select-same-tag", "Select cards with the same tag", {
-        menu: ["Select same tag", "tag"],
-        test: (canvas, selection) => tagsOf(selection).size > 0,
-        run: (canvas, selection) => {
-          const tags = tagsOf(selection);
-          selectMore(
-            canvas,
-            selection,
-            (node) => [...plugin.cardTagSet(node)].some((tag) => tags.has(tag))
-          );
-        }
-      });
-      plugin.addCanvasCommand(
-        "select-same-color",
-        "Select cards with the same color",
-        {
-          menu: ["Select same color", "palette"],
-          test: (canvas, selection) => cards(selection).length > 0,
-          run: (canvas, selection) => {
-            const colors = new Set(
-              cards(selection).map((node) => node.getData().color || "")
-            );
-            selectMore(
-              canvas,
-              selection,
-              (node) => colors.has(node.getData().color || "")
-            );
-          }
-        }
-      );
-    }
-    module2.exports = registerSelectCommands;
+    module2.exports = registerTemplateInsertCommand;
   }
 });
 
@@ -5180,6 +5230,52 @@ var require_registerViewCommands = __commonJS({
   }
 });
 
+// src/plugin/isArchiveNote.js
+var require_isArchiveNote = __commonJS({
+  "src/plugin/isArchiveNote.js"(exports2, module2) {
+    function isArchiveNote(app, file) {
+      if (!file || file.extension !== "md") return false;
+      const { frontmatter } = app.metadataCache.getFileCache(file) || {};
+      return Boolean(frontmatter && frontmatter["archived-from"]);
+    }
+    module2.exports = isArchiveNote;
+  }
+});
+
+// src/plugin/commands/registerRestoreCommands.js
+var require_registerRestoreCommands = __commonJS({
+  "src/plugin/commands/registerRestoreCommands.js"(exports2, module2) {
+    var { Notice } = require("obsidian");
+    var isArchiveNote = require_isArchiveNote();
+    function registerRestoreCommands(plugin) {
+      plugin.addCommand({
+        id: "restore",
+        name: "Restore archived card (from its archive note)",
+        checkCallback: (checking) => {
+          const file = plugin.app.workspace.getActiveFile();
+          if (!isArchiveNote(plugin.app, file)) return false;
+          if (!checking) {
+            plugin.restore(file).catch((error) => new Notice(`Kanvas board: ${error.message}`));
+          }
+          return true;
+        }
+      });
+      plugin.registerEvent(
+        plugin.app.workspace.on("file-menu", (menu, file) => {
+          if (isArchiveNote(plugin.app, file)) {
+            menu.addItem(
+              (item) => item.setTitle("Restore archived card").setIcon("archive-restore").setSection("canvas-board").onClick(
+                () => plugin.restore(file).catch((error) => new Notice(`Kanvas board: ${error.message}`))
+              )
+            );
+          }
+        })
+      );
+    }
+    module2.exports = registerRestoreCommands;
+  }
+});
+
 // src/plugin/commands/registerBoardCommands.js
 var require_registerBoardCommands = __commonJS({
   "src/plugin/commands/registerBoardCommands.js"(exports2, module2) {
@@ -5248,12 +5344,19 @@ var require_commands = __commonJS({
       require_registerColorCommands(),
       require_registerTidyCommands(),
       require_registerPackCommands(),
-      require_registerTextCommands(),
-      require_registerArchiveCommands(),
-      require_registerFoldCommands(),
-      require_registerTemplateCommands(),
-      require_registerSelectCommands(),
+      require_registerMergeSplitCommands(),
+      require_registerExtractCommand(),
+      require_registerArchiveCommand(),
+      require_registerFoldCommand(),
+      require_registerUnfoldCommands(),
+      require_registerFoldDirectionCommands(),
+      require_registerTemplateSaveCommand(),
+      require_registerSelectChildrenCommand(),
+      require_registerSelectSameTagCommand(),
+      require_registerSelectSameColorCommand(),
+      require_registerTemplateInsertCommand(),
       require_registerViewCommands(),
+      require_registerRestoreCommands(),
       require_registerBoardCommands(),
       require_registerContextMenus()
     ];
