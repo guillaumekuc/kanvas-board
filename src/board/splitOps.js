@@ -2,7 +2,8 @@ const fitHeight = require('./fitHeight.js');
 const newId = require('./newId.js');
 const splitText = require('./splitText.js');
 
-// One text card becomes one card per piece, stacked under it; the first keeps the id, color and edges.
+// One text card becomes one card per piece, stacked under it; the first keeps
+// the id, color and edges.
 function splitOps(canvasData, id, separator = 'paragraph') {
   const card = canvasData.nodes.find((node) => node.id === id);
   if (!card || card.type !== 'text') {

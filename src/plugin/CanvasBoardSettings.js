@@ -142,7 +142,9 @@ class CanvasBoardSettings extends PluginSettingTab {
       );
       if (!colorNumber) {
         row.addToggle((component) =>
-          component // uncolored never triggers the agent: same pill for the layout, locked
+          // uncolored never triggers the agent: same pill for the layout,
+          // locked
+          component
             .setTooltip('Never triggers the agent')
             .setValue(false)
             .setDisabled(true),
@@ -180,7 +182,8 @@ class CanvasBoardSettings extends PluginSettingTab {
       'Starts the pass. Empty: Windows Terminal, macOS Terminal, or the first known terminal on Linux (gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm, foot, xterm). Otherwise {vault}, {board}, {claude} are replaced; quote parts with spaces.',
       'terminal',
     );
-    // The instructions the agent follows on a pass, edited here; the file stays where Claude Code finds the skill.
+    // The instructions the agent follows on a pass, edited here; the file stays
+    // where Claude Code finds the skill.
     const skillFile = this.plugin.skillPath();
     new Setting(containerEl)
       .setName('Agent instructions')

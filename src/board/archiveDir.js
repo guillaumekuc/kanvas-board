@@ -1,8 +1,9 @@
 const { ARCHIVE_DIR } = require('./constants.js');
 const path = require('path');
 
-// Where a board's archive notes go: "<board name> archive" next to the board, or with the setting "Archive" on
-// global, one folder for all boards (setting "Archive folder"). `s`: the plugin settings (data.json).
+// Where a board's archive notes go: "<board name> archive" next to the board,
+// or with the setting "Archive" on global, one folder for all boards (setting
+// "Archive folder"). `options`: the plugin settings (data.json).
 function archiveDir(board, options = {}) {
   if (options.archiveMode === 'global') {
     return (

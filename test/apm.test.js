@@ -43,7 +43,8 @@ assert.deepStrictEqual(
   'moving a card is not an action',
 );
 
-// Settings: the old plugin's personal best carries over, its own stored settings win, another unit is dropped.
+// Settings: the old plugin's personal best carries over, its own stored
+// settings win, another unit is dropped.
 const legacy = {
   pb: 23,
   pbDate: '2026-11-05',
@@ -57,7 +58,8 @@ assert.strictEqual(loadSettings({ ...legacy, pb: 30 }, legacy).pb, 30);
 assert.strictEqual(loadSettings({ ...legacy, unit: 'cards/1' }).pb, 0);
 assert.strictEqual(loadSettings(undefined, undefined).pb, 0);
 
-// Shown only while a canvas is the active tab; the count keeps running elsewhere.
+// Shown only while a canvas is the active tab; the count keeps running
+// elsewhere.
 global.window = { document: { hasFocus: () => true } };
 const element = {
   shown: null,

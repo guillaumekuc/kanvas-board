@@ -1,8 +1,10 @@
 const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..', '..', '..'); // <vault>/.obsidian/plugins/canvas-board
+// <vault>/.obsidian/plugins/canvas-board
+const ROOT = path.resolve(__dirname, '..', '..', '..');
 const DEFAULT_BOARD = 'Board.canvas';
-const SKIP_DIRS = new Set(['.git', '.obsidian', '.trash', 'node_modules']); // plus data.json `skipFolders` (folder names), see findFile
+// plus data.json `skipFolders` (folder names), see findFile
+const SKIP_DIRS = new Set(['.git', '.obsidian', '.trash', 'node_modules']);
 const COLORS = {
   red: '1',
   orange: '2',
@@ -11,28 +13,22 @@ const COLORS = {
   cyan: '5',
   purple: '6',
 };
-// --- Refactor operations ------------------------------------------------------------------------------
-// Pure: they return ops (and the other file's content when there is one); the CLI and the plugin write them.
 
-const URGENCY = ['1', '3', '2', '5', '6', '4']; // red > yellow > orange > cyan > purple > green > none
-// --- Templates ----------------------------------------------------------------------------------------
-// A template is a .canvas file (Templates/Canvas/). Its cards get new ids and land with their top-left at `at`.
+// red > yellow > orange > cyan > purple > green > none
+const URGENCY = ['1', '3', '2', '5', '6', '4'];
 
 const TEMPLATE_DIR = 'Templates/Canvas';
-// --- Archive ------------------------------------------------------------------------------------------
-// An archived card becomes a note (body = its text, or a link to its file) whose frontmatter keeps what a
-// restore needs: board, id, place, size, color and its edges. Listed by Canvas archive.base.
 
-const ARCHIVE_DIR = 'Board notes/Archive'; // the folder for all boards (setting "Archive": global)
-// --- Obsidian CLI -----------------------------------------------------------------------------------
+// the folder for all boards (setting "Archive": global)
+const ARCHIVE_DIR = 'Board notes/Archive';
 
-// On PATH first (the CLI registers it there), then the default install of each platform.
+// On PATH first (the CLI registers it there), then the default install of each
+// platform.
 const OBSIDIAN = [
   'obsidian',
   'C:\\Program Files\\Obsidian\\Obsidian.com',
   '/Applications/Obsidian.app/Contents/MacOS/Obsidian',
 ];
-// --- Layout -------------------------------------------------------------------------------------------
 
 const SIDES = {
   TB: ['bottom', 'top'],

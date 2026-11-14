@@ -17,7 +17,9 @@ const countBy = require('./countBy.js');
   ];
   console.log(`total ${messages.length}\n`);
   for (const entries of sections) {
-    for (const [key, count] of entries) {console.log(`${String(count).padStart(5)}  ${key}`);}
+    for (const [key, count] of entries) {
+      console.log(`${String(count).padStart(5)}  ${key}`);
+    }
     console.log('');
   }
 })();

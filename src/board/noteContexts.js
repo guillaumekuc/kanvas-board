@@ -1,4 +1,5 @@
-// Contexts in a note's frontmatter text: the `context:` list (or a single value).
+// Contexts in a note's frontmatter text: the `context:` list (or a single
+// value).
 function noteContexts(frontmatter) {
   if (!frontmatter) return [];
   const unquote = (value) => value.trim().replace(/^(["'])(.*)\1$/, '$2');

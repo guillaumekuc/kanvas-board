@@ -3,7 +3,7 @@ const isBackEdge = require('./isBackEdge.js');
 
 const GRAPH = { nodesep: 40, ranksep: 80, marginx: 0, marginy: 0 };
 
-// Where dagre puts each moving card (top-left corner and size).
+// Returns each card's top-left corner and size (dagre gives centers).
 function dagrePlacement(moving, inner, layout) {
   const { dagre, direction, flow, isFitToText } = layout;
   const graph = new dagre.graphlib.Graph();

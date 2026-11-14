@@ -1,7 +1,8 @@
 const NamePrompt = require('../NamePrompt.js');
 
 function registerPackCommands(plugin) {
-  // Pack / unpack (ids stay collapse / expand so hotkeys keep working). Pack moves cards into a new subcanvas.
+  // Pack / unpack (ids stay collapse / expand so hotkeys keep working). Pack
+  // moves cards into a new subcanvas.
   plugin.addCanvasCommand('collapse', 'Pack into subcanvas', {
     menu: ['Pack into subcanvas', 'package'],
     test: (canvas, selection) => selection.length > 0,

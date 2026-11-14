@@ -2,7 +2,6 @@ const newId = require('./newId.js');
 
 const PADDING = 30;
 
-// A group node framing `nodes` with some padding.
 function groupAround(nodes, label) {
   const x = Math.min(...nodes.map((node) => node.x)) - PADDING;
   const y = Math.min(...nodes.map((node) => node.y)) - PADDING;

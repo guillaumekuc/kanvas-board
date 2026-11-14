@@ -1,4 +1,5 @@
-// Ids of the cards created, deleted, or changed in content or color. Pure, for the tests.
+// Ids of the cards created, deleted, or changed in content or color. Pure, for
+// the tests.
 function touchedCards(before, after) {
   const out = [];
   for (const [id, content] of after) {

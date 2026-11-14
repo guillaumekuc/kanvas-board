@@ -1,0 +1,13 @@
+# Source layout
+
+One function or class per file. `npm run build` bundles `plugin/main.js` into `main.js` (loaded by Obsidian) and `cli/canvas.js` into `canvas.js` (run by the agent); both are committed, so the plugin folder works without a build.
+
+- `board/`: read and edit canvas boards. The `*Ops` functions are pure: they return operations, which the CLI writes to the file and the plugin applies to the open canvas (`applyOps`, through `api` when a board is open in Obsidian).
+- `workflow/`: the agent workflow on top of `board/`: what a pass reads (`tree --active`, note level), the roll-up and the check. Go colors (the cards a pass takes) come from the plugin setting "Workflow" (data.json).
+- `apm/`: the APM counter: canvas cards touched in a rolling window (default 15 min) in the status bar, colored against the personal best; shown only while a canvas is the active tab. An action is a card whose content or color changed on the open canvas; moving or resizing is not one. Pace counts distinct cards, so typing a sentence in one card counts once.
+- `plugin/`: the Obsidian plugin: color hotkeys for selected cards, a command that opens a terminal running the agent skill on the vault, the API `canvas.js` calls (through `obsidian eval`), Tidy layout (dagre), refactor commands (pack, unpack, merge, split, extract), archive and restore, view tools (search, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. It writes `skill/SKILL.md` to `.claude/skills/canvas-board/` on load when missing; after that the vault copy is the user's, edited in Settings > Agent instructions (command "Reset agent skill"). `plugin/commands/` holds one group of commands per file.
+- `cli/`: the `canvas.js` command line; its usage is `cli/usage.txt`, also the top of the built `canvas.js`.
+
+Design patterns in use: Command (`board/operations/handlers.js`, `plugin/commands/` through `addCanvasCommand`), Facade (`plugin/boardLibrary.js`), Singleton (`board/vaultFileIndex.js`), Observer (Obsidian events and the `MutationObserver` on the selection toolbar, `CanvasBoardPlugin.decorateSelectionToolbar`), Decorator (the canvas's own `menu.render`, `updateSelection` and `applyHistory` are wrapped to add behavior, `CanvasBoardPlugin.decorateSelectionToolbar` and `viewState`).
+
+Checks: `npm run check` builds, runs the tests (`test/`: APM counter, golden output of `canvas.js` on a synthetic vault, plugin smoke test) and the style check (`eslint.config.js`, custom rules in `style/`).

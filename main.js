@@ -24,21 +24,26 @@ var require_constants = __commonJS({
       colorLabels: {},
       // color name → label, when edited (Settings > Workflow)
       cardWarning: "60",
+      // yellow cards whose note is untouched this long get a warning badge (and the
+      // rollup's `· Nd`)
       staleDays: "7",
-      // yellow cards whose note is untouched this long get a warning badge (and the rollup's `· Nd`)
-      hideTagBranches: true,
       // a hidden tag also hides the cards below its cards (in the fold direction)
+      hideTagBranches: true,
+      // fold hides the cards a card points to (out) or the cards pointing to it
+      // (in)
       foldDirection: "out",
-      // fold hides the cards a card points to (out) or the cards pointing to it (in)
       terminal: "",
+      // cards that start a pass (and that tree --active takes, see workflow.js);
+      // empty = never
       passColors: "cyan purple",
-      // cards that start a pass (and that tree --active takes, see workflow.js); empty = never
+      // where the agent keeps the notes it makes for cards (read by workflow.js and
+      // the skill)
       notesFolder: "Board notes",
-      // where the agent keeps the notes it makes for cards (read by workflow.js and the skill)
+      // board: archive notes in "<board> archive/" next to each board; global: all
+      // in archiveFolder
       archiveMode: "board",
-      // board: archive notes in "<board> archive/" next to each board; global: all in archiveFolder
-      archiveFolder: "Board notes/Archive"
       // the one archive folder when archiveMode is global
+      archiveFolder: "Board notes/Archive"
     };
     var COLOR_NUM = {
       red: "1",
@@ -5130,7 +5135,8 @@ var require_FindBar = __commonJS({
         this.index = (this.index + step + this.matches.length) % this.matches.length;
         this.show();
       }
-      // Every match selected (so it can be moved, colored...) and in view; Enter goes back to one at a time.
+      // Every match selected (so it can be moved, colored...) and in view; Enter
+      // goes back to one at a time.
       selectAll() {
         const { canvas, plugin, matches } = this;
         if (!matches.length) return;
@@ -5154,7 +5160,8 @@ var require_FindBar = __commonJS({
         for (const node of nodes) node.nodeEl.addClass("canvas-board-find-match");
         this.frame(nodes);
       }
-      // Frames the query in the given cards (default: the same ones again) and watches for cards rendering.
+      // Frames the query in the given cards (default: the same ones again) and
+      // watches for cards rendering.
       frame(nodes = this.framed) {
         const root = (node) => node.contentEl || node.nodeEl;
         this.observer.disconnect();
@@ -5175,7 +5182,8 @@ var require_FindBar = __commonJS({
           });
         }
       }
-      // Scrolls a long card to its first match. By hand: scrollIntoView would also scroll the canvas itself.
+      // Scrolls a long card to its first match. By hand: scrollIntoView would also
+      // scroll the canvas itself.
       reveal(frame) {
         const box = frame.closest(".markdown-preview-view");
         if (!box) return;
@@ -5665,7 +5673,10 @@ var require_cardsOf = __commonJS({
 // src/apm/rateName.js
 var require_rateName = __commonJS({
   "src/apm/rateName.js"(exports2, module2) {
-    var rateName = (windowMinutes) => windowMinutes === 1 ? "APM" : `AP${windowMinutes}M`;
+    var rateName = (windowMinutes) => (
+      // APM extended to the window: AP15M
+      windowMinutes === 1 ? "APM" : `AP${windowMinutes}M`
+    );
     module2.exports = rateName;
   }
 });
@@ -5703,8 +5714,9 @@ var require_ApmCounter = __commonJS({
     var touchedCards = require_touchedCards();
     var unitOf = require_unitOf();
     var ApmCounter = class {
-      // plugin: the Kanvas board plugin (registerEvent, registerDomEvent, registerInterval, addStatusBarItem, activeCanvas, app);
-      // save(): writes the plugin's data.json, with this.settings in it.
+      // plugin: the Kanvas board plugin (registerEvent, registerDomEvent,
+      // registerInterval, addStatusBarItem, activeCanvas, app); save(): writes the
+      // plugin's data.json, with this.settings in it.
       constructor(plugin, settings, save) {
         this.plugin = plugin;
         this.app = plugin.app;
@@ -5767,7 +5779,8 @@ var require_ApmCounter = __commonJS({
       async unload() {
         if (this.dirty) await this.save();
       }
-      // Returns the file's cards, or null when it can't be read as a canvas right now (a half-written file).
+      // Returns the file's cards, or null when it can't be read as a canvas right
+      // now (a half-written file).
       async snapshot(file) {
         try {
           const cards = cardsOf(await this.app.vault.read(file));
@@ -6399,7 +6412,11 @@ var require_CanvasBoardSettings = __commonJS({
           );
           if (!colorNumber) {
             row.addToggle(
-              (component) => component.setTooltip("Never triggers the agent").setValue(false).setDisabled(true)
+              (component) => (
+                // uncolored never triggers the agent: same pill for the layout,
+                // locked
+                component.setTooltip("Never triggers the agent").setValue(false).setDisabled(true)
+              )
             );
           } else {
             row.addToggle(
@@ -6885,6 +6902,8 @@ var require_CanvasBoardPlugin = __commonJS({
         this.tick();
         this.register(() => this.clearScreens());
       }
+      // Command pattern: each action is { id, menu, test, run }, run from the
+      // palette, a hotkey, a right-click item or a toolbar button.
       // Refactor and archive commands: one undo step each (Ctrl+Z), same code as
       // canvas.js for agents. Each is also a right-click item on the cards it
       // applies to: `menu` is [title, Lucide icon], or null for none.
@@ -6977,10 +6996,10 @@ var require_CanvasBoardPlugin = __commonJS({
           this.paint(canvas, /* @__PURE__ */ new Set(), /* @__PURE__ */ new Map());
         }
       }
-      // --- Presentation: where the commands show on screen ---------------------------------------------------------
-      // Control bar and selection toolbar are undocumented canvas DOM (.canvas-controls, canvas.menu.render), like
-      // folds and the filter pane: an Obsidian update may drop those buttons, the commands stay. Header action and
-      // ribbon icon are documented API. See "Obsidian internals" in README.md.
+      // Control bar and selection toolbar are undocumented canvas DOM
+      // (.canvas-controls, canvas.menu.render), like folds and the filter pane: an
+      // Obsidian update may drop those buttons, the commands stay. Header action
+      // and ribbon icon are documented API. See "Obsidian internals" in README.md.
       // Label of a color: the one edited in Settings > Workflow, else the default.
       colorLabel(name) {
         return (this.settings.colorLabels || {})[name] || COLORS.find((colorRow) => colorRow[0] === name)[3];
@@ -6988,7 +7007,8 @@ var require_CanvasBoardPlugin = __commonJS({
       colorCommandName(name) {
         return `Color selected cards: ${name} (${this.colorLabel(name)})`;
       }
-      // An edited label also renames its command in the palette and the hotkey list. The id, and so the key, stays.
+      // An edited label also renames its command in the palette and the hotkey
+      // list. The id, and so the key, stays.
       async setColorLabel(name, label) {
         const labels = this.settings.colorLabels = {
           ...this.settings.colorLabels
@@ -7012,7 +7032,8 @@ var require_CanvasBoardPlugin = __commonJS({
           return "";
         }
       }
-      // Tooltip with its key, the way the canvas's own buttons show it ("Zoom to selection\n(Shift + 2)").
+      // Tooltip with its key, the way the canvas's own buttons show it ("Zoom to
+      // selection\n(Shift + 2)").
       keyedLabel(label, id) {
         const hotkey = this.hotkey(id);
         return hotkey ? `${label}
@@ -7027,9 +7048,10 @@ var require_CanvasBoardPlugin = __commonJS({
           fragment.createSpan({ cls: "canvas-board-key", text: hotkey });
         });
       }
-      // A notice with an Undo button: one canvas undo step and the files the action made go to the trash. Only while
-      // the board has not changed since (else the undo would take back something else).
-      // `restore` ({ path, content }) brings a trashed file back on undo (unpack). Redirected links are not undone.
+      // A notice with an Undo button: one canvas undo step and the files the action
+      // made go to the trash. Only while the board has not changed since (else the
+      // undo would take back something else). `restore` ({ path, content }) brings
+      // a trashed file back on undo (unpack). Redirected links are not undone.
       undoNotice(canvas, message, { files = [], restore = null } = {}) {
         const history = canvas.history;
         const historyIndex = history ? history.current : null;
@@ -7099,7 +7121,8 @@ var require_CanvasBoardPlugin = __commonJS({
           dirs[(dirs.indexOf(this.settings.layoutDirection) + 1) % dirs.length]
         );
       }
-      // Runs a plugin command on this canvas view (made active first: a click on its buttons may not focus it).
+      // Runs a plugin command on this canvas view (made active first: a click on
+      // its buttons may not focus it).
       runOn(view, id) {
         const leaf = this.app.workspace.getLeavesOfType("canvas").find((leaf2) => leaf2.view === view);
         if (leaf && this.app.workspace.activeLeaf !== leaf) {
@@ -7107,7 +7130,8 @@ var require_CanvasBoardPlugin = __commonJS({
         }
         this.app.commands.executeCommandById(`${this.manifest.id}:${id}`);
       }
-      // Buttons on a canvas view, added once (tick runs every 2 s and adds back what the canvas redrew away).
+      // Buttons on a canvas view, added once (tick runs every 2 s and adds back
+      // what the canvas redrew away).
       decorate(view) {
         this.decorateHeader(view);
         const controls = view.canvas.wrapperEl && view.canvas.wrapperEl.querySelector(".canvas-controls");
@@ -7179,6 +7203,7 @@ Shift-click: next direction`,
           )
         );
       }
+      // Decorator: the canvas's menu.render is wrapped, not replaced.
       // Selection toolbar: Fold, Unfold, Archive after the canvas's own buttons,
       // when they apply.
       decorateSelectionToolbar(canvas) {
@@ -7264,11 +7289,11 @@ Shift-click: next direction`,
           delete menu.canvasBoardObserver;
         }
       }
-      // Filter state of an open canvas. `create` false only reads (an empty state, not stored).
       // The view state if the canvas has one yet, else an empty one (not kept).
       peekViewState(canvas) {
         return this.views.get(canvas) || emptyViewState();
       }
+      // Filter state of an open canvas, made on first use.
       viewState(canvas) {
         const existing = this.views.get(canvas);
         if (existing) return existing;
@@ -7311,8 +7336,9 @@ Shift-click: next direction`,
           this.setFolds(canvas, new Map([...folds.keys()].map((id) => [id, null])));
         } else this.refreshView(canvas);
       }
-      // A fold is stored on the card as "canvasBoard": {"folded": "in" | "out"} (the fold direction). JSON Canvas
-      // 1.0 has no such field; other readers ignore it and show every card. Obsidian keeps it (node.unknownData).
+      // A fold is stored on the card as "canvasBoard": {"folded": "in" | "out"}
+      // (the fold direction). JSON Canvas 1.0 has no such field; other readers
+      // ignore it and show every card. Obsidian keeps it (node.unknownData).
       foldOf(node) {
         const boardData = node.getData().canvasBoard;
         return boardData && boardData.folded || null;
@@ -7325,7 +7351,8 @@ Shift-click: next direction`,
         }
         return folds;
       }
-      // `changes`: card id → direction to fold, or null to unfold. One canvas edit, one undo step.
+      // `changes`: card id → direction to fold, or null to unfold. One canvas edit,
+      // one undo step.
       setFolds(canvas, changes) {
         if (!changes.size) return;
         const canvasData = canvas.getData();
@@ -7349,7 +7376,8 @@ Shift-click: next direction`,
         }
         return pane;
       }
-      // Card id → ids one edge away, following edges out (from → to) or in (to → from).
+      // Card id → ids one edge away, following edges out (from → to) or in (to →
+      // from).
       branchLinks(canvas, direction) {
         const links = /* @__PURE__ */ new Map();
         for (const edge of canvas.edges.values()) {
@@ -7364,8 +7392,9 @@ Shift-click: next direction`,
       branchLevels(canvas, root, direction) {
         return branchLevelsFrom(this.branchLinks(canvas, direction), root);
       }
-      // The cards an unfold on `id` applies to: the card itself if folded, else the nearest folded cards of its open
-      // branch (in the fold direction, not past another fold), so pressing unfold again opens the next level.
+      // The cards an unfold on `id` applies to: the card itself if folded, else the
+      // nearest folded cards of its open branch (in the fold direction, not past
+      // another fold), so pressing unfold again opens the next level.
       unfoldTargets(canvas, id) {
         const node = canvas.nodes.get(id);
         if (!node) return [];
@@ -7386,7 +7415,8 @@ Shift-click: next direction`,
         }
         return found;
       }
-      // Shows `levels` levels of each folded branch; the cards at the last shown level that lead further get folded.
+      // Shows `levels` levels of each folded branch; the cards at the last shown
+      // level that lead further get folded.
       unfold(canvas, ids, levels) {
         const changes = /* @__PURE__ */ new Map();
         for (const id of ids) {
@@ -7404,8 +7434,8 @@ Shift-click: next direction`,
         }
         this.setFolds(canvas, changes);
       }
-      // Tags of a card (no #): the `#tags` in its own text, never those of the notes it links. Exact match only:
-      // #tag1 is not #tag10.
+      // Tags of a card (no #): the `#tags` in its own text, never those of the
+      // notes it links. Exact match only: #tag1 is not #tag10.
       cardTagSet(node) {
         const tags = /* @__PURE__ */ new Set();
         for (const match of (node.getData().text || "").matchAll(
@@ -7415,7 +7445,8 @@ Shift-click: next direction`,
         }
         return tags;
       }
-      // Every color and tag shows by default; a hidden color, or any hidden tag, hides the card.
+      // Every color and tag shows by default; a hidden color, or any hidden tag,
+      // hides the card.
       matches(node, state) {
         if (state.xcolors.has(node.getData().color || "")) return false;
         if (!state.xtags.size) return true;
@@ -7425,8 +7456,9 @@ Shift-click: next direction`,
       filtering(state) {
         return !!(state.xcolors.size || state.xtags.size);
       }
-      // Hidden = not matching the filter (groups always show), or below a folded card. With the setting "Hide cards
-      // under hidden tags", a card hidden by a tag also hides its branch, as a fold in the fold direction would.
+      // Hidden = not matching the filter (groups always show), or below a folded
+      // card. With the setting "Hide cards under hidden tags", a card hidden by a
+      // tag also hides its branch, as a fold in the fold direction would.
       refreshView(canvas) {
         const state = this.viewState(canvas);
         const hidden = /* @__PURE__ */ new Set([
@@ -7464,8 +7496,8 @@ Shift-click: next direction`,
           (node) => this.branchLevels(canvas, node.id, this.settings.foldDirection).flat().filter(isCard)
         );
       }
-      // Hides the `hidden` cards and their edges; `folded` (id → count) gets the "· N folded" badge, a click on it
-      // unfolds one level.
+      // Hides the `hidden` cards and their edges; `folded` (id → count) gets the "·
+      // N folded" badge, a click on it unfolds one level.
       paint(canvas, hidden, folded) {
         for (const node of canvas.nodes.values()) {
           node.nodeEl.toggleClass("canvas-board-hidden", hidden.has(node.id));
@@ -7507,8 +7539,9 @@ Shift-click: next direction`,
         badge.setText(`\xB7 ${count} folded`);
         badge.setAttr("aria-label", this.keyedLabel("Unfold 1 level", "unfold"));
       }
-      // Yellow (needs me) cards whose note was not touched for "Stale after" days: a warning badge (the icon of
-      // `- [!]`) with the time since the note last changed. Cards without a note have no date: no badge.
+      // Yellow (needs me) cards whose note was not touched for "Stale after" days:
+      // a warning badge (the icon of `- [!]`) with the time since the note last
+      // changed. Cards without a note have no date: no badge.
       paintStale(canvas) {
         const days = Number(this.settings.staleDays) || 0;
         const board = canvas.view && canvas.view.file ? canvas.view.file.path : "";
@@ -7554,7 +7587,8 @@ Shift-click: next direction`,
           `Waiting on you \xB7 note untouched for ${age} ${unit} (stale after ${days})`
         );
       }
-      // Status bar and closed pane: only how many cards are hidden (filter and folds); the pane says by what.
+      // Status bar and closed pane: only how many cards are hidden (filter and
+      // folds); the pane says by what.
       viewLabel(canvas) {
         const hiddenCount = this.peekViewState(canvas).hidden.size;
         return hiddenCount ? `${hiddenCount} card${hiddenCount > 1 ? "s" : ""} hidden` : "";
@@ -7570,11 +7604,13 @@ Shift-click: next direction`,
           (nodeData.type === "text" ? nodeData.text : nodeData.type === "file" ? nodeData.file : nodeData.type === "link" ? nodeData.url : nodeData.label) || ""
         );
       }
-      // Background of a color dot: a preset canvas color ('1'…'6'), a custom hex, or none.
+      // Background of a color dot: a preset canvas color ('1'…'6'), a custom hex,
+      // or none.
       dotStyle(color) {
         return !color ? "" : `background: ${color.startsWith("#") ? color : `var(--canvas-color-${color})`}`;
       }
-      // Template cards are centered on the visible canvas, whatever is selected; they end up selected.
+      // Template cards are centered on the visible canvas, whatever is selected;
+      // they end up selected.
       async insertTemplate(canvas, file) {
         const template = JSON.parse(await this.app.vault.read(file));
         const nodes = template.nodes || [];
@@ -7632,8 +7668,9 @@ Shift-click: next direction`,
         this.countEl.setAttr("data-tooltip-position", "top");
         this.countEl.show();
       }
-      // The plugin folder holds the skill's default; the vault copy is written only when missing (then it is the
-      // user's, plugin updates never overwrite it) or on "Reset agent skill" (`force`).
+      // The plugin folder holds the skill's default; the vault copy is written only
+      // when missing (then it is the user's, plugin updates never overwrite it) or
+      // on "Reset agent skill".
       skillPath() {
         return path.join(
           this.app.vault.adapter.basePath,
@@ -7643,7 +7680,6 @@ Shift-click: next direction`,
           "SKILL.md"
         );
       }
-      // The vault's copy of the skill is the user's to edit: written only when missing.
       installSkill(pluginDir) {
         try {
           if (fileSystem.existsSync(this.skillPath())) return;
@@ -7669,8 +7705,10 @@ Shift-click: next direction`,
           skillTarget
         );
       }
-      // One undo step: the state before is pushed (unless the history already ends with it), then the edited data
-      // is set, which pushes it, so Ctrl+Z and Ctrl+Y each take one step. `d` is passed when the caller already changed it (extract).
+      // One undo step: the state before is pushed (unless the history already ends
+      // with it), then the edited data is set, which pushes it, so Ctrl+Z and
+      // Ctrl+Y each take one step. `canvasData` is passed when the caller already
+      // changed it (extract).
       edit(canvas, operations, canvasData = canvas.getData()) {
         const before = canvas.getData();
         const retyped = this.boardLibrary.applyOps(canvasData, operations);
@@ -7709,8 +7747,10 @@ Shift-click: next direction`,
         const leaf = this.app.workspace.getLeavesOfType("canvas").find((leaf2) => leaf2.view.canvas === canvas);
         return leaf && leaf.view.file ? leaf.view.file.path : null;
       }
-      // mode: dissolve (file to trash, other links break), copy (file kept), group (cards in a group named after the
-      // file, other links redirected: cards on this board get an edge to the group, other cards and notes link this board).
+      // mode: dissolve (file to trash, other links break), copy (file kept), group
+      // (cards in a group named after the file, other links redirected: cards on
+      // this board get an edge to the group, other cards and notes link this
+      // board).
       unpack(canvas, node, { file, mode, links }) {
         return unpackSubcanvas(this, canvas, { node, file, mode, links });
       }
@@ -7724,7 +7764,8 @@ Shift-click: next direction`,
         const child = node.child;
         return child && (child.editMode && child.editMode.editor || child.editor) || null;
       }
-      // Context of the note a card links (its `context:` list), so its archive note keeps the same context.
+      // Context of the note a card links (its `context:` list), so its archive note
+      // keeps the same context.
       cardContexts(node, board) {
         const nodeData = node.getData();
         const target = nodeData.type === "file" ? nodeData.file : ((nodeData.text || "").match(/\[\[([^\]|#]+)/) || [])[1];
@@ -7770,7 +7811,8 @@ Shift-click: next direction`,
         const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
         return view && view.getViewType() === "canvas" ? view.canvas : null;
       }
-      // True if the board, or a plan canvas linked from one of its cards, has a card in `go` (setting "Workflow").
+      // True if the board, or a plan canvas linked from one of its cards, has a
+      // card in `goColorSet` (setting "Workflow").
       async hasGoCards(board, goColorSet) {
         const read = async (filePath) => {
           const file = this.app.vault.getAbstractFileByPath(filePath);

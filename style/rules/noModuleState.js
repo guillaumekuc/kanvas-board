@@ -14,7 +14,9 @@ module.exports = {
           if (
             statement.type !== 'VariableDeclaration' ||
             statement.kind === 'const'
-          ) {continue;}
+          ) {
+            continue;
+          }
           context.report({
             node: statement,
             message: `Module-level '${statement.kind}' is shared mutable state; avoid globals.`,

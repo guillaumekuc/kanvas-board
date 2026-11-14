@@ -1,6 +1,7 @@
 const { COLORS } = require('../board/constants.js');
 
-// "cyan purple" / "5,6" → Set of color numbers. Empty setting (all off): no go colors, the agent takes nothing.
+// "cyan purple" / "5,6" → Set of color numbers. Empty setting (all off): no go
+// colors, the agent takes nothing.
 function parseColors(value) {
   return new Set(
     String(value || '')

@@ -4,7 +4,8 @@ const dagre = require('../../../dagre.min.js');
 const layoutOps = require('../../board/layoutOps.js');
 
 function registerTidyCommands(plugin) {
-  // Selected cards only (2+; the rest never moves): never the whole board unasked (Ctrl+A first). Ctrl+Z undoes it.
+  // Selected cards only (2+; the rest never moves): never the whole board
+  // unasked (Ctrl+A first). Ctrl+Z undoes it.
   plugin.addCommand({
     id: 'tidy-layout',
     name: 'Tidy layout (selected cards)',

@@ -1,8 +1,9 @@
 const vaultPath = require('../board/vaultPath.js');
 const fileSystem = require('fs');
 
-// Level is derived from the note: `- [ ]` / `- [x]` parts make it a plan, otherwise it is a brief.
-// Questions: `- [?]` above `## Decisions Record` (past rounds).
+// Level is derived from the note: `- [ ]` / `- [x]` parts make it a plan,
+// otherwise it is a brief. Questions: `- [?]` above `## Decisions Record` (past
+// rounds).
 function noteState(relativePath) {
   const text = fileSystem.readFileSync(vaultPath(relativePath), 'utf8');
   const parts = [...text.matchAll(/^\s*- \[([ xX])\] /gm)];

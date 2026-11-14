@@ -3,7 +3,8 @@ const cardLinks = require('./cardLinks.js');
 const fileSystem = require('fs');
 const noteContexts = require('./noteContexts.js');
 
-// Context of the note a card links, to file its archive note under the same context.
+// Context of the note a card links, to file its archive note under the same
+// context.
 function cardContexts(node) {
   const { note } = cardLinks(node);
   const frontmatter =
