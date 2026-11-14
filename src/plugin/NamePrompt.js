@@ -1,6 +1,8 @@
 const { Modal, Notice, Setting } = require('obsidian');
 const NameSuggest = require('./NameSuggest.js');
 
+const FORBIDDEN = /[\\/:#^|[\]]/g;
+
 class NamePrompt extends Modal {
   // options: { title, onSubmit, suggestions, overwrite }
   constructor(app, options) {
@@ -12,76 +14,83 @@ class NamePrompt extends Modal {
 
   onOpen() {
     this.setTitle(this.title);
-    const { suggestions, overwrite } = this.options;
-    let value = '';
-    let button,
-      suggest,
-      isPicked = false;
-    const clean = (value) => value.trim().replace(/[\\/:#^|[\]]/g, '');
-    // Subfolder names (a/b) are allowed for suggestions only: they name an existing file.
-    const nameOf = (value) =>
-      suggestions &&
-      suggestions.some(
-        (suggestion) => suggestion.toLowerCase() === value.trim().toLowerCase(),
-      )
-        ? value.trim()
-        : clean(value);
-    const refresh = () => {
-      if (!button) return;
-      const isOverwrite = !!(
-        overwrite &&
-        value.trim() &&
-        overwrite(nameOf(value))
-      );
-      button.setButtonText(isOverwrite ? 'Overwrite' : 'Create');
-      button.buttonEl.toggleClass('mod-warning', isOverwrite);
-      button.buttonEl.toggleClass('mod-cta', !isOverwrite);
-    };
-    const submit = () => {
-      const name = nameOf(value);
-      if (!name) return;
-      this.close();
-      Promise.resolve(this.onSubmit(name)).catch(
-        (error) => new Notice(`Kanvas board: ${error.message}`),
-      );
-    };
+    this.value = '';
+    this.button = null;
+    this.suggest = null;
+    this.isPicked = false;
     new Setting(this.contentEl)
-      .addText((text) => {
-        text.onChange((typed) => {
-          value = typed;
-          refresh();
-        });
-        if (suggestions && suggestions.length) {
-          suggest = new NameSuggest(this.app, text.inputEl, {
-            names: suggestions,
-            onPick: (suggestion) => {
-              text.setValue(suggestion);
-              value = suggestion;
-              refresh();
-              isPicked = true;
-              setTimeout(() => {
-                isPicked = false;
-              }, 0); // the Enter that picked a suggestion does not also submit
-            },
-          });
-        }
-        text.inputEl.addEventListener('keydown', (event) => {
-          if (
-            event.key !== 'Enter' ||
-            isPicked ||
-            (suggest && suggest.suggestEl && suggest.suggestEl.isConnected)
-          ) {
-            return;
-          }
-          event.preventDefault();
-          submit();
-        });
-        setTimeout(() => text.inputEl.focus(), 0);
-      })
-      .addButton((buttonComponent) => {
-        button = buttonComponent;
-        buttonComponent.setButtonText('Create').setCta().onClick(submit);
+      .addText((text) => this.addNameField(text))
+      .addButton((button) => {
+        this.button = button;
+        button
+          .setButtonText('Create')
+          .setCta()
+          .onClick(() => this.submit());
       });
+  }
+
+  addNameField(text) {
+    text.onChange((typed) => {
+      this.value = typed;
+      this.refresh();
+    });
+    const { suggestions } = this.options;
+    if (suggestions && suggestions.length) {
+      this.suggest = new NameSuggest(this.app, text.inputEl, {
+        names: suggestions,
+        onPick: (suggestion) => this.pick(text, suggestion),
+      });
+    }
+    text.inputEl.addEventListener('keydown', (event) => {
+      const suggestEl = this.suggest && this.suggest.suggestEl;
+      const isSuggesting = Boolean(suggestEl && suggestEl.isConnected);
+      if (event.key !== 'Enter' || this.isPicked || isSuggesting) return;
+      event.preventDefault();
+      this.submit();
+    });
+    setTimeout(() => text.inputEl.focus(), 0);
+  }
+
+  // The Enter that picked a suggestion does not also submit.
+  pick(text, suggestion) {
+    text.setValue(suggestion);
+    this.value = suggestion;
+    this.refresh();
+    this.isPicked = true;
+    setTimeout(() => {
+      this.isPicked = false;
+    }, 0);
+  }
+
+  // Subfolder names (a/b) are allowed for suggestions only: they name an
+  // existing file.
+  nameOf(value) {
+    const { suggestions } = this.options;
+    const typed = value.trim().toLowerCase();
+    const isSuggestion =
+      suggestions &&
+      suggestions.some((suggestion) => suggestion.toLowerCase() === typed);
+    return isSuggestion ? value.trim() : value.trim().replace(FORBIDDEN, '');
+  }
+
+  refresh() {
+    if (!this.button) return;
+    const { overwrite } = this.options;
+    const isOverwrite = Boolean(
+      overwrite && this.value.trim() && overwrite(this.nameOf(this.value)),
+    );
+    this.button.setButtonText(isOverwrite ? 'Overwrite' : 'Create');
+    this.button.buttonEl.toggleClass('mod-warning', isOverwrite);
+    this.button.buttonEl.toggleClass('mod-cta', !isOverwrite);
+  }
+
+  submit() {
+    const name = this.nameOf(this.value);
+    if (!name) return;
+    this.close();
+    Promise.resolve(this.onSubmit(name)).catch(
+      (error) => new Notice(`Kanvas board: ${error.message}`),
+    );
   }
 
   onClose() {

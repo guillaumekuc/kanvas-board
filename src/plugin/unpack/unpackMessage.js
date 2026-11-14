@@ -1,6 +1,5 @@
-const plural = (count) => (count > 1 ? 's' : '');
-
 function unpackMessage(mode, { cardCount, linkCount, path }) {
+  const plural = (count) => (count > 1 ? 's' : '');
   const cards = `${cardCount} card${plural(cardCount)}`;
   const links = `${linkCount} link${plural(linkCount)}`;
   const broken = linkCount ? ` (${links} now broken)` : '';

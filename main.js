@@ -4290,6 +4290,7 @@ var require_NamePrompt = __commonJS({
   "src/plugin/NamePrompt.js"(exports2, module2) {
     var { Modal, Notice, Setting } = require("obsidian");
     var NameSuggest = require_NameSuggest();
+    var FORBIDDEN = /[\\/:#^|[\]]/g;
     var NamePrompt = class extends Modal {
       // options: { title, onSubmit, suggestions, overwrite }
       constructor(app, options) {
@@ -4300,65 +4301,117 @@ var require_NamePrompt = __commonJS({
       }
       onOpen() {
         this.setTitle(this.title);
-        const { suggestions, overwrite } = this.options;
-        let value = "";
-        let button, suggest, isPicked = false;
-        const clean = (value2) => value2.trim().replace(/[\\/:#^|[\]]/g, "");
-        const nameOf = (value2) => suggestions && suggestions.some(
-          (suggestion) => suggestion.toLowerCase() === value2.trim().toLowerCase()
-        ) ? value2.trim() : clean(value2);
-        const refresh = () => {
-          if (!button) return;
-          const isOverwrite = !!(overwrite && value.trim() && overwrite(nameOf(value)));
-          button.setButtonText(isOverwrite ? "Overwrite" : "Create");
-          button.buttonEl.toggleClass("mod-warning", isOverwrite);
-          button.buttonEl.toggleClass("mod-cta", !isOverwrite);
-        };
-        const submit = () => {
-          const name = nameOf(value);
-          if (!name) return;
-          this.close();
-          Promise.resolve(this.onSubmit(name)).catch(
-            (error) => new Notice(`Kanvas board: ${error.message}`)
-          );
-        };
-        new Setting(this.contentEl).addText((text) => {
-          text.onChange((typed) => {
-            value = typed;
-            refresh();
-          });
-          if (suggestions && suggestions.length) {
-            suggest = new NameSuggest(this.app, text.inputEl, {
-              names: suggestions,
-              onPick: (suggestion) => {
-                text.setValue(suggestion);
-                value = suggestion;
-                refresh();
-                isPicked = true;
-                setTimeout(() => {
-                  isPicked = false;
-                }, 0);
-              }
-            });
-          }
-          text.inputEl.addEventListener("keydown", (event) => {
-            if (event.key !== "Enter" || isPicked || suggest && suggest.suggestEl && suggest.suggestEl.isConnected) {
-              return;
-            }
-            event.preventDefault();
-            submit();
-          });
-          setTimeout(() => text.inputEl.focus(), 0);
-        }).addButton((buttonComponent) => {
-          button = buttonComponent;
-          buttonComponent.setButtonText("Create").setCta().onClick(submit);
+        this.value = "";
+        this.button = null;
+        this.suggest = null;
+        this.isPicked = false;
+        new Setting(this.contentEl).addText((text) => this.addNameField(text)).addButton((button) => {
+          this.button = button;
+          button.setButtonText("Create").setCta().onClick(() => this.submit());
         });
+      }
+      addNameField(text) {
+        text.onChange((typed) => {
+          this.value = typed;
+          this.refresh();
+        });
+        const { suggestions } = this.options;
+        if (suggestions && suggestions.length) {
+          this.suggest = new NameSuggest(this.app, text.inputEl, {
+            names: suggestions,
+            onPick: (suggestion) => this.pick(text, suggestion)
+          });
+        }
+        text.inputEl.addEventListener("keydown", (event) => {
+          const suggestEl = this.suggest && this.suggest.suggestEl;
+          const isSuggesting = Boolean(suggestEl && suggestEl.isConnected);
+          if (event.key !== "Enter" || this.isPicked || isSuggesting) return;
+          event.preventDefault();
+          this.submit();
+        });
+        setTimeout(() => text.inputEl.focus(), 0);
+      }
+      // The Enter that picked a suggestion does not also submit.
+      pick(text, suggestion) {
+        text.setValue(suggestion);
+        this.value = suggestion;
+        this.refresh();
+        this.isPicked = true;
+        setTimeout(() => {
+          this.isPicked = false;
+        }, 0);
+      }
+      // Subfolder names (a/b) are allowed for suggestions only: they name an
+      // existing file.
+      nameOf(value) {
+        const { suggestions } = this.options;
+        const typed = value.trim().toLowerCase();
+        const isSuggestion = suggestions && suggestions.some((suggestion) => suggestion.toLowerCase() === typed);
+        return isSuggestion ? value.trim() : value.trim().replace(FORBIDDEN, "");
+      }
+      refresh() {
+        if (!this.button) return;
+        const { overwrite } = this.options;
+        const isOverwrite = Boolean(
+          overwrite && this.value.trim() && overwrite(this.nameOf(this.value))
+        );
+        this.button.setButtonText(isOverwrite ? "Overwrite" : "Create");
+        this.button.buttonEl.toggleClass("mod-warning", isOverwrite);
+        this.button.buttonEl.toggleClass("mod-cta", !isOverwrite);
+      }
+      submit() {
+        const name = this.nameOf(this.value);
+        if (!name) return;
+        this.close();
+        Promise.resolve(this.onSubmit(name)).catch(
+          (error) => new Notice(`Kanvas board: ${error.message}`)
+        );
       }
       onClose() {
         this.contentEl.empty();
       }
     };
     module2.exports = NamePrompt;
+  }
+});
+
+// src/plugin/commands/registerPackCommands.js
+var require_registerPackCommands = __commonJS({
+  "src/plugin/commands/registerPackCommands.js"(exports2, module2) {
+    var NamePrompt = require_NamePrompt();
+    function registerPackCommands(plugin) {
+      plugin.addCanvasCommand("collapse", "Pack into subcanvas", {
+        menu: ["Pack into subcanvas", "package"],
+        test: (canvas, selection) => selection.length > 0,
+        run: (canvas, selection) => new NamePrompt(plugin.app, {
+          title: "Subcanvas name",
+          onSubmit: async (name) => {
+            const board = plugin.activeFile();
+            const folder = board.parent && board.parent.path !== "/" ? board.parent.path + "/" : "";
+            const file = plugin.freePath(folder, name, ".canvas");
+            const { operations, subcanvas } = plugin.boardLibrary.collapseOps(
+              canvas.getData(),
+              {
+                ids: selection.map((node) => node.id),
+                file,
+                label: name
+              }
+            );
+            await plugin.app.vault.create(
+              file,
+              JSON.stringify(subcanvas, null, "	")
+            );
+            plugin.edit(canvas, operations);
+            plugin.undoNotice(
+              canvas,
+              `packed ${selection.length} card${selection.length > 1 ? "s" : ""} into ${file}`,
+              { files: [file] }
+            );
+          }
+        }).open()
+      });
+    }
+    module2.exports = registerPackCommands;
   }
 });
 
@@ -4411,43 +4464,12 @@ var require_UnpackChoice = __commonJS({
   }
 });
 
-// src/plugin/commands/registerPackCommands.js
-var require_registerPackCommands = __commonJS({
-  "src/plugin/commands/registerPackCommands.js"(exports2, module2) {
+// src/plugin/commands/registerUnpackCommands.js
+var require_registerUnpackCommands = __commonJS({
+  "src/plugin/commands/registerUnpackCommands.js"(exports2, module2) {
     var { Notice } = require("obsidian");
-    var NamePrompt = require_NamePrompt();
     var UnpackChoice = require_UnpackChoice();
-    function registerPackCommands(plugin) {
-      plugin.addCanvasCommand("collapse", "Pack into subcanvas", {
-        menu: ["Pack into subcanvas", "package"],
-        test: (canvas, selection) => selection.length > 0,
-        run: (canvas, selection) => new NamePrompt(plugin.app, {
-          title: "Subcanvas name",
-          onSubmit: async (name) => {
-            const board = plugin.activeFile();
-            const folder = board.parent && board.parent.path !== "/" ? board.parent.path + "/" : "";
-            const file = plugin.freePath(folder, name, ".canvas");
-            const { operations, subcanvas } = plugin.boardLibrary.collapseOps(
-              canvas.getData(),
-              {
-                ids: selection.map((node) => node.id),
-                file,
-                label: name
-              }
-            );
-            await plugin.app.vault.create(
-              file,
-              JSON.stringify(subcanvas, null, "	")
-            );
-            plugin.edit(canvas, operations);
-            plugin.undoNotice(
-              canvas,
-              `packed ${selection.length} card${selection.length > 1 ? "s" : ""} into ${file}`,
-              { files: [file] }
-            );
-          }
-        }).open()
-      });
+    function registerUnpackCommands(plugin) {
       const linked = (canvas, selection) => selection.length === 1 && !!plugin.linkedCanvas(selection[0]);
       plugin.addCanvasCommand("expand", "Unpack subcanvas (dissolve)", {
         menu: ["Unpack subcanvas (dissolve)", "package-open"],
@@ -4455,8 +4477,9 @@ var require_registerPackCommands = __commonJS({
         run: async (canvas, [node]) => {
           const file = plugin.linkedCanvas(node);
           const links = await plugin.subcanvasLinks(file, canvas, node.id);
-          if (!links.length)
+          if (!links.length) {
             return plugin.unpack(canvas, node, { file, mode: "dissolve" });
+          }
           new UnpackChoice(plugin.app, file, {
             links,
             onPick: (mode) => plugin.unpack(canvas, node, { file, mode, links }).catch((error) => new Notice(`Kanvas board: ${error.message}`))
@@ -4472,7 +4495,7 @@ var require_registerPackCommands = __commonJS({
         })
       });
     }
-    module2.exports = registerPackCommands;
+    module2.exports = registerUnpackCommands;
   }
 });
 
@@ -5354,6 +5377,7 @@ var require_commands = __commonJS({
       require_registerColorCommands(),
       require_registerTidyCommands(),
       require_registerPackCommands(),
+      require_registerUnpackCommands(),
       require_registerMergeSplitCommands(),
       require_registerExtractCommand(),
       require_registerArchiveCommand(),
@@ -6186,8 +6210,8 @@ var require_redirectOutsideLinks = __commonJS({
 // src/plugin/unpack/unpackMessage.js
 var require_unpackMessage = __commonJS({
   "src/plugin/unpack/unpackMessage.js"(exports2, module2) {
-    var plural = (count) => count > 1 ? "s" : "";
     function unpackMessage(mode, { cardCount, linkCount, path }) {
+      const plural = (count) => count > 1 ? "s" : "";
       const cards = `${cardCount} card${plural(cardCount)}`;
       const links = `${linkCount} link${plural(linkCount)}`;
       const broken = linkCount ? ` (${links} now broken)` : "";
