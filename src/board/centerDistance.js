@@ -1,4 +1,3 @@
-// Distance between the centers of two cards.
 function centerDistance(first, second) {
   const center = (node) => [node.x + node.width / 2, node.y + node.height / 2];
   const [firstX, firstY] = center(first);

@@ -60,6 +60,8 @@ class CanvasBoardPlugin extends Plugin {
     this.register(() => this.clearScreens());
   }
 
+  // Command pattern: each action is { id, menu, test, run }, run from the
+  // palette, a hotkey, a right-click item or a toolbar button.
   // Refactor and archive commands: one undo step each (Ctrl+Z), same code as
   // canvas.js for agents. Each is also a right-click item on the cards it
   // applies to: `menu` is [title, Lucide icon], or null for none.
@@ -166,10 +168,10 @@ class CanvasBoardPlugin extends Plugin {
     }
   }
 
-  // --- Presentation: where the commands show on screen ---------------------------------------------------------
-  // Control bar and selection toolbar are undocumented canvas DOM (.canvas-controls, canvas.menu.render), like
-  // folds and the filter pane: an Obsidian update may drop those buttons, the commands stay. Header action and
-  // ribbon icon are documented API. See "Obsidian internals" in README.md.
+  // Control bar and selection toolbar are undocumented canvas DOM
+  // (.canvas-controls, canvas.menu.render), like folds and the filter pane: an
+  // Obsidian update may drop those buttons, the commands stay. Header action
+  // and ribbon icon are documented API. See "Obsidian internals" in README.md.
 
   // Label of a color: the one edited in Settings > Workflow, else the default.
   colorLabel(name) {
@@ -183,7 +185,8 @@ class CanvasBoardPlugin extends Plugin {
     return `Color selected cards: ${name} (${this.colorLabel(name)})`;
   }
 
-  // An edited label also renames its command in the palette and the hotkey list. The id, and so the key, stays.
+  // An edited label also renames its command in the palette and the hotkey
+  // list. The id, and so the key, stays.
   async setColorLabel(name, label) {
     const labels = (this.settings.colorLabels = {
       ...this.settings.colorLabels,
@@ -216,7 +219,8 @@ class CanvasBoardPlugin extends Plugin {
     }
   }
 
-  // Tooltip with its key, the way the canvas's own buttons show it ("Zoom to selection\n(Shift + 2)").
+  // Tooltip with its key, the way the canvas's own buttons show it ("Zoom to
+  // selection\n(Shift + 2)").
   keyedLabel(label, id) {
     const hotkey = this.hotkey(id);
     return hotkey ? `${label}\n(${hotkey})` : label;
@@ -232,9 +236,10 @@ class CanvasBoardPlugin extends Plugin {
     });
   }
 
-  // A notice with an Undo button: one canvas undo step and the files the action made go to the trash. Only while
-  // the board has not changed since (else the undo would take back something else).
-  // `restore` ({ path, content }) brings a trashed file back on undo (unpack). Redirected links are not undone.
+  // A notice with an Undo button: one canvas undo step and the files the action
+  // made go to the trash. Only while the board has not changed since (else the
+  // undo would take back something else). `restore` ({ path, content }) brings
+  // a trashed file back on undo (unpack). Redirected links are not undone.
   undoNotice(canvas, message, { files = [], restore = null } = {}) {
     const history = canvas.history;
     const historyIndex = history ? history.current : null;
@@ -311,7 +316,8 @@ class CanvasBoardPlugin extends Plugin {
     );
   }
 
-  // Runs a plugin command on this canvas view (made active first: a click on its buttons may not focus it).
+  // Runs a plugin command on this canvas view (made active first: a click on
+  // its buttons may not focus it).
   runOn(view, id) {
     const leaf = this.app.workspace
       .getLeavesOfType('canvas')
@@ -322,7 +328,8 @@ class CanvasBoardPlugin extends Plugin {
     this.app.commands.executeCommandById(`${this.manifest.id}:${id}`);
   }
 
-  // Buttons on a canvas view, added once (tick runs every 2 s and adds back what the canvas redrew away).
+  // Buttons on a canvas view, added once (tick runs every 2 s and adds back
+  // what the canvas redrew away).
   decorate(view) {
     this.decorateHeader(view);
     const controls =
@@ -401,6 +408,7 @@ class CanvasBoardPlugin extends Plugin {
     );
   }
 
+  // Decorator: the canvas's menu.render is wrapped, not replaced.
   // Selection toolbar: Fold, Unfold, Archive after the canvas's own buttons,
   // when they apply.
   decorateSelectionToolbar(canvas) {
@@ -495,18 +503,20 @@ class CanvasBoardPlugin extends Plugin {
     }
   }
 
-  // Filter state of an open canvas. `create` false only reads (an empty state, not stored).
   // The view state if the canvas has one yet, else an empty one (not kept).
   peekViewState(canvas) {
     return this.views.get(canvas) || emptyViewState();
   }
 
+  // Filter state of an open canvas, made on first use.
   viewState(canvas) {
     const existing = this.views.get(canvas);
     if (existing) return existing;
     const state = emptyViewState();
     this.views.set(canvas, state);
-    // Hidden cards never stay selected (select all, drag to select), so Delete never hits a card you can't see.
+    // Decorator: updateSelection and applyHistory are wrapped, not replaced.
+    // Hidden cards never stay selected (select all, drag to select), so Delete
+    // never hits a card you can't see.
     const plugin = this;
     const original = canvas.updateSelection;
     canvas.updateSelection = function (callback) {
@@ -553,8 +563,9 @@ class CanvasBoardPlugin extends Plugin {
     } else this.refreshView(canvas);
   }
 
-  // A fold is stored on the card as "canvasBoard": {"folded": "in" | "out"} (the fold direction). JSON Canvas
-  // 1.0 has no such field; other readers ignore it and show every card. Obsidian keeps it (node.unknownData).
+  // A fold is stored on the card as "canvasBoard": {"folded": "in" | "out"}
+  // (the fold direction). JSON Canvas 1.0 has no such field; other readers
+  // ignore it and show every card. Obsidian keeps it (node.unknownData).
   foldOf(node) {
     const boardData = node.getData().canvasBoard;
     return (boardData && boardData.folded) || null;
@@ -569,7 +580,8 @@ class CanvasBoardPlugin extends Plugin {
     return folds;
   }
 
-  // `changes`: card id → direction to fold, or null to unfold. One canvas edit, one undo step.
+  // `changes`: card id → direction to fold, or null to unfold. One canvas edit,
+  // one undo step.
   setFolds(canvas, changes) {
     if (!changes.size) return;
     const canvasData = canvas.getData();
@@ -595,7 +607,8 @@ class CanvasBoardPlugin extends Plugin {
     return pane;
   }
 
-  // Card id → ids one edge away, following edges out (from → to) or in (to → from).
+  // Card id → ids one edge away, following edges out (from → to) or in (to →
+  // from).
   branchLinks(canvas, direction) {
     const links = new Map();
     for (const edge of canvas.edges.values()) {
@@ -615,8 +628,9 @@ class CanvasBoardPlugin extends Plugin {
     return branchLevelsFrom(this.branchLinks(canvas, direction), root);
   }
 
-  // The cards an unfold on `id` applies to: the card itself if folded, else the nearest folded cards of its open
-  // branch (in the fold direction, not past another fold), so pressing unfold again opens the next level.
+  // The cards an unfold on `id` applies to: the card itself if folded, else the
+  // nearest folded cards of its open branch (in the fold direction, not past
+  // another fold), so pressing unfold again opens the next level.
   unfoldTargets(canvas, id) {
     const node = canvas.nodes.get(id);
     if (!node) return [];
@@ -638,7 +652,8 @@ class CanvasBoardPlugin extends Plugin {
     return found;
   }
 
-  // Shows `levels` levels of each folded branch; the cards at the last shown level that lead further get folded.
+  // Shows `levels` levels of each folded branch; the cards at the last shown
+  // level that lead further get folded.
   unfold(canvas, ids, levels) {
     const changes = new Map();
     for (const id of ids) {
@@ -657,8 +672,8 @@ class CanvasBoardPlugin extends Plugin {
     this.setFolds(canvas, changes);
   }
 
-  // Tags of a card (no #): the `#tags` in its own text, never those of the notes it links. Exact match only:
-  // #tag1 is not #tag10.
+  // Tags of a card (no #): the `#tags` in its own text, never those of the
+  // notes it links. Exact match only: #tag1 is not #tag10.
   cardTagSet(node) {
     const tags = new Set();
     for (const match of (node.getData().text || '').matchAll(
@@ -669,7 +684,8 @@ class CanvasBoardPlugin extends Plugin {
     return tags;
   }
 
-  // Every color and tag shows by default; a hidden color, or any hidden tag, hides the card.
+  // Every color and tag shows by default; a hidden color, or any hidden tag,
+  // hides the card.
   matches(node, state) {
     if (state.xcolors.has(node.getData().color || '')) return false;
     if (!state.xtags.size) return true;
@@ -681,8 +697,9 @@ class CanvasBoardPlugin extends Plugin {
     return !!(state.xcolors.size || state.xtags.size);
   }
 
-  // Hidden = not matching the filter (groups always show), or below a folded card. With the setting "Hide cards
-  // under hidden tags", a card hidden by a tag also hides its branch, as a fold in the fold direction would.
+  // Hidden = not matching the filter (groups always show), or below a folded
+  // card. With the setting "Hide cards under hidden tags", a card hidden by a
+  // tag also hides its branch, as a fold in the fold direction would.
   refreshView(canvas) {
     const state = this.viewState(canvas);
     const hidden = new Set([
@@ -728,8 +745,8 @@ class CanvasBoardPlugin extends Plugin {
     );
   }
 
-  // Hides the `hidden` cards and their edges; `folded` (id → count) gets the "· N folded" badge, a click on it
-  // unfolds one level.
+  // Hides the `hidden` cards and their edges; `folded` (id → count) gets the "·
+  // N folded" badge, a click on it unfolds one level.
   paint(canvas, hidden, folded) {
     for (const node of canvas.nodes.values()) {
       node.nodeEl.toggleClass('canvas-board-hidden', hidden.has(node.id));
@@ -774,8 +791,9 @@ class CanvasBoardPlugin extends Plugin {
     badge.setAttr('aria-label', this.keyedLabel('Unfold 1 level', 'unfold'));
   }
 
-  // Yellow (needs me) cards whose note was not touched for "Stale after" days: a warning badge (the icon of
-  // `- [!]`) with the time since the note last changed. Cards without a note have no date: no badge.
+  // Yellow (needs me) cards whose note was not touched for "Stale after" days:
+  // a warning badge (the icon of `- [!]`) with the time since the note last
+  // changed. Cards without a note have no date: no badge.
   paintStale(canvas) {
     const days = Number(this.settings.staleDays) || 0;
     const board = canvas.view && canvas.view.file ? canvas.view.file.path : '';
@@ -829,7 +847,8 @@ class CanvasBoardPlugin extends Plugin {
     );
   }
 
-  // Status bar and closed pane: only how many cards are hidden (filter and folds); the pane says by what.
+  // Status bar and closed pane: only how many cards are hidden (filter and
+  // folds); the pane says by what.
   viewLabel(canvas) {
     const hiddenCount = this.peekViewState(canvas).hidden.size;
     return hiddenCount
@@ -856,14 +875,16 @@ class CanvasBoardPlugin extends Plugin {
     );
   }
 
-  // Background of a color dot: a preset canvas color ('1'…'6'), a custom hex, or none.
+  // Background of a color dot: a preset canvas color ('1'…'6'), a custom hex,
+  // or none.
   dotStyle(color) {
     return !color
       ? ''
       : `background: ${color.startsWith('#') ? color : `var(--canvas-color-${color})`}`;
   }
 
-  // Template cards are centered on the visible canvas, whatever is selected; they end up selected.
+  // Template cards are centered on the visible canvas, whatever is selected;
+  // they end up selected.
   async insertTemplate(canvas, file) {
     const template = JSON.parse(await this.app.vault.read(file));
     const nodes = template.nodes || [];
@@ -919,7 +940,8 @@ class CanvasBoardPlugin extends Plugin {
     }
     const max = Number(this.settings.cardWarning) || 0;
     const isOverLimit = max > 0 && cards.length > max;
-    const selectedCount = [...canvas.selection].filter((x) => !x.from).length; // cards and groups, not edges
+    // cards and groups, not edges
+    const selectedCount = [...canvas.selection].filter((x) => !x.from).length;
     // Only the card count takes the warning color, not the selected count.
     this.countEl.empty();
     this.countEl.createSpan({
@@ -938,8 +960,9 @@ class CanvasBoardPlugin extends Plugin {
     this.countEl.show();
   }
 
-  // The plugin folder holds the skill's default; the vault copy is written only when missing (then it is the
-  // user's, plugin updates never overwrite it) or on "Reset agent skill" (`force`).
+  // The plugin folder holds the skill's default; the vault copy is written only
+  // when missing (then it is the user's, plugin updates never overwrite it) or
+  // on "Reset agent skill".
   skillPath() {
     return path.join(
       this.app.vault.adapter.basePath,
@@ -950,7 +973,6 @@ class CanvasBoardPlugin extends Plugin {
     );
   }
 
-  // The vault's copy of the skill is the user's to edit: written only when missing.
   installSkill(pluginDir) {
     try {
       if (fileSystem.existsSync(this.skillPath())) return;
@@ -979,8 +1001,10 @@ class CanvasBoardPlugin extends Plugin {
     );
   }
 
-  // One undo step: the state before is pushed (unless the history already ends with it), then the edited data
-  // is set, which pushes it, so Ctrl+Z and Ctrl+Y each take one step. `d` is passed when the caller already changed it (extract).
+  // One undo step: the state before is pushed (unless the history already ends
+  // with it), then the edited data is set, which pushes it, so Ctrl+Z and
+  // Ctrl+Y each take one step. `canvasData` is passed when the caller already
+  // changed it (extract).
   edit(canvas, operations, canvasData = canvas.getData()) {
     const before = canvas.getData();
     const retyped = this.boardLibrary.applyOps(canvasData, operations);
@@ -1002,7 +1026,8 @@ class CanvasBoardPlugin extends Plugin {
       });
     }
     canvas.setData(canvasData); // pushes the new state
-    canvas.requestSave(false); // without false it pushes it again a moment later: one more Ctrl+Z needed
+    // without false it pushes it again a moment later: one more Ctrl+Z needed
+    canvas.requestSave(false);
   }
 
   activeFile() {
@@ -1029,8 +1054,10 @@ class CanvasBoardPlugin extends Plugin {
     return leaf && leaf.view.file ? leaf.view.file.path : null;
   }
 
-  // mode: dissolve (file to trash, other links break), copy (file kept), group (cards in a group named after the
-  // file, other links redirected: cards on this board get an edge to the group, other cards and notes link this board).
+  // mode: dissolve (file to trash, other links break), copy (file kept), group
+  // (cards in a group named after the file, other links redirected: cards on
+  // this board get an edge to the group, other cards and notes link this
+  // board).
   unpack(canvas, node, { file, mode, links }) {
     return unpackSubcanvas(this, canvas, { node, file, mode, links });
   }
@@ -1056,7 +1083,8 @@ class CanvasBoardPlugin extends Plugin {
     );
   }
 
-  // Context of the note a card links (its `context:` list), so its archive note keeps the same context.
+  // Context of the note a card links (its `context:` list), so its archive note
+  // keeps the same context.
   cardContexts(node, board) {
     const nodeData = node.getData();
     const target =
@@ -1120,7 +1148,8 @@ class CanvasBoardPlugin extends Plugin {
     return view && view.getViewType() === 'canvas' ? view.canvas : null;
   }
 
-  // True if the board, or a plan canvas linked from one of its cards, has a card in `go` (setting "Workflow").
+  // True if the board, or a plan canvas linked from one of its cards, has a
+  // card in `goColorSet` (setting "Workflow").
   async hasGoCards(board, goColorSet) {
     const read = async (filePath) => {
       const file = this.app.vault.getAbstractFileByPath(filePath);

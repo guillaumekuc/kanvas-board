@@ -3,7 +3,8 @@ const cardLinks = require('./cardLinks.js');
 const fileSystem = require('fs');
 const readBoard = require('./readBoard.js');
 
-// Board + linked notes (path, age; `noteInfo(path)` adds more, workflow.js passes the level) + nested canvases.
+// Board + linked notes (path, age; `noteInfo(path)` adds more, workflow/tree.js
+// passes the level) + nested canvases.
 function tree(board, { noteInfo, depth = 0, seen = new Set() } = {}) {
   seen.add(board);
   const canvasData = readBoard(board);

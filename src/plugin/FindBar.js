@@ -3,14 +3,17 @@ const clearFrames = require('./clearFrames.js');
 const frameText = require('./frameText.js');
 const stopCanvasEvents = require('./stopCanvasEvents.js');
 
-// Find bar at the top of a canvas, built with the classes of the notes' find bar (document-search-*) so it looks
-// the same: matches are the cards whose text (or file, link, group label) contains the query, ignoring case, in
-// reading order (top to bottom, then left to right). Typing jumps to the first one; Enter / Shift+Enter or the
-// arrows go to the next / previous (it wraps), Alt+Enter or the "all" button selects every match and zooms to them
-// all, Escape or the cross closes. Every match is outlined, the current one selected and zoomed to (a hidden one
-// clears filter and folds first). The text found is framed inside the cards, like search in notes; cards render when
-// they come into view, so an observer frames them again while there are matches. Keys typed in the field never reach
-// the canvas.
+// Find bar at the top of a canvas, built with the classes of the notes' find
+// bar (document-search-*) so it looks the same: matches are the cards whose
+// text (or file, link, group label) contains the query, ignoring case, in
+// reading order (top to bottom, then left to right). Typing jumps to the first
+// one; Enter / Shift+Enter or the arrows go to the next / previous (it wraps),
+// Alt+Enter or the "all" button selects every match and zooms to them all,
+// Escape or the cross closes. Every match is outlined, the current one selected
+// and zoomed to (a hidden one clears filter and folds first). The text found is
+// framed inside the cards, like search in notes; cards render when they come
+// into view, so an observer frames them again while there are matches. Keys
+// typed in the field never reach the canvas.
 class FindBar {
   constructor(plugin, canvas) {
     this.plugin = plugin;
@@ -40,7 +43,8 @@ class FindBar {
       type: 'search',
       attr: { placeholder: 'Find…', spellcheck: 'false' },
     });
-    this.countEl = field.createDiv({ cls: 'document-search-count' }); // inside the field, as in notes (absolute)
+    // inside the field, as in notes (absolute)
+    this.countEl = field.createDiv({ cls: 'document-search-count' });
     const buttons = box.createDiv({ cls: 'document-search-buttons' });
     const button = (icon, label, onClick) => {
       const buttonEl = buttons.createEl('button', {
@@ -67,7 +71,8 @@ class FindBar {
   }
 
   bindKeys() {
-    // Own key scope while the field has focus: canvas keys (Delete, arrows) stay off, global hotkeys still work.
+    // Own key scope while the field has focus: canvas keys (Delete, arrows)
+    // stay off, global hotkeys still work.
     this.scope = new Scope(this.plugin.app.scope);
     this.input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && event.altKey) {
@@ -123,7 +128,8 @@ class FindBar {
     this.show();
   }
 
-  // Every match selected (so it can be moved, colored...) and in view; Enter goes back to one at a time.
+  // Every match selected (so it can be moved, colored...) and in view; Enter
+  // goes back to one at a time.
   selectAll() {
     const { canvas, plugin, matches } = this;
     if (!matches.length) return;
@@ -149,9 +155,11 @@ class FindBar {
     this.frame(nodes);
   }
 
-  // Frames the query in the given cards (default: the same ones again) and watches for cards rendering.
+  // Frames the query in the given cards (default: the same ones again) and
+  // watches for cards rendering.
   frame(nodes = this.framed) {
-    const root = (node) => node.contentEl || node.nodeEl; // not nodeEl when there is a choice: it also holds the fold badge
+    // not nodeEl when there is a choice: it also holds the fold badge
+    const root = (node) => node.contentEl || node.nodeEl;
     this.observer.disconnect();
     for (const node of this.framed) clearFrames(root(node));
     this.framed = nodes;
@@ -171,13 +179,15 @@ class FindBar {
     }
   }
 
-  // Scrolls a long card to its first match. By hand: scrollIntoView would also scroll the canvas itself.
+  // Scrolls a long card to its first match. By hand: scrollIntoView would also
+  // scroll the canvas itself.
   reveal(frame) {
     const box = frame.closest('.markdown-preview-view');
     if (!box) return;
     const frameBox = frame.getBoundingClientRect(),
       view = box.getBoundingClientRect();
-    const zoom = view.height / box.offsetHeight || 1; // on-screen sizes are scaled by the canvas zoom, scrollTop is not
+    // on-screen sizes are scaled by the canvas zoom, scrollTop is not
+    const zoom = view.height / box.offsetHeight || 1;
     box.scrollTop += (frameBox.top - view.top) / zoom - box.clientHeight / 2;
   }
 

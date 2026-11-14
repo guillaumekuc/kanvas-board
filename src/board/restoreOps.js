@@ -1,7 +1,7 @@
 const newId = require('./newId.js');
 
-// Parses an archive note; returns { board, operations } that put the card back (same id if free) with the edges whose
-// other end is still on the board.
+// Parses an archive note; returns { board, operations } that put the card back
+// (same id if free) with the edges whose other end is still on the board.
 function restoreOps(canvasData, source) {
   const frontmatter = (source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) ||
     [])[1];

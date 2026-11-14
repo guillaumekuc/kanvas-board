@@ -1,7 +1,7 @@
 const matchOffsets = require('./matchOffsets.js');
 
-// Frames every `query` in the text under `root`, as search does in notes. A card being edited is left alone:
-// CodeMirror owns its DOM. Returns the frames.
+// Frames every `query` in the text under `root`, as search does in notes. A
+// card being edited is left alone: CodeMirror owns its DOM. Returns the frames.
 function frameText(root, query) {
   const ownerDocument = root.ownerDocument;
   const walker = ownerDocument.createTreeWalker(root, 4); // text nodes

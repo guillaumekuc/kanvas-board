@@ -1,9 +1,10 @@
 const { Modal, Setting } = require('obsidian');
 
-// One-line name prompt; Enter confirms, Escape cancels. Options: `suggestions` (names listed as you type, Enter
-// or click picks one into the field) and `overwrite` (name → true when it would replace a file: the button then
-// reads "Overwrite", in the warning color).
-// Unpack (dissolve) when other cards or notes link the subcanvas: group and redirect, keep the file, or break them.
+// One-line name prompt; Enter confirms, Escape cancels. Options: `suggestions`
+// (names listed as you type, Enter or click picks one into the field) and
+// `overwrite` (name → true when it would replace a file: the button then reads
+// "Overwrite", in the warning color). Unpack (dissolve) when other cards or
+// notes link the subcanvas: group and redirect, keep the file, or break them.
 class UnpackChoice extends Modal {
   constructor(app, file, { links, onPick }) {
     super(app);

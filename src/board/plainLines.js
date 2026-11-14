@@ -1,6 +1,7 @@
-// Card text without Markdown syntax, one string per non-empty line, for lists (filter pane):
-// [[Note|alias]] → alias, [[Note#Heading]] → Note › Heading, [[Note]] → Note, [text](url) → text; marks
-// (** __ ~~ == ` * _), heading, quote, list and checkbox markers dropped; #tags kept.
+// Card text without Markdown syntax, one string per non-empty line, for lists
+// (filter pane): [[Note|alias]] → alias, [[Note#Heading]] → Note › Heading,
+// [[Note]] → Note, [text](url) → text; marks (** __ ~~ == ` * _), heading,
+// quote, list and checkbox markers dropped; #tags kept.
 function plainLines(text) {
   const name = (linkTarget) =>
     linkTarget

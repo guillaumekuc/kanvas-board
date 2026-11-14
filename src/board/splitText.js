@@ -1,4 +1,5 @@
-// by: paragraph (blank lines), bullet (top-level list items), h1..h6 (a new piece at each heading of that level).
+// separator: paragraph (blank lines), bullet (top-level list items), h1..h6 (a
+// new piece at each heading of that level).
 function splitText(text, separator) {
   const headingMatch = /^h([1-6])$/.exec(separator);
   const starts = headingMatch

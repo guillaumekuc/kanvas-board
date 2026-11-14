@@ -18,7 +18,8 @@ function registerExtractCommand(plugin) {
         node.blur();
         const canvasData = canvas.getData();
         const savedNode = canvasData.nodes.find((x) => x.id === node.id);
-        if (savedNode) savedNode.text = before; // the editor may not have saved yet: work from what it showed
+        // the editor may not have saved yet: work from what it showed
+        if (savedNode) savedNode.text = before;
         plugin.edit(
           canvas,
           plugin.boardLibrary.extractOps(canvasData, {

@@ -1,6 +1,6 @@
-main.js
-canvas.js
-dagre.min.js
+/main.js
+/canvas.js
+/dagre.min.js
 package-lock.json
 test/golden/golden.json
 test/plugin/expected.json

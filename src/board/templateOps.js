@@ -1,5 +1,7 @@
 const newId = require('./newId.js');
 
+// A template is a .canvas file (Templates/Canvas/). Its cards get new ids and
+// land with their top-left at `origin`.
 function templateOps(template, origin) {
   const nodes = template.nodes || [];
   if (!nodes.length) throw new Error('empty template');

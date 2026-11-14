@@ -1,7 +1,5 @@
 const { COLORS } = require('./constants.js');
 
-// --- Commands -----------------------------------------------------------------------------------------
-
 const colorArg = (color) =>
   color === undefined
     ? undefined

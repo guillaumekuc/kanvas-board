@@ -6,8 +6,9 @@ const touchedCards = require('./touchedCards.js');
 const unitOf = require('./unitOf.js');
 
 class ApmCounter {
-  // plugin: the Kanvas board plugin (registerEvent, registerDomEvent, registerInterval, addStatusBarItem, activeCanvas, app);
-  // save(): writes the plugin's data.json, with this.settings in it.
+  // plugin: the Kanvas board plugin (registerEvent, registerDomEvent,
+  // registerInterval, addStatusBarItem, activeCanvas, app); save(): writes the
+  // plugin's data.json, with this.settings in it.
   constructor(plugin, settings, save) {
     this.plugin = plugin;
     this.app = plugin.app;
@@ -72,7 +73,8 @@ class ApmCounter {
     if (this.dirty) await this.save();
   }
 
-  // Returns the file's cards, or null when it can't be read as a canvas right now (a half-written file).
+  // Returns the file's cards, or null when it can't be read as a canvas right
+  // now (a half-written file).
   async snapshot(file) {
     try {
       const cards = cardsOf(await this.app.vault.read(file));
@@ -153,7 +155,9 @@ class ApmCounter {
       this.element.toggle(isShown);
       this.isShown = isShown;
     }
-    if (!isShown) return; // the window and the PB keep running, only the display stops outside a canvas
+    // the window and the PB keep running, only the display stops outside a
+    // canvas
+    if (!isShown) return;
     const state = this.isIdle(now)
       ? 'idle'
       : band(pace, {

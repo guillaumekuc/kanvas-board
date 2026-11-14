@@ -2,6 +2,9 @@ const bounds = require('./bounds.js');
 const newId = require('./newId.js');
 const withGroupMembers = require('./withGroupMembers.js');
 
+// Selected cards move to `file` (a new .canvas) at their relative places, with
+// the edges between them; one card `[[file|label]]` takes their place, centered
+// on where they were, and the edges that crossed the boundary now end on it.
 function collapseOps(canvasData, { ids, file, label }) {
   const pick = withGroupMembers(canvasData, ids);
   const moving = canvasData.nodes.filter((node) => pick.has(node.id));

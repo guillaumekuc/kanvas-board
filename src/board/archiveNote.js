@@ -1,7 +1,11 @@
 const noteName = require('./noteName.js');
 const yamlStr = require('./yamlStr.js');
 
-// Returns { name, content, ops }. `contexts`: the context of the note the archived card links, else G&A.
+// An archived card becomes a note (body = its text, or a link to its file)
+// whose frontmatter keeps what a restore needs: board, id, place, size, color
+// and its edges. Listed by Canvas archive.base. Returns { name, content,
+// operations }. `contexts`: the context of the note the archived card links,
+// else G&A.
 function archiveNote(canvasData, { id, board, date, contexts = ['G&A'] }) {
   const node = canvasData.nodes.find((node) => node.id === id);
   if (!node) throw new Error('no node ' + id);

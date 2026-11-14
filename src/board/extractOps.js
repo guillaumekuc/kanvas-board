@@ -1,7 +1,8 @@
 const fitHeight = require('./fitHeight.js');
 const newId = require('./newId.js');
 
-// `part` (a piece of the card's text, e.g. the editor selection) leaves the card for a new card next to it.
+// `part` (a piece of the card's text, e.g. the editor selection) leaves the
+// card for a new card next to it.
 function extractOps(canvasData, { id, part, from }) {
   const card = canvasData.nodes.find((node) => node.id === id);
   if (!card || card.type !== 'text') {
@@ -19,8 +20,9 @@ function extractOps(canvasData, { id, part, from }) {
     .trim();
   const text = part.trim();
   const height = fitHeight(text, card.width);
-  // Right next to the card even if it overlaps another (seen beats tidy), on top of the stack (added last);
-  // stepped down only so repeated extracts don't hide each other exactly.
+  // Right next to the card even if it overlaps another (seen beats tidy), on
+  // top of the stack (added last); stepped down only so repeated extracts don't
+  // hide each other exactly.
   let y = card.y;
   while (
     canvasData.nodes.some(

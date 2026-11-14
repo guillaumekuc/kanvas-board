@@ -1,4 +1,6 @@
 // Facade: the board operations the plugin shares with the canvas.js CLI.
+// The *Ops functions are pure: they return operations (and the other file's
+// content when there is one); the CLI and the plugin write them.
 const { SIDES, TEMPLATE_DIR } = require('../board/constants.js');
 
 module.exports = {

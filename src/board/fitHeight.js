@@ -1,4 +1,5 @@
-// Height that fits a text card's markdown at Obsidian's default canvas font (~8px a char, 26px a line).
+// Height that fits a text card's markdown at Obsidian's default canvas font
+// (~8px a char, 26px a line).
 function fitHeight(text, width) {
   const perLine = Math.max(10, Math.floor((width - 40) / 8));
   const lines = String(text || '')
