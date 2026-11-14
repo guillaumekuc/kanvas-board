@@ -2,9 +2,9 @@ const { execFileSync } = require('child_process');
 const { OBSIDIAN } = require('./constants.js');
 
 function obsidianEval(code) {
-  for (const bin of OBSIDIAN) {
+  for (const binary of OBSIDIAN) {
     try {
-      const out = execFileSync(bin, ['eval', `code=${code}`], {
+      const out = execFileSync(binary, ['eval', `code=${code}`], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
       });

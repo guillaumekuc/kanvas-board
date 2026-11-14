@@ -1,4 +1,4 @@
-const abs = require('./abs.js');
+const vaultPath = require('./vaultPath.js');
 const cardLinks = require('./cardLinks.js');
 const fileSystem = require('fs');
 const noteContexts = require('./noteContexts.js');
@@ -9,7 +9,7 @@ function cardContexts(node) {
   const frontmatter =
     note &&
     (fileSystem
-      .readFileSync(abs(note), 'utf8')
+      .readFileSync(vaultPath(note), 'utf8')
       .match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1];
   const contexts = noteContexts(frontmatter);
   return contexts.length ? contexts : undefined;

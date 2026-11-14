@@ -30,7 +30,7 @@ function mergeOps(canvasData, ids) {
   // Edges to the same other card end up as one: a two-way edge if there was one or they went both ways,
   // else the one from the merged card closest to it.
   const center = (node) => [node.x + node.width / 2, node.y + node.height / 2];
-  const dist = (first, second) =>
+  const distance = (first, second) =>
     Math.hypot(
       center(first)[0] - center(second)[0],
       center(first)[1] - center(second)[1],
@@ -47,7 +47,7 @@ function mergeOps(canvasData, ids) {
     }
     const out = all.has(edge.fromNode),
       other = out ? edge.toNode : edge.fromNode;
-    const length = dist(
+    const length = distance(
       canvasData.nodes.find(
         (node) => node.id === (out ? edge.fromNode : edge.toNode),
       ),

@@ -1,4 +1,4 @@
-const abs = require('./abs.js');
+const vaultPath = require('./vaultPath.js');
 const cardLinks = require('./cardLinks.js');
 const fileSystem = require('fs');
 const readBoard = require('./readBoard.js');
@@ -21,7 +21,8 @@ function tree(board, { noteInfo } = {}, depth = 0, seen = new Set()) {
         };
         if (note) {
           const ageDays = Math.floor(
-            (Date.now() - fileSystem.statSync(abs(note)).mtimeMs) / 86400000,
+            (Date.now() - fileSystem.statSync(vaultPath(note)).mtimeMs) /
+              86400000,
           );
           card.note = {
             path: note,

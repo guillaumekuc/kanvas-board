@@ -3,6 +3,6 @@ const path = require('path');
 
 // --- Board I/O ----------------------------------------------------------------------------------------
 
-const abs = (relativePath) => path.join(ROOT, relativePath);
+const vaultPath = (relativePath) => path.join(ROOT, relativePath);
 
-module.exports = abs;
+module.exports = vaultPath;
