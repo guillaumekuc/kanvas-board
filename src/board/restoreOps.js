@@ -8,12 +8,12 @@ function restoreOps(canvasData, source) {
   if (!frontmatter || !/^archived-from:/m.test(frontmatter)) {
     throw new Error('not an archived card note');
   }
-  const get = (field) => {
+  function get(field) {
     const match = new RegExp(`^${field}: (.*)$`, 'm').exec(frontmatter);
     if (!match) return undefined;
     const value = match[1].trim();
     return value.startsWith('"') ? JSON.parse(value) : value;
-  };
+  }
   const board = get('archived-from').replace(/^\[\[|\]\]$/g, '');
   const body = source
     .slice(source.indexOf('---', 3) + 3)

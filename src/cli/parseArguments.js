@@ -4,15 +4,17 @@ const settings = require('../board/settings.js');
 // `canvas.js <command> <board> [values] [--option value] [--flag]`: what the
 // commands read from it.
 function parseArguments(args) {
-  const isValue = (index) => index > 0 && args[index - 1].startsWith('--');
+  function isValue(index) {
+    return index > 0 && args[index - 1].startsWith('--');
+  }
   const positional = args.filter(
     (argument, index) => !argument.startsWith('--') && !isValue(index),
   );
   const [commandName, boardArg, ...rest] = positional;
-  const option = (name) => {
+  function option(name) {
     const index = args.indexOf(name);
     return index >= 0 ? args[index + 1] : undefined;
-  };
+  }
   const defaultBoard = String(settings().defaultBoard || '').trim();
   return {
     commandName,

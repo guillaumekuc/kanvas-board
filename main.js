@@ -287,7 +287,9 @@ var require_archiveDir = __commonJS({
 // src/board/noteName.js
 var require_noteName = __commonJS({
   "src/board/noteName.js"(exports2, module2) {
-    var noteName = (text) => (String(text).split("\n").find((line) => line.trim()) || "Card").replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, "").replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/[#^|[\]*_`>:\\/"?<]/g, "").replace(/\s+/g, " ").trim().slice(0, 60).trim() || "Card";
+    function noteName(text) {
+      return (String(text).split("\n").find((line) => line.trim()) || "Card").replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, "").replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/[#^|[\]*_`>:\\/"?<]/g, "").replace(/\s+/g, " ").trim().slice(0, 60).trim() || "Card";
+    }
     module2.exports = noteName;
   }
 });
@@ -295,7 +297,9 @@ var require_noteName = __commonJS({
 // src/board/yamlStr.js
 var require_yamlStr = __commonJS({
   "src/board/yamlStr.js"(exports2, module2) {
-    var yamlStr = (value) => JSON.stringify(String(value));
+    function yamlStr(value) {
+      return JSON.stringify(String(value));
+    }
     module2.exports = yamlStr;
   }
 });
@@ -356,7 +360,7 @@ var require_archiveNote = __commonJS({
 // src/board/bounds.js
 var require_bounds = __commonJS({
   "src/board/bounds.js"(exports2, module2) {
-    var bounds = (nodes) => {
+    function bounds(nodes) {
       const left = Math.min(...nodes.map((node) => node.x)), top = Math.min(...nodes.map((node) => node.y));
       return {
         x: left,
@@ -364,7 +368,7 @@ var require_bounds = __commonJS({
         width: Math.max(...nodes.map((node) => node.x + node.width)) - left,
         height: Math.max(...nodes.map((node) => node.y + node.height)) - top
       };
-    };
+    }
     module2.exports = bounds;
   }
 });
@@ -372,7 +376,9 @@ var require_bounds = __commonJS({
 // src/board/newId.js
 var require_newId = __commonJS({
   "src/board/newId.js"(exports2, module2) {
-    var newId = () => [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join("");
+    function newId() {
+      return [...Array(16)].map(() => Math.floor(Math.random() * 16).toString(16)).join("");
+    }
     module2.exports = newId;
   }
 });
@@ -385,7 +391,9 @@ var require_withGroupMembers = __commonJS({
       const groups = canvasData.nodes.filter(
         (node) => node.type === "group" && pick.has(node.id)
       );
-      const isInside = (node, group) => node.x >= group.x && node.y >= group.y && node.x + node.width <= group.x + group.width && node.y + node.height <= group.y + group.height;
+      function isInside(node, group) {
+        return node.x >= group.x && node.y >= group.y && node.x + node.width <= group.x + group.width && node.y + node.height <= group.y + group.height;
+      }
       for (const node of canvasData.nodes) {
         if (groups.some((group) => isInside(node, group))) pick.add(node.id);
       }
@@ -474,7 +482,9 @@ var require_overlapsAny = __commonJS({
   "src/board/overlapsAny.js"(exports2, module2) {
     var GAP = 40;
     function overlapsAny(moving, others, offset) {
-      const isNear = (card, other) => card.x + offset.x < other.x + other.width + GAP && card.x + offset.x + card.width + GAP > other.x && card.y + offset.y < other.y + other.height + GAP && card.y + offset.y + card.height + GAP > other.y;
+      function isNear(card, other) {
+        return card.x + offset.x < other.x + other.width + GAP && card.x + offset.x + card.width + GAP > other.x && card.y + offset.y < other.y + other.height + GAP && card.y + offset.y + card.height + GAP > other.y;
+      }
       return moving.some((card) => others.some((other) => isNear(card, other)));
     }
     module2.exports = overlapsAny;
@@ -507,7 +517,9 @@ var require_centeredFreeOffset = __commonJS({
 // src/board/byReading.js
 var require_byReading = __commonJS({
   "src/board/byReading.js"(exports2, module2) {
-    var byReading = (first, second) => first.y - second.y || first.x - second.x;
+    function byReading(first, second) {
+      return first.y - second.y || first.x - second.x;
+    }
     module2.exports = byReading;
   }
 });
@@ -553,7 +565,9 @@ var require_expandOps = __commonJS({
       const taken = new Set(
         [...canvasData.nodes, ...canvasData.edges].map((item) => item.id)
       );
-      const freeId = (itemId) => taken.has(itemId) ? newId() : itemId;
+      function freeId(itemId) {
+        return taken.has(itemId) ? newId() : itemId;
+      }
       const ids = new Map(
         subcanvas.nodes.map((node) => [node.id, freeId(node.id)])
       );
@@ -745,7 +759,9 @@ var require_layoutOps = __commonJS({
       const placed = dagrePlacement(moving, inner, layout);
       const offset = nearestFreeOffset(placed, { moving, fixed, direction });
       const [fromSide, toSide] = SIDES[direction];
-      const sides = (edge) => isBackEdge(edge, flow) ? { fromSide: toSide, toSide: fromSide } : { fromSide, toSide };
+      function sides(edge) {
+        return isBackEdge(edge, flow) ? { fromSide: toSide, toSide: fromSide } : { fromSide, toSide };
+      }
       return [
         ...placed.map((card) => ({
           op: "set",
@@ -766,7 +782,9 @@ var require_layoutOps = __commonJS({
 var require_centerDistance = __commonJS({
   "src/board/centerDistance.js"(exports2, module2) {
     function centerDistance(first, second) {
-      const center = (node) => [node.x + node.width / 2, node.y + node.height / 2];
+      function center(node) {
+        return [node.x + node.width / 2, node.y + node.height / 2];
+      }
       const [firstX, firstY] = center(first);
       const [secondX, secondY] = center(second);
       return Math.hypot(firstX - secondX, firstY - secondY);
@@ -826,7 +844,9 @@ var require_mergeEdgeOps = __commonJS({
     var keptEdgeOps = require_keptEdgeOps();
     function mergeEdgeOps(canvasData, { keep, gone }) {
       const merged = /* @__PURE__ */ new Set([keep.id, ...gone]);
-      const nodeById = (id) => canvasData.nodes.find((node) => node.id === id);
+      function nodeById(id) {
+        return canvasData.nodes.find((node) => node.id === id);
+      }
       const operations = [];
       const linksByOther = /* @__PURE__ */ new Map();
       for (const edge of canvasData.edges) {
@@ -854,7 +874,9 @@ var require_mergeEdgeOps = __commonJS({
 var require_mostUrgent = __commonJS({
   "src/board/mostUrgent.js"(exports2, module2) {
     var { URGENCY } = require_constants2();
-    var mostUrgent = (colors) => URGENCY.find((color) => colors.includes(color)) || "";
+    function mostUrgent(colors) {
+      return URGENCY.find((color) => colors.includes(color)) || "";
+    }
     module2.exports = mostUrgent;
   }
 });
@@ -892,7 +914,9 @@ var require_mergeOps = __commonJS({
 var require_plainLines = __commonJS({
   "src/board/plainLines.js"(exports2, module2) {
     function plainLines(text) {
-      const name = (linkTarget) => linkTarget.replace(/\.(md|canvas)$/, "").split("/").pop();
+      function name(linkTarget) {
+        return linkTarget.replace(/\.(md|canvas)$/, "").split("/").pop();
+      }
       return String(text || "").split("\n").map(
         (line) => line.replace(/!?\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(
           /!?\[\[([^\]#]*)#\^?([^\]]+)\]\]/g,
@@ -932,12 +956,12 @@ var require_restoreOps = __commonJS({
       if (!frontmatter || !/^archived-from:/m.test(frontmatter)) {
         throw new Error("not an archived card note");
       }
-      const get = (field) => {
+      function get(field) {
         const match = new RegExp(`^${field}: (.*)$`, "m").exec(frontmatter);
         if (!match) return void 0;
         const value = match[1].trim();
         return value.startsWith('"') ? JSON.parse(value) : value;
-      };
+      }
       const board = get("archived-from").replace(/^\[\[|\]\]$/g, "");
       const body = source.slice(source.indexOf("---", 3) + 3).replace(/^\r?\n/, "").replace(/\s+$/, "");
       const type = get("card-type") || "text";
@@ -4487,7 +4511,9 @@ var require_registerUnpackCommands = __commonJS({
     var { Notice } = require("obsidian");
     var UnpackChoice = require_UnpackChoice();
     function registerUnpackCommands(plugin) {
-      const linked = (canvas, selection) => selection.length === 1 && !!plugin.linkedCanvas(selection[0]);
+      function linked(canvas, selection) {
+        return selection.length === 1 && !!plugin.linkedCanvas(selection[0]);
+      }
       plugin.addCanvasCommand("expand", "Unpack subcanvas (dissolve)", {
         menu: ["Unpack subcanvas (dissolve)", "package-open"],
         test: linked,
@@ -4651,7 +4677,9 @@ var require_registerArchiveCommand = __commonJS({
 var require_registerFoldCommand = __commonJS({
   "src/plugin/commands/registerFoldCommand.js"(exports2, module2) {
     function registerFoldCommand(plugin) {
-      const canFold = (canvas, node) => !plugin.foldOf(node) && plugin.branchLinks(canvas, plugin.settings.foldDirection).has(node.id);
+      function canFold(canvas, node) {
+        return !plugin.foldOf(node) && plugin.branchLinks(canvas, plugin.settings.foldDirection).has(node.id);
+      }
       plugin.addCanvasCommand("fold", "Fold branch", {
         menu: ["Fold branch", "chevrons-down-up"],
         test: (canvas, selection) => selection.some((node) => canFold(canvas, node)),
@@ -4828,11 +4856,13 @@ var require_registerSelectChildrenCommand = __commonJS({
   "src/plugin/commands/registerSelectChildrenCommand.js"(exports2, module2) {
     var selectedCards = require_selectedCards();
     function registerSelectChildrenCommand(plugin) {
-      const childIds = (canvas, selection) => new Set(
-        selectedCards(selection).flatMap(
-          (node) => plugin.branchLevels(canvas, node.id, plugin.settings.foldDirection).flat()
-        )
-      );
+      function childIds(canvas, selection) {
+        return new Set(
+          selectedCards(selection).flatMap(
+            (node) => plugin.branchLevels(canvas, node.id, plugin.settings.foldDirection).flat()
+          )
+        );
+      }
       plugin.addCanvasCommand(
         "select-children",
         "Select children (all levels down, in the fold direction)",
@@ -4857,9 +4887,11 @@ var require_registerSelectSameTagCommand = __commonJS({
   "src/plugin/commands/registerSelectSameTagCommand.js"(exports2, module2) {
     var selectedCards = require_selectedCards();
     function registerSelectSameTagCommand(plugin) {
-      const tagsOf = (selection) => new Set(
-        selectedCards(selection).flatMap((node) => [...plugin.cardTagSet(node)])
-      );
+      function tagsOf(selection) {
+        return new Set(
+          selectedCards(selection).flatMap((node) => [...plugin.cardTagSet(node)])
+        );
+      }
       plugin.addCanvasCommand("select-same-tag", "Select cards with the same tag", {
         menu: ["Select same tag", "tag"],
         test: (canvas, selection) => tagsOf(selection).size > 0,
@@ -5078,14 +5110,14 @@ var require_FindBar = __commonJS({
         });
         this.countEl = field.createDiv({ cls: "document-search-count" });
         const buttons = box.createDiv({ cls: "document-search-buttons" });
-        const button = (icon, label, onClick) => {
+        function button(icon, label, onClick) {
           const buttonEl = buttons.createEl("button", {
             cls: "document-search-button clickable-icon",
             attr: { "aria-label": label }
           });
           setIcon(buttonEl, icon);
           buttonEl.addEventListener("click", onClick);
-        };
+        }
         button("arrow-up", "Previous (Shift+Enter)", () => this.step(-1));
         button("arrow-down", "Next (Enter)", () => this.step(1));
         const all = buttons.createEl("button", {
@@ -5177,7 +5209,9 @@ var require_FindBar = __commonJS({
       // Frames the query in the given cards (default: the same ones again) and
       // watches for cards rendering.
       frame(nodes = this.framed) {
-        const root = (node) => node.contentEl || node.nodeEl;
+        function root(node) {
+          return node.contentEl || node.nodeEl;
+        }
         this.observer.disconnect();
         for (const node of this.framed) clearFrames(root(node));
         this.framed = nodes;
@@ -5501,15 +5535,17 @@ var require_firstStepsCanvas = __commonJS({
         width: COLUMN_WIDTH + 80,
         height: STEPS.length * STEP_HEIGHT + 280
       };
-      const card = (text, row) => ({
-        id: newId(),
-        type: "text",
-        text,
-        x: STEPS_X,
-        y: row * STEP_HEIGHT,
-        width: COLUMN_WIDTH,
-        height: 130
-      });
+      function card(text, row) {
+        return {
+          id: newId(),
+          type: "text",
+          text,
+          x: STEPS_X,
+          y: row * STEP_HEIGHT,
+          width: COLUMN_WIDTH,
+          height: 130
+        };
+      }
       const steps = [];
       const edges = [];
       for (const [row, text] of STEPS.entries()) {
@@ -5670,7 +5706,7 @@ var require_band = __commonJS({
 var require_cardsOf = __commonJS({
   "src/apm/cardsOf.js"(exports2, module2) {
     var { CONTENT_KEYS } = require_constants4();
-    var cardsOf = (json) => {
+    function cardsOf(json) {
       const map = /* @__PURE__ */ new Map();
       for (const node of JSON.parse(json || "{}").nodes || []) {
         map.set(
@@ -5679,7 +5715,7 @@ var require_cardsOf = __commonJS({
         );
       }
       return map;
-    };
+    }
     module2.exports = cardsOf;
   }
 });
@@ -5687,10 +5723,9 @@ var require_cardsOf = __commonJS({
 // src/apm/rateName.js
 var require_rateName = __commonJS({
   "src/apm/rateName.js"(exports2, module2) {
-    var rateName = (windowMinutes) => (
-      // APM extended to the window: AP15M
-      windowMinutes === 1 ? "APM" : `AP${windowMinutes}M`
-    );
+    function rateName(windowMinutes) {
+      return windowMinutes === 1 ? "APM" : `AP${windowMinutes}M`;
+    }
     module2.exports = rateName;
   }
 });
@@ -5713,7 +5748,9 @@ var require_touchedCards = __commonJS({
 // src/apm/unitOf.js
 var require_unitOf = __commonJS({
   "src/apm/unitOf.js"(exports2, module2) {
-    var unitOf = (windowMinutes) => `cards/${windowMinutes}`;
+    function unitOf(windowMinutes) {
+      return `cards/${windowMinutes}`;
+    }
     module2.exports = unitOf;
   }
 });
@@ -5748,24 +5785,11 @@ var require_ApmCounter = __commonJS({
         const { plugin } = this;
         this.element = plugin.addStatusBarItem();
         this.element.addClass("apm-counter");
-        const listen = (targetWindow) => {
-          const input = () => {
-            this.lastInput = Date.now();
-          };
-          plugin.registerDomEvent(targetWindow, "keydown", input, {
-            capture: true,
-            passive: true
-          });
-          plugin.registerDomEvent(targetWindow, "mousedown", input, {
-            capture: true,
-            passive: true
-          });
-        };
-        listen(window);
+        this.listenTo(window);
         plugin.registerEvent(
           this.app.workspace.on(
             "window-open",
-            (workspaceWindow) => listen(workspaceWindow.win)
+            (workspaceWindow) => this.listenTo(workspaceWindow.win)
           )
         );
         plugin.registerEvent(
@@ -5789,6 +5813,15 @@ var require_ApmCounter = __commonJS({
         });
         plugin.registerInterval(window.setInterval(() => this.refresh(), 1e3));
         this.refresh();
+      }
+      // Any key or click in a window counts as activity for the APM rate.
+      listenTo(targetWindow) {
+        const input = () => {
+          this.lastInput = Date.now();
+        };
+        const options = { capture: true, passive: true };
+        this.plugin.registerDomEvent(targetWindow, "keydown", input, options);
+        this.plugin.registerDomEvent(targetWindow, "mousedown", input, options);
       }
       async unload() {
         if (this.dirty) await this.save();
@@ -5972,7 +6005,11 @@ var require_startPass = __commonJS({
     var { Notice } = require("obsidian");
     var { spawn } = require("child_process");
     function startPass([command, commandArguments], { vault, board }) {
-      const failed = (error) => new Notice(`Kanvas board: could not start the pass (${error.message})`);
+      function failed(error) {
+        return new Notice(
+          `Kanvas board: could not start the pass (${error.message})`
+        );
+      }
       try {
         const child = spawn(command, commandArguments, {
           cwd: vault,
@@ -5995,7 +6032,9 @@ var require_branchLevelsFrom = __commonJS({
   "src/plugin/branchLevelsFrom.js"(exports2, module2) {
     function branchLevelsFrom(links, root) {
       const seen = /* @__PURE__ */ new Set([root]);
-      const isNew = (id) => !seen.has(id) && Boolean(seen.add(id));
+      function isNew(id) {
+        return !seen.has(id) && Boolean(seen.add(id));
+      }
       const levels = [];
       let level = [root];
       while (level.length) {
@@ -6029,15 +6068,19 @@ var require_subcanvasLinks = __commonJS({
     async function subcanvasLinks(plugin, file, { canvas, skipId }) {
       const { vault, metadataCache } = plugin.app;
       const here = plugin.canvasFile(canvas);
-      const hits = (from) => (target) => {
-        const destination = metadataCache.getFirstLinkpathDest(target, from);
-        return Boolean(destination) && destination.path === file.path;
-      };
-      const isLinking = (node, from) => node.type === "file" ? node.file === file.path : node.type === "text" && plugin.boardLibrary.relinkText(
-        node.text,
-        hits(from),
-        () => "\0"
-      ) !== node.text;
+      function hits(from) {
+        return (target) => {
+          const destination = metadataCache.getFirstLinkpathDest(target, from);
+          return Boolean(destination) && destination.path === file.path;
+        };
+      }
+      function isLinking(node, from) {
+        return node.type === "file" ? node.file === file.path : node.type === "text" && plugin.boardLibrary.relinkText(
+          node.text,
+          hits(from),
+          () => "\0"
+        ) !== node.text;
+      }
       const canvases = vault.getFiles().filter((each) => each.extension === "canvas" && each.path !== file.path);
       const found = [];
       for (const canvasFile of canvases) {
@@ -6073,9 +6116,11 @@ var require_onPath = __commonJS({
   "src/plugin/onPath.js"(exports2, module2) {
     var fileSystem = require("fs");
     var path = require("path");
-    var onPath = (binary) => String(process.env.PATH || "").split(path.delimiter).some(
-      (folder) => folder && fileSystem.existsSync(path.join(folder, binary))
-    );
+    function onPath(binary) {
+      return String(process.env.PATH || "").split(path.delimiter).some(
+        (folder) => folder && fileSystem.existsSync(path.join(folder, binary))
+      );
+    }
     module2.exports = onPath;
   }
 });
@@ -6198,7 +6243,9 @@ var require_redirectOutsideLinks = __commonJS({
     async function redirectOutsideLinks(plugin, unpacked) {
       const { file, here, isSubcanvas, links } = unpacked;
       const library = plugin.boardLibrary;
-      const toLink = (alias) => `[[${here}|${alias}]]`;
+      function toLink(alias) {
+        return `[[${here}|${alias}]]`;
+      }
       const paths = new Set(
         links.filter((link) => link.path !== here).map((link) => link.path)
       );
@@ -6233,7 +6280,9 @@ var require_redirectOutsideLinks = __commonJS({
 var require_unpackMessage = __commonJS({
   "src/plugin/unpack/unpackMessage.js"(exports2, module2) {
     function unpackMessage(mode, { cardCount, linkCount, path }) {
-      const plural = (count) => count > 1 ? "s" : "";
+      function plural(count) {
+        return count > 1 ? "s" : "";
+      }
       const cards = `${cardCount} card${plural(cardCount)}`;
       const links = `${linkCount} link${plural(linkCount)}`;
       const broken = linkCount ? ` (${links} now broken)` : "";
@@ -6266,13 +6315,15 @@ var require_unpackSubcanvas = __commonJS({
         group: mode === "group" ? label : void 0
       });
       const here = plugin.canvasFile(canvas);
-      const isSubcanvas = (from) => (target) => {
-        const destination = plugin.app.metadataCache.getFirstLinkpathDest(
-          target,
-          from
-        );
-        return Boolean(destination) && destination.path === file.path;
-      };
+      function isSubcanvas(from) {
+        return (target) => {
+          const destination = plugin.app.metadataCache.getFirstLinkpathDest(
+            target,
+            from
+          );
+          return Boolean(destination) && destination.path === file.path;
+        };
+      }
       const unpacked = { file, here, label, isSubcanvas, links };
       if (mode === "group") {
         const groupId = operations.group;
@@ -6300,9 +6351,11 @@ var require_unpackSubcanvas = __commonJS({
 var require_parseColors = __commonJS({
   "src/plugin/parseColors.js"(exports2, module2) {
     var { COLOR_NUM } = require_constants();
-    var parseColors = (value) => new Set(
-      String(value || "").split(/[\s,]+/).filter(Boolean).map((color) => COLOR_NUM[color.toLowerCase()] || color).filter((color) => /^[1-6]$/.test(color))
-    );
+    function parseColors(value) {
+      return new Set(
+        String(value || "").split(/[\s,]+/).filter(Boolean).map((color) => COLOR_NUM[color.toLowerCase()] || color).filter((color) => /^[1-6]$/.test(color))
+      );
+    }
     module2.exports = parseColors;
   }
 });
@@ -6680,7 +6733,9 @@ var require_FilterPane = __commonJS({
       }
       buildSections() {
         const { plugin, canvas } = this;
-        const state = () => plugin.viewState(canvas);
+        function state() {
+          return plugin.viewState(canvas);
+        }
         this.colorsEl = this.addSection(
           "Colors",
           () => state().xcolors.clear()
@@ -6882,7 +6937,9 @@ var require_FilterPane = __commonJS({
 // src/plugin/nextTurn.js
 var require_nextTurn = __commonJS({
   "src/plugin/nextTurn.js"(exports2, module2) {
-    var nextTurn = (current, target) => current + ((target - current) % 360 + 540) % 360 - 180;
+    function nextTurn(current, target) {
+      return current + ((target - current) % 360 + 540) % 360 - 180;
+    }
     module2.exports = nextTurn;
   }
 });
@@ -7452,7 +7509,9 @@ Shift-click: next direction`,
           return Boolean(eachNode && this.foldOf(eachNode));
         };
         const seen = /* @__PURE__ */ new Set([id]);
-        const isNew = (each) => !seen.has(each) && Boolean(seen.add(each));
+        function isNew(each) {
+          return !seen.has(each) && Boolean(seen.add(each));
+        }
         const found = [];
         let level = [id];
         while (level.length) {
@@ -7534,7 +7593,9 @@ Shift-click: next direction`,
       }
       hiddenByTagBranches(canvas, state) {
         if (!state.xtags.size || !this.settings.hideTagBranches) return [];
-        const isCard = (id) => canvas.nodes.get(id) && canvas.nodes.get(id).getData().type !== "group";
+        function isCard(id) {
+          return canvas.nodes.get(id) && canvas.nodes.get(id).getData().type !== "group";
+        }
         const tagged = [...canvas.nodes.values()].filter((node) => {
           const tags = this.cardTagSet(node);
           return [...state.xtags].some((tag) => tags.has(tag));
@@ -7776,10 +7837,12 @@ Shift-click: next direction`,
         const retyped = this.boardLibrary.applyOps(canvasData, operations);
         const history = canvas.history;
         const last = history && history.data && history.data[history.current];
-        const same = (data) => JSON.stringify(
-          data,
-          (key, value) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort()) : value
-        );
+        function same(data) {
+          return JSON.stringify(
+            data,
+            (key, value) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort()) : value
+          );
+        }
         if (canvas.pushHistory && (!last || same(last) !== same(before))) {
           canvas.pushHistory(before);
         }
@@ -7882,7 +7945,9 @@ Shift-click: next direction`,
           const canvasData = file && parseOrNull(await this.app.vault.cachedRead(file));
           return canvasData && canvasData.nodes || [];
         };
-        const isGo = (node) => goColorSet.has(node.color);
+        function isGo(node) {
+          return goColorSet.has(node.color);
+        }
         const open = this.openCanvas(board);
         const nodes = open ? open.getData().nodes : await read(board);
         if (nodes.some(isGo)) return true;

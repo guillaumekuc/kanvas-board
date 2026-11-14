@@ -5,7 +5,9 @@ const relinkCanvasData = require('./relinkCanvasData.js');
 async function redirectOutsideLinks(plugin, unpacked) {
   const { file, here, isSubcanvas, links } = unpacked;
   const library = plugin.boardLibrary;
-  const toLink = (alias) => `[[${here}|${alias}]]`;
+  function toLink(alias) {
+    return `[[${here}|${alias}]]`;
+  }
   const paths = new Set(
     links.filter((link) => link.path !== here).map((link) => link.path),
   );

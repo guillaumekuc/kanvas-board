@@ -10,19 +10,25 @@ const LINKABLE = /\.(md|canvas)$/;
 // Cards (any .canvas) and notes (.md) that link `relativePath`, except card
 // `skipId` on `board`: ['path (card id)' | 'path'].
 function linksTo(relativePath, board, skipId) {
-  const hits = (target) => findFile(target) === relativePath;
-  const isLinking = (text) =>
-    relinkText(text, hits, () => '\u0000') !== (text || '');
-  const isLinkingCard = (node) =>
-    node.type === 'file' ? node.file === relativePath : isLinking(node.text);
-  const linksIn = (file, source) => {
+  function hits(target) {
+    return findFile(target) === relativePath;
+  }
+  function isLinking(text) {
+    return relinkText(text, hits, () => '\u0000') !== (text || '');
+  }
+  function isLinkingCard(node) {
+    return node.type === 'file'
+      ? node.file === relativePath
+      : isLinking(node.text);
+  }
+  function linksIn(file, source) {
     if (file.endsWith('.md')) return isLinking(source) ? [file] : [];
     const nodes = (parseOrNull(source) || {}).nodes || [];
     return nodes
       .filter((node) => !(file === board && node.id === skipId))
       .filter(isLinkingCard)
       .map((node) => `${file} (${node.id})`);
-  };
+  }
   const name = path.posix.basename(relativePath);
   const found = [];
   for (const file of vaultFileIndex.paths()) {

@@ -2,7 +2,9 @@
 // (level 1 first); each id once, at its nearest level.
 function branchLevelsFrom(links, root) {
   const seen = new Set([root]);
-  const isNew = (id) => !seen.has(id) && Boolean(seen.add(id));
+  function isNew(id) {
+    return !seen.has(id) && Boolean(seen.add(id));
+  }
   const levels = [];
   let level = [root];
   while (level.length) {

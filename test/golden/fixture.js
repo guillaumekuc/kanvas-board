@@ -4,16 +4,18 @@ const path = require('path');
 
 const FIXED_TIME = new Date('2026-01-14T12:00:00Z');
 
-const card = (id, text, { color, position }) => ({
-  id,
-  type: 'text',
-  text,
-  x: position[0],
-  y: position[1],
-  width: 250,
-  height: 60,
-  ...(color ? { color } : {}),
-});
+function card(id, text, { color, position }) {
+  return {
+    id,
+    type: 'text',
+    text,
+    x: position[0],
+    y: position[1],
+    width: 250,
+    height: 60,
+    ...(color ? { color } : {}),
+  };
+}
 
 const BOARD = {
   nodes: [

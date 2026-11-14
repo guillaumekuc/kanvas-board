@@ -1,14 +1,15 @@
 function place(canvasData, { near, width, height }) {
   const nearNode = canvasData.nodes.find((node) => node.id === near);
   if (!nearNode) throw new Error('no node ' + near);
-  const overlaps = (left, top) =>
-    canvasData.nodes.some(
+  function overlaps(left, top) {
+    return canvasData.nodes.some(
       (node) =>
         left < node.x + node.width + 20 &&
         left + width + 20 > node.x &&
         top < node.y + node.height + 20 &&
         top + height + 20 > node.y,
     );
+  }
   for (let step = 0; step < 20; step++) {
     const right = {
       x: nearNode.x + nearNode.width + 40,

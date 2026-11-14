@@ -3,11 +3,12 @@
 // [[Note]] → Note, [text](url) → text; marks (** __ ~~ == ` * _), heading,
 // quote, list and checkbox markers dropped; #tags kept.
 function plainLines(text) {
-  const name = (linkTarget) =>
-    linkTarget
+  function name(linkTarget) {
+    return linkTarget
       .replace(/\.(md|canvas)$/, '')
       .split('/')
       .pop();
+  }
   return String(text || '')
     .split('\n')
     .map((line) =>

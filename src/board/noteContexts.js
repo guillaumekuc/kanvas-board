@@ -2,7 +2,9 @@
 // value).
 function noteContexts(frontmatter) {
   if (!frontmatter) return [];
-  const unquote = (value) => value.trim().replace(/^(["'])(.*)\1$/, '$2');
+  function unquote(value) {
+    return value.trim().replace(/^(["'])(.*)\1$/, '$2');
+  }
   const match = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m.exec(frontmatter);
   if (!match) return [];
   return (

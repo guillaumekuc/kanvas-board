@@ -1,6 +1,6 @@
 // A stand-in for any Obsidian object: every unknown member is a callable
 // that returns another stand-in, so plugin code runs without the app.
-const anything = () => {
+function anything() {
   const assigned = new Map();
   return new Proxy(function stub() {}, {
     set: (target, key, value) => assigned.set(key, value),
@@ -15,6 +15,6 @@ const anything = () => {
     apply: () => anything(),
     construct: () => anything(),
   });
-};
+}
 
 module.exports = anything;

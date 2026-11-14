@@ -5,19 +5,22 @@ const parseOrNull = require('../board/parseOrNull.js');
 async function subcanvasLinks(plugin, file, { canvas, skipId }) {
   const { vault, metadataCache } = plugin.app;
   const here = plugin.canvasFile(canvas);
-  const hits = (from) => (target) => {
-    const destination = metadataCache.getFirstLinkpathDest(target, from);
-    return Boolean(destination) && destination.path === file.path;
-  };
-  const isLinking = (node, from) =>
-    node.type === 'file'
+  function hits(from) {
+    return (target) => {
+      const destination = metadataCache.getFirstLinkpathDest(target, from);
+      return Boolean(destination) && destination.path === file.path;
+    };
+  }
+  function isLinking(node, from) {
+    return node.type === 'file'
       ? node.file === file.path
       : node.type === 'text' &&
-        plugin.boardLibrary.relinkText(
-          node.text,
-          hits(from),
-          () => '\u0000',
-        ) !== node.text;
+          plugin.boardLibrary.relinkText(
+            node.text,
+            hits(from),
+            () => '\u0000',
+          ) !== node.text;
+  }
   const canvases = vault
     .getFiles()
     .filter((each) => each.extension === 'canvas' && each.path !== file.path);

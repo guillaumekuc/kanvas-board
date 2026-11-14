@@ -46,14 +46,14 @@ class FindBar {
     // inside the field, as in notes (absolute)
     this.countEl = field.createDiv({ cls: 'document-search-count' });
     const buttons = box.createDiv({ cls: 'document-search-buttons' });
-    const button = (icon, label, onClick) => {
+    function button(icon, label, onClick) {
       const buttonEl = buttons.createEl('button', {
         cls: 'document-search-button clickable-icon',
         attr: { 'aria-label': label },
       });
       setIcon(buttonEl, icon);
       buttonEl.addEventListener('click', onClick);
-    };
+    }
     button('arrow-up', 'Previous (Shift+Enter)', () => this.step(-1));
     button('arrow-down', 'Next (Enter)', () => this.step(1));
     const all = buttons.createEl('button', {
@@ -159,7 +159,9 @@ class FindBar {
   // watches for cards rendering.
   frame(nodes = this.framed) {
     // not nodeEl when there is a choice: it also holds the fold badge
-    const root = (node) => node.contentEl || node.nodeEl;
+    function root(node) {
+      return node.contentEl || node.nodeEl;
+    }
     this.observer.disconnect();
     for (const node of this.framed) clearFrames(root(node));
     this.framed = nodes;

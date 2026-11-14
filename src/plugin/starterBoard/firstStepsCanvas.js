@@ -14,15 +14,17 @@ function firstStepsCanvas() {
     width: COLUMN_WIDTH + 80,
     height: STEPS.length * STEP_HEIGHT + 280,
   };
-  const card = (text, row) => ({
-    id: newId(),
-    type: 'text',
-    text,
-    x: STEPS_X,
-    y: row * STEP_HEIGHT,
-    width: COLUMN_WIDTH,
-    height: 130,
-  });
+  function card(text, row) {
+    return {
+      id: newId(),
+      type: 'text',
+      text,
+      x: STEPS_X,
+      y: row * STEP_HEIGHT,
+      width: COLUMN_WIDTH,
+      height: 130,
+    };
+  }
   const steps = [];
   const edges = [];
   for (const [row, text] of STEPS.entries()) {

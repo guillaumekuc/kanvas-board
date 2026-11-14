@@ -1,8 +1,8 @@
 const settings = require('./settings.js');
 
-const staleDays = () => {
+function staleDays() {
   const days = Number(settings().staleDays);
   return Number.isFinite(days) && settings().staleDays !== undefined ? days : 7;
-}; // plugin setting "Stale after"
+} // plugin setting "Stale after"
 
 module.exports = staleDays;

@@ -18,13 +18,15 @@ async function unpackSubcanvas(plugin, canvas, request) {
     group: mode === 'group' ? label : undefined,
   });
   const here = plugin.canvasFile(canvas);
-  const isSubcanvas = (from) => (target) => {
-    const destination = plugin.app.metadataCache.getFirstLinkpathDest(
-      target,
-      from,
-    );
-    return Boolean(destination) && destination.path === file.path;
-  };
+  function isSubcanvas(from) {
+    return (target) => {
+      const destination = plugin.app.metadataCache.getFirstLinkpathDest(
+        target,
+        from,
+      );
+      return Boolean(destination) && destination.path === file.path;
+    };
+  }
   const unpacked = { file, here, label, isSubcanvas, links };
   if (mode === 'group') {
     const groupId = operations.group;
