@@ -1,16 +1,19 @@
 const { COLORS, COLOR_NUM, DEFAULTS, LAYOUT_DIRS } = require('./constants.js');
 const { Notice, Plugin, setIcon } = require('obsidian');
-const { spawn } = require('child_process');
 const boardLibrary = require('./boardLibrary.js');
 const COMMAND_GROUPS = require('./commands/index.js');
 const createApi = require('./createApi.js');
 const createStarterBoard = require('./starterBoard/createStarterBoard.js');
 const startApmCounter = require('./startApmCounter.js');
+const startPass = require('./startPass.js');
+const branchLevelsFrom = require('./branchLevelsFrom.js');
+const parseOrNull = require('../board/parseOrNull.js');
+const subcanvasLinks = require('./subcanvasLinks.js');
+const terminalLaunch = require('./terminalLaunch.js');
 const unpackSubcanvas = require('./unpack/unpackSubcanvas.js');
 const CanvasBoardSettings = require('./CanvasBoardSettings.js');
 const emptyViewState = require('./emptyViewState.js');
 const claudeBin = require('./claudeBin.js');
-const defaultLaunch = require('./defaultLaunch.js');
 const FilterPane = require('./FilterPane.js');
 const fileSystem = require('fs');
 const nextTurn = require('./nextTurn.js');
@@ -609,24 +612,7 @@ class CanvasBoardPlugin extends Plugin {
 
   // Ids below a folded card, level by level (level 1 first).
   branchLevels(canvas, root, direction) {
-    const links = this.branchLinks(canvas, direction);
-    const seen = new Set([root]);
-    const levels = [];
-    let level = [root];
-    while (level.length) {
-      const next = [];
-      for (const id of level) {
-        for (const x of links.get(id) || []) {
-          if (!seen.has(x)) {
-            seen.add(x);
-            next.push(x);
-          }
-        }
-      }
-      if (next.length) levels.push(next);
-      level = next;
-    }
-    return levels;
+    return branchLevelsFrom(this.branchLinks(canvas, direction), root);
   }
 
   // The cards an unfold on `id` applies to: the card itself if folded, else the nearest folded cards of its open
@@ -636,21 +622,18 @@ class CanvasBoardPlugin extends Plugin {
     if (!node) return [];
     if (this.foldOf(node)) return [id];
     const links = this.branchLinks(canvas, this.settings.foldDirection);
+    const isFolded = (each) => {
+      const eachNode = canvas.nodes.get(each);
+      return Boolean(eachNode && this.foldOf(eachNode));
+    };
     const seen = new Set([id]);
+    const isNew = (each) => !seen.has(each) && Boolean(seen.add(each));
     const found = [];
     let level = [id];
     while (level.length) {
-      const next = [];
-      for (const x of level) {
-        for (const y of links.get(x) || []) {
-          if (seen.has(y)) continue;
-          seen.add(y);
-          const node = canvas.nodes.get(y);
-          if (node && this.foldOf(node)) found.push(y);
-          else next.push(y);
-        }
-      }
-      level = next;
+      const next = level.flatMap((each) => links.get(each) || []).filter(isNew);
+      found.push(...next.filter(isFolded));
+      level = next.filter((each) => !isFolded(each));
     }
     return found;
   }
@@ -665,11 +648,11 @@ class CanvasBoardPlugin extends Plugin {
       changes.set(id, null);
       const below = this.branchLevels(canvas, id, direction);
       const links = this.branchLinks(canvas, direction);
-      if (levels < below.length) {
-        for (const x of below[levels - 1]) {
-          if ((links.get(x) || []).length) changes.set(x, direction);
-        }
-      }
+      const lastShown = levels < below.length ? below[levels - 1] : [];
+      const leadingFurther = lastShown.filter(
+        (each) => (links.get(each) || []).length,
+      );
+      for (const each of leadingFurther) changes.set(each, direction);
     }
     this.setFolds(canvas, changes);
   }
@@ -702,32 +685,10 @@ class CanvasBoardPlugin extends Plugin {
   // under hidden tags", a card hidden by a tag also hides its branch, as a fold in the fold direction would.
   refreshView(canvas) {
     const state = this.viewState(canvas);
-    const hidden = new Set();
-    if (this.filtering(state)) {
-      for (const node of canvas.nodes.values()) {
-        if (node.getData().type !== 'group' && !this.matches(node, state)) {
-          hidden.add(node.id);
-        }
-      }
-    }
-    if (state.xtags.size && this.settings.hideTagBranches) {
-      for (const node of canvas.nodes.values()) {
-        const tags = this.cardTagSet(node);
-        if (![...state.xtags].some((tag) => tags.has(tag))) continue;
-        for (const id of this.branchLevels(
-          canvas,
-          node.id,
-          this.settings.foldDirection,
-        ).flat()) {
-          if (
-            canvas.nodes.get(id) &&
-            canvas.nodes.get(id).getData().type !== 'group'
-          ) {
-            hidden.add(id);
-          }
-        }
-      }
-    }
+    const hidden = new Set([
+      ...this.hiddenByFilter(canvas, state),
+      ...this.hiddenByTagBranches(canvas, state),
+    ]);
     const folded = new Map();
     for (const [root, direction] of this.folds(canvas)) {
       const below = this.branchLevels(canvas, root, direction).flat();
@@ -744,43 +705,73 @@ class CanvasBoardPlugin extends Plugin {
     if (pane) pane.update();
   }
 
+  hiddenByFilter(canvas, state) {
+    if (!this.filtering(state)) return [];
+    return [...canvas.nodes.values()]
+      .filter((node) => node.getData().type !== 'group')
+      .filter((node) => !this.matches(node, state))
+      .map((node) => node.id);
+  }
+
+  hiddenByTagBranches(canvas, state) {
+    if (!state.xtags.size || !this.settings.hideTagBranches) return [];
+    const isCard = (id) =>
+      canvas.nodes.get(id) && canvas.nodes.get(id).getData().type !== 'group';
+    const tagged = [...canvas.nodes.values()].filter((node) => {
+      const tags = this.cardTagSet(node);
+      return [...state.xtags].some((tag) => tags.has(tag));
+    });
+    return tagged.flatMap((node) =>
+      this.branchLevels(canvas, node.id, this.settings.foldDirection)
+        .flat()
+        .filter(isCard),
+    );
+  }
+
   // Hides the `hidden` cards and their edges; `folded` (id → count) gets the "· N folded" badge, a click on it
   // unfolds one level.
   paint(canvas, hidden, folded) {
     for (const node of canvas.nodes.values()) {
       node.nodeEl.toggleClass('canvas-board-hidden', hidden.has(node.id));
-      let badge = node.nodeEl.querySelector(':scope > .canvas-board-folded');
-      if (!folded.has(node.id)) {
-        if (badge) badge.remove();
-        continue;
-      }
-      if (!badge) {
-        badge = node.nodeEl.createDiv({
-          cls: 'canvas-board-folded',
-          attr: { 'data-tooltip-position': 'bottom' },
-        });
-        for (const eventName of ['pointerdown', 'mousedown', 'dblclick']) {
-          badge.addEventListener(eventName, (event) => event.stopPropagation());
-        }
-        badge.addEventListener('click', (event) => {
-          event.stopPropagation();
-          this.unfold(canvas, [node.id], 1);
-        });
-      }
-      badge.setText(`· ${folded.get(node.id)} folded`);
-      badge.setAttr('aria-label', this.keyedLabel('Unfold 1 level', 'unfold'));
+      this.paintFoldBadge(canvas, node, folded.get(node.id));
     }
     this.paintStale(canvas);
     for (const edge of canvas.edges.values()) {
-      const off = hidden.has(edge.from.node.id) || hidden.has(edge.to.node.id);
-      for (const element of [
+      const isOff =
+        hidden.has(edge.from.node.id) || hidden.has(edge.to.node.id);
+      const elements = [
         edge.lineGroupEl,
         edge.lineEndGroupEl,
         edge.labelElement && edge.labelElement.wrapperEl,
-      ]) {
-        if (element) element.classList.toggle('canvas-board-hidden', off);
+      ].filter(Boolean);
+      for (const element of elements) {
+        element.classList.toggle('canvas-board-hidden', isOff);
       }
     }
+  }
+
+  // count: cards folded under the node, undefined when it is not folded.
+  paintFoldBadge(canvas, node, count) {
+    let badge = node.nodeEl.querySelector(':scope > .canvas-board-folded');
+    if (count === undefined) {
+      if (badge) badge.remove();
+      return;
+    }
+    if (!badge) {
+      badge = node.nodeEl.createDiv({
+        cls: 'canvas-board-folded',
+        attr: { 'data-tooltip-position': 'bottom' },
+      });
+      for (const eventName of ['pointerdown', 'mousedown', 'dblclick']) {
+        badge.addEventListener(eventName, (event) => event.stopPropagation());
+      }
+      badge.addEventListener('click', (event) => {
+        event.stopPropagation();
+        this.unfold(canvas, [node.id], 1);
+      });
+    }
+    badge.setText(`· ${count} folded`);
+    badge.setAttr('aria-label', this.keyedLabel('Unfold 1 level', 'unfold'));
   }
 
   // Yellow (needs me) cards whose note was not touched for "Stale after" days: a warning badge (the icon of
@@ -790,50 +781,52 @@ class CanvasBoardPlugin extends Plugin {
     const board = canvas.view && canvas.view.file ? canvas.view.file.path : '';
     for (const node of canvas.nodes.values()) {
       const nodeData = node.getData();
-      let age = -1;
-      if (days > 0 && nodeData.color === '3') {
-        let file = null;
-        if (nodeData.type === 'file') {
-          file = this.app.vault.getAbstractFileByPath(nodeData.file);
-        } else if (nodeData.type === 'text') {
-          const match = /\[\[([^\]|#]+)/.exec(nodeData.text || '');
-          if (match) {
-            file = this.app.metadataCache.getFirstLinkpathDest(
-              match[1].trim(),
-              board,
-            );
-          }
-        }
-        if (file && file.stat) {
-          age = Math.floor((Date.now() - file.stat.mtime) / 86400000);
-        }
-      }
-      let badge = node.nodeEl.querySelector(':scope > .canvas-board-stale');
-      if (age < days || age < 0) {
-        if (badge) badge.remove();
-        continue;
-      }
-      if (!badge) {
-        badge = node.nodeEl.createDiv({
-          cls: 'canvas-board-stale',
-          attr: { 'data-tooltip-position': 'top' },
-        });
-        setIcon(
-          badge.createSpan({ cls: 'canvas-board-stale-icon' }),
-          'triangle-alert',
-        );
-        badge.createSpan({ cls: 'canvas-board-stale-text' });
-      }
-      const label = age < 1 ? 'today' : `${age}d`;
-      if (badge.dataset.age !== label) {
-        badge.dataset.age = label;
-        badge.querySelector('.canvas-board-stale-text').setText(label);
-        badge.setAttr(
-          'aria-label',
-          `Waiting on you · note untouched for ${age} day${age === 1 ? '' : 's'} (stale after ${days})`,
-        );
-      }
+      const isWaiting = days > 0 && nodeData.color === '3';
+      const age = isWaiting ? this.noteAgeDays(nodeData, board) : -1;
+      this.paintStaleBadge(node, { age, days });
     }
+  }
+
+  // Days since the card's note (its file, or its first link) last changed;
+  // -1 without a note.
+  noteAgeDays(nodeData, board) {
+    const match =
+      nodeData.type === 'text' && /\[\[([^\]|#]+)/.exec(nodeData.text || '');
+    const file =
+      nodeData.type === 'file'
+        ? this.app.vault.getAbstractFileByPath(nodeData.file)
+        : match &&
+          this.app.metadataCache.getFirstLinkpathDest(match[1].trim(), board);
+    if (!file || !file.stat) return -1;
+    return Math.floor((Date.now() - file.stat.mtime) / 86400000);
+  }
+
+  paintStaleBadge(node, { age, days }) {
+    let badge = node.nodeEl.querySelector(':scope > .canvas-board-stale');
+    if (age < days || age < 0) {
+      if (badge) badge.remove();
+      return;
+    }
+    if (!badge) {
+      badge = node.nodeEl.createDiv({
+        cls: 'canvas-board-stale',
+        attr: { 'data-tooltip-position': 'top' },
+      });
+      setIcon(
+        badge.createSpan({ cls: 'canvas-board-stale-icon' }),
+        'triangle-alert',
+      );
+      badge.createSpan({ cls: 'canvas-board-stale-text' });
+    }
+    const label = age < 1 ? 'today' : `${age}d`;
+    if (badge.dataset.age === label) return;
+    badge.dataset.age = label;
+    badge.querySelector('.canvas-board-stale-text').setText(label);
+    const unit = `day${age === 1 ? '' : 's'}`;
+    badge.setAttr(
+      'aria-label',
+      `Waiting on you · note untouched for ${age} ${unit} (stale after ${days})`,
+    );
   }
 
   // Status bar and closed pane: only how many cards are hidden (filter and folds); the pane says by what.
@@ -1025,65 +1018,8 @@ class CanvasBoardPlugin extends Plugin {
     }
   }
 
-  // Cards (on any canvas) and notes that link `file`, except card `skipId` on `canvas`: [{ path, id?, label }].
-  async subcanvasLinks(file, canvas, skipId) {
-    const out = [];
-    const here = this.canvasFile(canvas);
-    const hits = (from) => (target) => {
-      const destination = this.app.metadataCache.getFirstLinkpathDest(
-        target,
-        from,
-      );
-      return !!destination && destination.path === file.path;
-    };
-    for (const canvasFile of this.app.vault
-      .getFiles()
-      .filter(
-        (candidateFile) =>
-          candidateFile.extension === 'canvas' &&
-          candidateFile.path !== file.path,
-      )) {
-      const open =
-        canvasFile.path === here ? canvas : this.openCanvas(canvasFile.path);
-      let canvasData;
-      try {
-        canvasData = open
-          ? open.getData()
-          : JSON.parse((await this.app.vault.cachedRead(canvasFile)) || '{}');
-      } catch (error) {
-        continue;
-      }
-      for (const node of canvasData.nodes || []) {
-        if (canvasFile.path === here && node.id === skipId) continue;
-        const hit =
-          node.type === 'file'
-            ? node.file === file.path
-            : node.type === 'text' &&
-              this.boardLibrary.relinkText(
-                node.text,
-                hits(canvasFile.path),
-                () => '\u0000',
-              ) !== node.text;
-        if (hit) {
-          out.push({
-            path: canvasFile.path,
-            id: node.id,
-            label: (node.text || node.file || '').split('\n')[0],
-          });
-        }
-      }
-    }
-    const resolved = this.app.metadataCache.resolvedLinks;
-    for (const source in resolved) {
-      if (
-        source !== file.path &&
-        !source.endsWith('.canvas') &&
-        resolved[source][file.path]
-      ) {
-        out.push({ path: source, label: source });
-      }
-    }
-    return out;
+  subcanvasLinks(file, canvas, skipId) {
+    return subcanvasLinks(this, file, { canvas, skipId });
   }
 
   canvasFile(canvas) {
@@ -1188,27 +1124,23 @@ class CanvasBoardPlugin extends Plugin {
   async hasGoCards(board, goColorSet) {
     const read = async (filePath) => {
       const file = this.app.vault.getAbstractFileByPath(filePath);
-      if (!file) return [];
-      try {
-        return JSON.parse(await this.app.vault.cachedRead(file)).nodes || [];
-      } catch (error) {
-        return [];
-      }
+      const canvasData =
+        file && parseOrNull(await this.app.vault.cachedRead(file));
+      return (canvasData && canvasData.nodes) || [];
     };
     const isGo = (node) => goColorSet.has(node.color);
     const open = this.openCanvas(board);
     const nodes = open ? open.getData().nodes : await read(board);
     if (nodes.some(isGo)) return true;
-    for (const node of nodes) {
-      for (const match of (node.text || '').matchAll(
-        /\[\[([^\]|#]+\.canvas)/g,
-      )) {
-        const linkedFile = this.app.metadataCache.getFirstLinkpathDest(
-          match[1].trim(),
-          board,
-        );
-        if (linkedFile && (await read(linkedFile.path)).some(isGo)) return true;
-      }
+    const linkedCanvases = nodes.flatMap((node) => [
+      ...(node.text || '').matchAll(/\[\[([^\]|#]+\.canvas)/g),
+    ]);
+    for (const match of linkedCanvases) {
+      const linkedFile = this.app.metadataCache.getFirstLinkpathDest(
+        match[1].trim(),
+        board,
+      );
+      if (linkedFile && (await read(linkedFile.path)).some(isGo)) return true;
     }
     return false;
   }
@@ -1223,25 +1155,7 @@ class CanvasBoardPlugin extends Plugin {
         ? view.file.path
         : this.settings.defaultBoard;
     const goColorSet = parseColors(this.settings.passColors);
-    if (!goColorSet.size) {
-      new Notice(
-        createFragment((fragment) => {
-          fragment.appendText(
-            'Kanvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. ',
-          );
-          const button = fragment.createEl('button', {
-            cls: 'canvas-board-notice-undo',
-            text: 'Open settings',
-          });
-          button.addEventListener('click', () => {
-            this.app.setting.open();
-            this.app.setting.openTabById(this.manifest.id);
-          });
-        }),
-        10000,
-      );
-      return;
-    }
+    if (!goColorSet.size) return this.noticeNoGoColor();
     if (!(await this.hasGoCards(board, goColorSet))) {
       const names = Object.keys(COLOR_NUM).filter((colorName) =>
         goColorSet.has(COLOR_NUM[colorName]),
@@ -1251,20 +1165,8 @@ class CanvasBoardPlugin extends Plugin {
       );
       return;
     }
-    const vars = { vault, board, claude };
     const template = String(this.settings.terminal || '').trim();
-    const launch = template
-      ? (([command, ...commandArguments]) => [command, commandArguments])(
-          (template.match(/"[^"]*"|\S+/g) || []).map((argument) =>
-            argument
-              .replace(/^"|"$/g, '')
-              .replace(
-                /\{(vault|board|claude)\}/g,
-                (match, name) => vars[name],
-              ),
-          ),
-        )
-      : defaultLaunch(vars);
+    const launch = terminalLaunch(template, { vault, board, claude });
     if (!launch) {
       new Notice(
         'Kanvas board: no terminal found to start the pass. Set "Terminal command" in the plugin settings.',
@@ -1272,25 +1174,26 @@ class CanvasBoardPlugin extends Plugin {
       );
       return;
     }
-    const [command, commandArguments] = launch;
-    try {
-      const child = spawn(command, commandArguments, {
-        cwd: vault,
-        detached: true,
-        stdio: 'ignore',
-      });
-      child.on(
-        'error',
-        (error) =>
-          new Notice(
-            `Kanvas board: could not start the pass (${error.message})`,
-          ),
-      );
-      child.unref();
-      new Notice(`Kanvas board: pass started on ${board}`);
-    } catch (error) {
-      new Notice(`Kanvas board: could not start the pass (${error.message})`);
-    }
+    startPass(launch, { vault, board });
+  }
+
+  noticeNoGoColor() {
+    new Notice(
+      createFragment((fragment) => {
+        fragment.appendText(
+          'Kanvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. ',
+        );
+        const button = fragment.createEl('button', {
+          cls: 'canvas-board-notice-undo',
+          text: 'Open settings',
+        });
+        button.addEventListener('click', () => {
+          this.app.setting.open();
+          this.app.setting.openTabById(this.manifest.id);
+        });
+      }),
+      10000,
+    );
   }
 }
 
