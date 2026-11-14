@@ -1,10 +1,10 @@
 {
-  "name": "canvas-board",
+  "name": "kanvas-board",
   "version": "1.0.0",
   "description": "Kanvas board plugin: dev tooling (build, style check, tests)",
   "scripts": {
     "build": "node build.js",
-    "test": "node test/apm.test.js && node test/golden/run.js && node test/plugin/run.js",
+    "test": "node test/apm.test.js && node test/launch.test.js && node test/golden/run.js && node test/plugin/run.js",
     "check:style": "eslint .",
     "check:style:summary": "node style/summary.js",
     "check": "npm run build && npm test && npm run check:style",

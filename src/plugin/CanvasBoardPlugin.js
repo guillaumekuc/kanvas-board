@@ -13,7 +13,8 @@ const terminalLaunch = require('./terminalLaunch.js');
 const unpackSubcanvas = require('./unpack/unpackSubcanvas.js');
 const CanvasBoardSettings = require('./CanvasBoardSettings.js');
 const emptyViewState = require('./emptyViewState.js');
-const claudeBin = require('./claudeBin.js');
+const agentWords = require('./agentWords.js');
+const passPrompt = require('./passPrompt.js');
 const FilterPane = require('./FilterPane.js');
 const fileSystem = require('fs');
 const nextTurn = require('./nextTurn.js');
@@ -29,6 +30,7 @@ const CONTROL_BUTTONS = [
 class CanvasBoardPlugin extends Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULTS, await this.loadData());
+    this.migrateClaudePath();
     this.addSettingTab(new CanvasBoardSettings(this.app, this));
     const pluginDir = path.join(
       this.app.vault.adapter.basePath,
@@ -94,7 +96,7 @@ class CanvasBoardPlugin extends Plugin {
         item
           .setTitle(this.keyedTitle(action.menu[0], action.id))
           .setIcon(action.menu[1])
-          .setSection('canvas-board')
+          .setSection('kanvas-board')
           .onClick(() => this.runAction(action.run, canvas, selection)),
       );
     }
@@ -233,7 +235,7 @@ class CanvasBoardPlugin extends Plugin {
     if (!hotkey) return label;
     return createFragment((fragment) => {
       fragment.appendText(label);
-      fragment.createSpan({ cls: 'canvas-board-key', text: hotkey });
+      fragment.createSpan({ cls: 'kanvas-board-key', text: hotkey });
     });
   }
 
@@ -247,7 +249,7 @@ class CanvasBoardPlugin extends Plugin {
     const noticeContent = createFragment((fragment) => {
       fragment.appendText(`Kanvas board: ${message} `);
       const button = fragment.createEl('button', {
-        cls: 'canvas-board-notice-undo',
+        cls: 'kanvas-board-notice-undo',
         text: 'Undo',
       });
       button.addEventListener('click', async () => {
@@ -285,7 +287,7 @@ class CanvasBoardPlugin extends Plugin {
             `Kanvas board: ${board} not found (setting "Default board"). `,
           );
           const button = fragment.createEl('button', {
-            cls: 'canvas-board-notice-undo',
+            cls: 'kanvas-board-notice-undo',
             text: 'Create a starter board',
           });
           button.addEventListener('click', () => this.createStarterBoard());
@@ -357,7 +359,7 @@ class CanvasBoardPlugin extends Plugin {
   // Control bar (top right): Search, Filter, Tidy layout, above Canvas help.
   decorateControls(view, controls) {
     const group =
-      controls.querySelector('.canvas-board-controls') ||
+      controls.querySelector('.kanvas-board-controls') ||
       this.addControlGroup(view, controls);
     for (const button of group.children) {
       button.setAttr(
@@ -371,7 +373,7 @@ class CanvasBoardPlugin extends Plugin {
 
   addControlGroup(view, controls) {
     const group = createDiv({
-      cls: 'canvas-control-group mod-raised canvas-board-controls',
+      cls: 'canvas-control-group mod-raised kanvas-board-controls',
     });
     controls.insertBefore(group, controls.lastElementChild);
     for (const [id, label, icon] of CONTROL_BUTTONS) {
@@ -399,7 +401,7 @@ class CanvasBoardPlugin extends Plugin {
     const direction =
       LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
     this.tidyTurn = nextTurn(this.tidyTurn ?? direction.turn, direction.turn);
-    tidy.style.setProperty('--canvas-board-tidy-turn', `${this.tidyTurn}deg`);
+    tidy.style.setProperty('--kanvas-board-tidy-turn', `${this.tidyTurn}deg`);
     tidy.setAttr(
       'aria-label',
       this.keyedLabel(
@@ -422,7 +424,7 @@ class CanvasBoardPlugin extends Plugin {
       try {
         plugin.menuButtons(canvas);
       } catch (error) {
-        console.error('canvas-board: selection toolbar', error);
+        console.error('kanvas-board: selection toolbar', error);
       }
       return result;
     };
@@ -461,7 +463,7 @@ class CanvasBoardPlugin extends Plugin {
     if (
       !selection.length ||
       !element.childElementCount ||
-      element.querySelector('.canvas-board-menu-btn')
+      element.querySelector('.kanvas-board-menu-btn')
     ) {
       return;
     }
@@ -469,7 +471,7 @@ class CanvasBoardPlugin extends Plugin {
       const action = this.actions.find((candidate) => candidate.id === id);
       if (!action || !action.test(canvas, selection)) continue;
       const button = element.createEl('button', {
-        cls: 'clickable-icon canvas-board-menu-btn',
+        cls: 'clickable-icon kanvas-board-menu-btn',
         attr: {
           'aria-label': this.keyedLabel(action.menu[0], id),
           'data-tooltip-position': 'top',
@@ -490,7 +492,7 @@ class CanvasBoardPlugin extends Plugin {
     }
     if (canvas.wrapperEl) {
       for (const element of canvas.wrapperEl.querySelectorAll(
-        '.canvas-board-controls, .canvas-board-menu-btn',
+        '.kanvas-board-controls, .kanvas-board-menu-btn',
       )) {
         element.remove();
       }
@@ -750,7 +752,7 @@ class CanvasBoardPlugin extends Plugin {
   // N folded" badge, a click on it unfolds one level.
   paint(canvas, hidden, folded) {
     for (const node of canvas.nodes.values()) {
-      node.nodeEl.toggleClass('canvas-board-hidden', hidden.has(node.id));
+      node.nodeEl.toggleClass('kanvas-board-hidden', hidden.has(node.id));
       this.paintFoldBadge(canvas, node, folded.get(node.id));
     }
     this.paintStale(canvas);
@@ -763,21 +765,21 @@ class CanvasBoardPlugin extends Plugin {
         edge.labelElement && edge.labelElement.wrapperEl,
       ].filter(Boolean);
       for (const element of elements) {
-        element.classList.toggle('canvas-board-hidden', isOff);
+        element.classList.toggle('kanvas-board-hidden', isOff);
       }
     }
   }
 
   // count: cards folded under the node, undefined when it is not folded.
   paintFoldBadge(canvas, node, count) {
-    let badge = node.nodeEl.querySelector(':scope > .canvas-board-folded');
+    let badge = node.nodeEl.querySelector(':scope > .kanvas-board-folded');
     if (count === undefined) {
       if (badge) badge.remove();
       return;
     }
     if (!badge) {
       badge = node.nodeEl.createDiv({
-        cls: 'canvas-board-folded',
+        cls: 'kanvas-board-folded',
         attr: { 'data-tooltip-position': 'bottom' },
       });
       for (const eventName of ['pointerdown', 'mousedown', 'dblclick']) {
@@ -821,26 +823,26 @@ class CanvasBoardPlugin extends Plugin {
   }
 
   paintStaleBadge(node, { age, days }) {
-    let badge = node.nodeEl.querySelector(':scope > .canvas-board-stale');
+    let badge = node.nodeEl.querySelector(':scope > .kanvas-board-stale');
     if (age < days || age < 0) {
       if (badge) badge.remove();
       return;
     }
     if (!badge) {
       badge = node.nodeEl.createDiv({
-        cls: 'canvas-board-stale',
+        cls: 'kanvas-board-stale',
         attr: { 'data-tooltip-position': 'top' },
       });
       setIcon(
-        badge.createSpan({ cls: 'canvas-board-stale-icon' }),
+        badge.createSpan({ cls: 'kanvas-board-stale-icon' }),
         'triangle-alert',
       );
-      badge.createSpan({ cls: 'canvas-board-stale-text' });
+      badge.createSpan({ cls: 'kanvas-board-stale-text' });
     }
     const label = age < 1 ? 'today' : `${age}d`;
     if (badge.dataset.age === label) return;
     badge.dataset.age = label;
-    badge.querySelector('.canvas-board-stale-text').setText(label);
+    badge.querySelector('.kanvas-board-stale-text').setText(label);
     const unit = `day${age === 1 ? '' : 's'}`;
     badge.setAttr(
       'aria-label',
@@ -951,7 +953,7 @@ class CanvasBoardPlugin extends Plugin {
     this.countEl.empty();
     this.countEl.createSpan({
       text: `${cards.length} cards`,
-      cls: isOverLimit ? 'canvas-board-over' : '',
+      cls: isOverLimit ? 'kanvas-board-over' : '',
     }); // warning color, see styles.css
     if (selectedCount) this.countEl.appendText(` · ${selectedCount} selected`);
     this.countEl.setAttr(
@@ -965,25 +967,43 @@ class CanvasBoardPlugin extends Plugin {
     this.countEl.show();
   }
 
-  // The plugin folder holds the skill's default; the vault copy is written only
-  // when missing (then it is the user's, plugin updates never overwrite it) or
-  // on "Reset agent skill".
+  // Before "Agent command", the setting only held the Claude Code binary.
+  migrateClaudePath() {
+    if (!('claudePath' in this.settings)) return;
+    if (this.settings.claudePath && !this.settings.agentCommand) {
+      this.settings.agentCommand = `"${this.settings.claudePath}"`;
+    }
+    delete this.settings.claudePath;
+  }
+
+  // The plugin folder holds the skill's default (skill/SKILL.md) and the user's
+  // copy (agent-instructions.md, git-ignored: a pull never overwrites it),
+  // written only when missing or on "Reset agent skill".
+  skillRelativePath() {
+    return `${this.manifest.dir}/agent-instructions.md`;
+  }
+
   skillPath() {
-    return path.join(
-      this.app.vault.adapter.basePath,
-      '.claude',
-      'skills',
-      'canvas-board',
-      'SKILL.md',
-    );
+    return path.join(this.app.vault.adapter.basePath, this.skillRelativePath());
+  }
+
+  // Older versions kept the user's copy in .claude/skills/<id>/SKILL.md.
+  legacySkillPath() {
+    const vaultRoot = this.app.vault.adapter.basePath;
+    const skills = path.join(vaultRoot, '.claude', 'skills');
+    return ['kanvas-board', 'canvas-board']
+      .map((name) => path.join(skills, name, 'SKILL.md'))
+      .find((candidate) => fileSystem.existsSync(candidate));
   }
 
   installSkill(pluginDir) {
     try {
       if (fileSystem.existsSync(this.skillPath())) return;
+      const legacy = this.legacySkillPath();
+      if (legacy) return fileSystem.copyFileSync(legacy, this.skillPath());
       this.copySkill(pluginDir);
     } catch (error) {
-      console.error('canvas-board: skill sync failed', error);
+      console.error('kanvas-board: skill sync failed', error);
     }
   }
 
@@ -992,7 +1012,7 @@ class CanvasBoardPlugin extends Plugin {
       this.copySkill(pluginDir);
       new Notice("Kanvas board: agent skill reset to the plugin's version");
     } catch (error) {
-      console.error('canvas-board: skill sync failed', error);
+      console.error('kanvas-board: skill sync failed', error);
       new Notice(`Kanvas board: skill reset failed (${error.message})`);
     }
   }
@@ -1182,7 +1202,6 @@ class CanvasBoardPlugin extends Plugin {
 
   async runPass() {
     const vault = this.app.vault.adapter.basePath;
-    const claude = claudeBin(this.settings.claudePath);
     const view =
       this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
     const board =
@@ -1202,7 +1221,9 @@ class CanvasBoardPlugin extends Plugin {
       return;
     }
     const template = String(this.settings.terminal || '').trim();
-    const launch = terminalLaunch(template, { vault, board, claude });
+    const prompt = passPrompt(this.skillRelativePath(), board);
+    const agent = agentWords(this.settings.agentCommand, prompt);
+    const launch = terminalLaunch(template, { vault, board, agent });
     if (!launch) {
       new Notice(
         'Kanvas board: no terminal found to start the pass. Set ' +
@@ -1222,7 +1243,7 @@ class CanvasBoardPlugin extends Plugin {
             'Turn one on in Settings > Workflow. ',
         );
         const button = fragment.createEl('button', {
-          cls: 'canvas-board-notice-undo',
+          cls: 'kanvas-board-notice-undo',
           text: 'Open settings',
         });
         button.addEventListener('click', () => {

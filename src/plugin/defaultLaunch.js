@@ -1,50 +1,43 @@
 const { LINUX_TERMINALS } = require('./constants.js');
 const onPath = require('./onPath.js');
 
-function defaultLaunch({ vault, board, claude }) {
-  const prompt = `/canvas-board ${board}`;
+// AppleScript run with argv = [vault, ...agent words]: cd to the vault, then
+// the agent, every part quoted by the shell.
+const MAC_SCRIPT = [
+  'on run argv',
+  'set agentLine to ""',
+  'repeat with wordIndex from 2 to count of argv',
+  'set agentLine to agentLine & " " & quoted form of item wordIndex of argv',
+  'end repeat',
+  'tell application "Terminal"',
+  'activate',
+  'do script "cd " & quoted form of item 1 of argv & " &&" & agentLine',
+  'end tell',
+  'end run',
+];
+
+function defaultLaunch({ vault, board, agent }) {
   if (process.platform === 'win32') {
     return [
       'wt.exe',
       [
         '-w',
-        'canvas-board',
+        'kanvas-board',
         'new-tab',
         '-d',
         vault,
         '--title',
         `pass ${board}`,
-        claude,
-        prompt,
+        ...agent,
       ],
     ];
   }
   if (process.platform === 'darwin') {
-    return [
-      'osascript',
-      [
-        '-e',
-        'on run argv',
-        '-e',
-        'tell application "Terminal"',
-        '-e',
-        'activate',
-        '-e',
-        'do script "cd " & quoted form of item 1 of argv & " && " & ' +
-          'quoted form of item 2 of argv & " " & quoted form of item 3 ' +
-          'of argv',
-        '-e',
-        'end tell',
-        '-e',
-        'end run',
-        vault,
-        claude,
-        prompt,
-      ],
-    ];
+    const script = MAC_SCRIPT.flatMap((line) => ['-e', line]);
+    return ['osascript', [...script, vault, ...agent]];
   }
   const found = LINUX_TERMINALS.find(([binary]) => onPath(binary));
-  return found ? [found[0], found[1](vault, [claude, prompt])] : null;
+  return found ? [found[0], found[1](vault, agent)] : null;
 }
 
 module.exports = defaultLaunch;
