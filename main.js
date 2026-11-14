@@ -4986,12 +4986,26 @@ var require_frameText = __commonJS({
   }
 });
 
+// src/plugin/stopCanvasEvents.js
+var require_stopCanvasEvents = __commonJS({
+  "src/plugin/stopCanvasEvents.js"(exports2, module2) {
+    var EVENTS = ["pointerdown", "mousedown", "wheel", "dblclick", "contextmenu"];
+    function stopCanvasEvents(element) {
+      for (const eventName of EVENTS) {
+        element.addEventListener(eventName, (event) => event.stopPropagation());
+      }
+    }
+    module2.exports = stopCanvasEvents;
+  }
+});
+
 // src/plugin/FindBar.js
 var require_FindBar = __commonJS({
   "src/plugin/FindBar.js"(exports2, module2) {
     var { Notice, Scope, setIcon } = require("obsidian");
     var clearFrames = require_clearFrames();
     var frameText = require_frameText();
+    var stopCanvasEvents = require_stopCanvasEvents();
     var FindBar = class {
       constructor(plugin, canvas) {
         this.plugin = plugin;
@@ -5003,19 +5017,16 @@ var require_FindBar = __commonJS({
           window.clearTimeout(this.frameTimer);
           this.frameTimer = window.setTimeout(() => this.frame(), 100);
         });
-        const element = this.element = canvas.wrapperEl.createDiv({
+        this.element = canvas.wrapperEl.createDiv({
           cls: "document-search-container canvas-board-find"
         });
-        for (const eventName of [
-          "pointerdown",
-          "mousedown",
-          "wheel",
-          "dblclick",
-          "contextmenu"
-        ]) {
-          element.addEventListener(eventName, (event) => event.stopPropagation());
-        }
-        const box = element.createDiv({ cls: "document-search" });
+        stopCanvasEvents(this.element);
+        this.buildBox();
+        this.bindKeys();
+        this.element.hide();
+      }
+      buildBox() {
+        const box = this.element.createDiv({ cls: "document-search" });
         const field = this.field = box.createDiv({
           cls: "search-input-container document-search-input"
         });
@@ -5047,7 +5058,9 @@ var require_FindBar = __commonJS({
         });
         setIcon(close, "x");
         close.addEventListener("click", () => this.close());
-        this.scope = new Scope(plugin.app.scope);
+      }
+      bindKeys() {
+        this.scope = new Scope(this.plugin.app.scope);
         this.input.addEventListener("keydown", (event) => {
           if (event.key === "Enter" && event.altKey) {
             event.preventDefault();
@@ -5062,14 +5075,13 @@ var require_FindBar = __commonJS({
         });
         this.input.addEventListener(
           "focus",
-          () => plugin.app.keymap.pushScope(this.scope)
+          () => this.plugin.app.keymap.pushScope(this.scope)
         );
         this.input.addEventListener(
           "blur",
-          () => plugin.app.keymap.popScope(this.scope)
+          () => this.plugin.app.keymap.popScope(this.scope)
         );
         this.input.addEventListener("input", () => this.search());
-        element.hide();
       }
       open() {
         this.element.show();
@@ -6553,85 +6565,74 @@ var require_FilterPane = __commonJS({
   "src/plugin/FilterPane.js"(exports2, module2) {
     var { COLORS } = require_constants();
     var { Notice, setIcon } = require("obsidian");
+    var stopCanvasEvents = require_stopCanvasEvents();
     var FilterPane = class {
       constructor(plugin, canvas) {
         this.plugin = plugin;
         this.canvas = canvas;
         this.isOpen = false;
         this.key = "";
-        const element = this.element = canvas.wrapperEl.createDiv({
-          cls: "canvas-board-pane"
-        });
-        for (const eventName of [
-          "pointerdown",
-          "mousedown",
-          "wheel",
-          "dblclick",
-          "contextmenu"
-        ]) {
-          element.addEventListener(eventName, (event) => event.stopPropagation());
-        }
-        const head = element.createDiv({ cls: "canvas-board-pane-head" });
+        this.element = canvas.wrapperEl.createDiv({ cls: "canvas-board-pane" });
+        stopCanvasEvents(this.element);
+        this.buildHead();
+        this.body = this.element.createDiv({ cls: "canvas-board-pane-body" });
+        this.buildSections();
+        this.buildFoot();
+        this.toggle(false);
+      }
+      buildHead() {
+        const head = this.element.createDiv({ cls: "canvas-board-pane-head" });
         const button = head.createDiv({
           cls: "clickable-icon",
           attr: {
-            "aria-label": plugin.keyedLabel("Filter cards", "filter"),
+            "aria-label": this.plugin.keyedLabel("Filter cards", "filter"),
             "data-tooltip-position": "right"
           }
         });
         setIcon(button, "filter");
         button.addEventListener("click", () => this.toggle());
         this.badge = head.createSpan({ cls: "canvas-board-pane-badge" });
-        this.body = element.createDiv({ cls: "canvas-board-pane-body" });
-        const viewState = () => plugin.viewState(canvas);
-        const apply = () => plugin.refreshView(canvas);
-        const section = (title, reset) => {
-          const sectionEl = this.body.createDiv({
-            cls: "canvas-board-pane-section"
-          });
-          const headingEl = sectionEl.createDiv({
-            cls: "canvas-board-pane-heading"
-          });
-          headingEl.createSpan({ text: title });
-          if (reset) {
-            const resetEl = headingEl.createSpan({
-              cls: "clickable-icon canvas-board-pane-reset",
-              attr: { "aria-label": "Reset" }
-            });
-            setIcon(resetEl, "rotate-ccw");
-            resetEl.addEventListener("click", () => {
-              reset();
-              apply();
-            });
-          }
-          return sectionEl;
-        };
-        this.colorsEl = section(
+      }
+      buildSections() {
+        const { plugin, canvas } = this;
+        const state = () => plugin.viewState(canvas);
+        this.colorsEl = this.addSection(
           "Colors",
-          () => viewState().xcolors.clear()
-        ).createDiv({
-          cls: "canvas-board-chips"
-        });
-        this.tagsSection = section("Tags", () => viewState().xtags.clear());
+          () => state().xcolors.clear()
+        ).createDiv({ cls: "canvas-board-chips" });
+        this.tagsSection = this.addSection("Tags", () => state().xtags.clear());
         this.tagsEl = this.tagsSection.createDiv({ cls: "canvas-board-chips" });
-        this.foldedSection = section(
-          "Folded",
-          () => plugin.setFolds(
-            canvas,
-            new Map([...plugin.folds(canvas).keys()].map((id) => [id, null]))
-          )
-        );
+        this.foldedSection = this.addSection("Folded", () => {
+          const unfolded = [...plugin.folds(canvas).keys()].map((id) => [id, null]);
+          plugin.setFolds(canvas, new Map(unfolded));
+        });
         this.foldedEl = this.foldedSection.createDiv({
           cls: "canvas-board-pane-list"
         });
+      }
+      addSection(title, reset) {
+        const sectionEl = this.body.createDiv({ cls: "canvas-board-pane-section" });
+        const headingEl = sectionEl.createDiv({ cls: "canvas-board-pane-heading" });
+        headingEl.createSpan({ text: title });
+        const resetEl = headingEl.createSpan({
+          cls: "clickable-icon canvas-board-pane-reset",
+          attr: { "aria-label": "Reset" }
+        });
+        setIcon(resetEl, "rotate-ccw");
+        resetEl.addEventListener("click", () => {
+          reset();
+          this.plugin.refreshView(this.canvas);
+        });
+        return sectionEl;
+      }
+      buildFoot() {
         const foot = this.body.createDiv({ cls: "canvas-board-pane-foot" });
         const all = foot.createDiv({
           cls: "clickable-icon",
           attr: { "aria-label": "Unhide all (clear filter and folds)" }
         });
         setIcon(all, "eye");
-        all.addEventListener("click", () => plugin.showAll(canvas));
-        this.toggle(false);
+        all.addEventListener("click", () => this.plugin.showAll(this.canvas));
       }
       tags() {
         const tags = /* @__PURE__ */ new Set();
@@ -6646,21 +6647,24 @@ var require_FilterPane = __commonJS({
         this.key = "";
         this.update();
       }
-      // Redraws the chips and lists only when something changed (called every 2 s), never the text fields.
+      colorCounts() {
+        const counts = {};
+        for (const node of this.canvas.nodes.values()) {
+          const data = node.getData();
+          if (data.type === "group") continue;
+          counts[data.color || ""] = (counts[data.color || ""] || 0) + 1;
+        }
+        return counts;
+      }
+      // Redraws the chips and lists only when something changed (called every
+      // 2 s), never the text fields.
       update() {
         const { plugin, canvas } = this;
-        const viewSnapshot = plugin.peekViewState(canvas);
-        const counts = {};
-        for (const node of canvas.nodes.values()) {
-          const data = node.getData();
-          if (data.type !== "group") {
-            counts[data.color || ""] = (counts[data.color || ""] || 0) + 1;
-          }
-        }
+        const counts = this.colorCounts();
         const folds = plugin.folds(canvas);
-        const active = plugin.filtering(viewSnapshot) || folds.size > 0;
-        this.badge.setText(active ? plugin.viewLabel(canvas) : "");
-        this.badge.toggle(!this.isOpen && active);
+        const isActive = plugin.filtering(plugin.peekViewState(canvas)) || folds.size > 0;
+        this.badge.setText(isActive ? plugin.viewLabel(canvas) : "");
+        this.badge.toggle(!this.isOpen && isActive);
         if (!this.isOpen) return;
         const state = plugin.viewState(canvas);
         const tags = [.../* @__PURE__ */ new Set([...this.tags(), ...state.xtags])].sort();
@@ -6676,27 +6680,36 @@ var require_FilterPane = __commonJS({
         ]);
         if (key === this.key) return;
         this.key = key;
-        const apply = () => plugin.refreshView(canvas);
-        const toggle = (set, x) => {
-          if (set.has(x)) set.delete(x);
-          else set.add(x);
-          apply();
-        };
-        const select = (keep) => {
-          if (!plugin.selectMore(canvas, [...canvas.selection], keep)) {
-            new Notice("Kanvas board: no visible card to select");
-          }
-        };
+        this.renderColors(state, counts);
+        this.renderTags(state, tags);
+        this.renderFolds(folds);
+      }
+      toggleIn(set, value) {
+        if (set.has(value)) set.delete(value);
+        else set.add(value);
+        this.plugin.refreshView(this.canvas);
+      }
+      selectWhere(keep) {
+        const { plugin, canvas } = this;
+        if (!plugin.selectMore(canvas, [...canvas.selection], keep)) {
+          new Notice("Kanvas board: no visible card to select");
+        }
+      }
+      // Dots only, on one line; the name and card count are in the tooltip.
+      renderColors(state, counts) {
         this.colorsEl.empty();
         for (const [name, color] of COLORS) {
-          const out = state.xcolors.has(color);
+          const isOut = state.xcolors.has(color);
+          const label = this.plugin.colorLabel(name);
+          const count = counts[color] || 0;
+          const action = isOut ? "show" : "hide";
           const chip = this.colorsEl.createDiv({
             cls: "canvas-board-swatch",
             attr: {
-              "aria-label": `${plugin.colorLabel(name)} \xB7 ${counts[color] || 0} cards \xB7 click to ${out ? "show" : "hide"} \xB7 shift-click to select`
+              "aria-label": `${label} \xB7 ${count} cards \xB7 click to ${action} \xB7 shift-click to select`
             }
           });
-          chip.toggleClass("is-out", out);
+          chip.toggleClass("is-out", isOut);
           chip.createSpan({
             cls: "canvas-board-dot",
             attr: {
@@ -6705,64 +6718,73 @@ var require_FilterPane = __commonJS({
           });
           chip.addEventListener(
             "click",
-            (event) => event.shiftKey ? select((node) => (node.getData().color || "") === color) : toggle(state.xcolors, color)
+            (event) => event.shiftKey ? this.selectWhere((node) => (node.getData().color || "") === color) : this.toggleIn(state.xcolors, color)
           );
         }
+      }
+      renderTags(state, tags) {
         this.tagsEl.empty();
         this.tagsSection.toggle(tags.length > 0);
         for (const tag of tags) {
-          const out = state.xtags.has(tag);
+          const isOut = state.xtags.has(tag);
+          const action = isOut ? "show" : "hide";
           const chip = this.tagsEl.createDiv({
             cls: "canvas-board-chip",
             text: "#" + tag,
-            attr: {
-              "aria-label": `click to ${out ? "show" : "hide"} \xB7 shift-click to select`
-            }
+            attr: { "aria-label": `click to ${action} \xB7 shift-click to select` }
           });
-          chip.toggleClass("is-out", out);
+          chip.toggleClass("is-out", isOut);
           chip.addEventListener(
             "click",
-            (event) => event.shiftKey ? select((node) => plugin.cardTagSet(node).has(tag)) : toggle(state.xtags, tag)
+            (event) => event.shiftKey ? this.selectWhere((node) => this.plugin.cardTagSet(node).has(tag)) : this.toggleIn(state.xtags, tag)
           );
         }
+      }
+      renderFolds(folds) {
         this.foldedEl.empty();
         this.foldedSection.toggle(folds.size > 0);
         for (const [id, direction] of folds) {
-          const node = canvas.nodes.get(id);
-          if (!node) continue;
-          const row = this.foldedEl.createDiv({
-            cls: "canvas-board-pane-row canvas-board-pane-card",
-            attr: {
-              "aria-label": "Click to unfold the whole branch \xB7 shift-click to select the card"
-            }
-          });
-          row.createSpan({
-            cls: "canvas-board-dot",
-            attr: { style: plugin.dotStyle(node.getData().color) }
-          });
-          const text = row.createDiv({ cls: "canvas-board-pane-card-text" });
-          const [title, ...rest] = plugin.boardLibrary.plainLines(
-            plugin.cardText(node)
-          );
-          text.createDiv({
-            cls: "canvas-board-pane-card-title",
-            text: title || "(empty)"
-          });
-          if (rest.length) {
-            text.createDiv({
-              cls: "canvas-board-pane-card-rest",
-              text: rest.join(" \xB7 ")
-            });
-          }
-          row.createSpan({
-            cls: "canvas-board-pane-card-count",
-            text: `\xB7 ${plugin.branchLevels(canvas, id, direction).flat().length} folded`
-          });
-          row.addEventListener(
-            "click",
-            (event) => event.shiftKey ? select((node2) => node2.id === id) : plugin.unfold(canvas, [id], Infinity)
-          );
+          const node = this.canvas.nodes.get(id);
+          if (node) this.renderFoldRow(node, direction);
         }
+      }
+      // Color dot, first line as title, the rest muted below, and how many cards
+      // the fold hides.
+      renderFoldRow(node, direction) {
+        const { plugin, canvas } = this;
+        const row = this.foldedEl.createDiv({
+          cls: "canvas-board-pane-row canvas-board-pane-card",
+          attr: {
+            "aria-label": "Click to unfold the whole branch \xB7 shift-click to select the card"
+          }
+        });
+        row.createSpan({
+          cls: "canvas-board-dot",
+          attr: { style: plugin.dotStyle(node.getData().color) }
+        });
+        const text = row.createDiv({ cls: "canvas-board-pane-card-text" });
+        const [title, ...rest] = plugin.boardLibrary.plainLines(
+          plugin.cardText(node)
+        );
+        text.createDiv({
+          cls: "canvas-board-pane-card-title",
+          text: title || "(empty)"
+        });
+        if (rest.length) {
+          text.createDiv({
+            cls: "canvas-board-pane-card-rest",
+            text: rest.join(" \xB7 ")
+          });
+        }
+        const levels = plugin.branchLevels(canvas, node.id, direction);
+        row.createSpan({
+          cls: "canvas-board-pane-card-count",
+          text: `\xB7 ${levels.flat().length} folded`
+        });
+        row.addEventListener(
+          "click",
+          (event) => event.shiftKey ? this.selectWhere((each) => each.id === node.id) : plugin.unfold(canvas, [node.id], Infinity)
+        );
       }
       destroy() {
         this.element.remove();
