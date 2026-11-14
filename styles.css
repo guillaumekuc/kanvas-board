@@ -1,15 +1,15 @@
 /* Status bar card count past the "Card count warning" setting. */
-.status-bar-item .canvas-board-over {
+.status-bar-item .kanvas-board-over {
 	color: var(--text-warning);
 }
 
 /* Filter and fold: cards and edges hidden on screen only (the .canvas file keeps them; folds are a card field). */
-.canvas-board-hidden {
+.kanvas-board-hidden {
 	display: none !important;
 }
 
 /* Folded card: how many cards its branch hides; click to unfold one level. */
-.canvas-board-folded {
+.kanvas-board-folded {
 	position: absolute;
 	right: 8px;
 	bottom: -22px;
@@ -20,13 +20,13 @@
 	cursor: pointer;
 	user-select: none;
 }
-.canvas-board-folded:hover {
+.kanvas-board-folded:hover {
 	color: var(--text-normal);
 	background: var(--background-modifier-hover);
 }
 
 /* Stale yellow card: the `- [!]` warning icon (orange) and the time since its note changed. */
-.canvas-board-stale {
+.kanvas-board-stale {
 	position: absolute;
 	right: 8px;
 	top: -22px;
@@ -39,28 +39,28 @@
 	color: var(--color-orange);
 	user-select: none;
 }
-.canvas-board-stale-icon {
+.kanvas-board-stale-icon {
 	display: flex;
 }
-.canvas-board-stale-icon svg {
+.kanvas-board-stale-icon svg {
 	width: var(--icon-xs);
 	height: var(--icon-xs);
 }
 
 /* Key after a menu item's title. */
-.canvas-board-key {
+.kanvas-board-key {
 	margin-left: var(--size-4-3);
 	color: var(--text-faint);
 	font-size: var(--font-ui-smaller);
 }
 
 /* Undo button in a notice. */
-.canvas-board-notice-undo {
+.kanvas-board-notice-undo {
 	margin-left: var(--size-4-2);
 }
 
 /* Filter pane, top-left of each canvas (like Graph view's filters). */
-.canvas-board-pane {
+.kanvas-board-pane {
 	position: absolute;
 	top: var(--size-4-2);
 	left: var(--size-4-2);
@@ -74,46 +74,46 @@
 	box-shadow: var(--shadow-s);
 	font-size: var(--font-ui-small);
 }
-.canvas-board-pane-head {
+.kanvas-board-pane-head {
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-1);
 	padding: var(--size-2-1);
 }
-.canvas-board-pane-badge {
+.kanvas-board-pane-badge {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	padding-right: var(--size-4-1);
 }
-.canvas-board-pane-body {
+.kanvas-board-pane-body {
 	display: none;
 	padding: 0 var(--size-4-2) var(--size-4-2);
 }
-.canvas-board-pane.is-open .canvas-board-pane-body {
+.kanvas-board-pane.is-open .kanvas-board-pane-body {
 	display: block;
 }
-.canvas-board-pane-section {
+.kanvas-board-pane-section {
 	margin-top: var(--size-4-2);
 }
-.canvas-board-pane-heading {
+.kanvas-board-pane-heading {
 	display: flex;
 	gap: var(--size-4-2);
 	color: var(--text-muted);
 	font-weight: var(--font-semibold);
 	margin-bottom: var(--size-4-1);
 }
-.canvas-board-pane-heading span:first-child {
+.kanvas-board-pane-heading span:first-child {
 	flex: 1;
 }
-.canvas-board-pane-reset {
+.kanvas-board-pane-reset {
 	padding: 0 var(--size-2-1);
 }
-.canvas-board-chips {
+.kanvas-board-chips {
 	display: flex;
 	flex-wrap: wrap;
 	gap: var(--size-4-1);
 }
-.canvas-board-chip {
+.kanvas-board-chip {
 	display: inline-flex;
 	align-items: center;
 	gap: var(--size-2-2);
@@ -123,37 +123,37 @@
 	cursor: pointer;
 	user-select: none;
 }
-.canvas-board-chip.is-out {
+.kanvas-board-chip.is-out {
 	text-decoration: line-through;
 	color: var(--text-faint);
 }
-.canvas-board-chip:hover {
+.kanvas-board-chip:hover {
 	background: var(--background-modifier-hover);
 }
 /* Color filter: one dot per color, on one line; a hidden color is faded. */
-.canvas-board-swatch {
+.kanvas-board-swatch {
 	display: inline-flex;
 	padding: 3px;
 	border-radius: 50%;
 	cursor: pointer;
 }
-.canvas-board-swatch:hover {
+.kanvas-board-swatch:hover {
 	background: var(--background-modifier-hover);
 }
-.canvas-board-swatch .canvas-board-dot {
+.kanvas-board-swatch .kanvas-board-dot {
 	width: 14px;
 	height: 14px;
 }
-.canvas-board-swatch.is-out .canvas-board-dot {
+.kanvas-board-swatch.is-out .kanvas-board-dot {
 	opacity: 0.2;
 }
-.canvas-board-dot {
+.kanvas-board-dot {
 	width: 10px;
 	height: 10px;
 	border-radius: 50%;
 	border: 1px solid var(--background-modifier-border);
 }
-.canvas-board-pane-row {
+.kanvas-board-pane-row {
 	padding: 2px var(--size-2-2);
 	user-select: none; /* shift-click selects the card, not the text */
 	border-radius: var(--radius-s);
@@ -162,23 +162,23 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-.canvas-board-pane-row:hover {
+.kanvas-board-pane-row:hover {
 	background: var(--background-modifier-hover);
 }
-.canvas-board-pane-foot {
+.kanvas-board-pane-foot {
 	display: flex;
 	justify-content: center;
 	margin-top: var(--size-4-3);
 }
 
 /* Image export: Obsidian sets this class while it takes its shots and hides its own controls with it. */
-.canvas-wrapper.is-screenshotting .canvas-board-pane,
-.canvas-wrapper.is-screenshotting .canvas-board-find {
+.canvas-wrapper.is-screenshotting .kanvas-board-pane,
+.canvas-wrapper.is-screenshotting .kanvas-board-find {
 	display: none;
 }
 
 /* Find bar (prototype): the notes' find bar classes, floating at the top center of the canvas. */
-.canvas-board-find {
+.kanvas-board-find {
 	position: absolute;
 	top: var(--size-4-2);
 	left: 50%;
@@ -190,75 +190,75 @@
 	border-radius: var(--radius-m);
 	box-shadow: var(--shadow-s);
 }
-.canvas-board-find .document-search {
+.kanvas-board-find .document-search {
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-1);
 }
-.canvas-board-find .document-search-input {
+.kanvas-board-find .document-search-input {
 	flex: 1;
 }
-.canvas-board-find .document-search-input {
+.kanvas-board-find .document-search-input {
 	position: relative; /* the count sits inside the field, at its right end, as in notes */
 }
-.canvas-board-find .document-search-count {
+.kanvas-board-find .document-search-count {
 	white-space: nowrap;
 }
-.canvas-board-find .document-search-buttons {
+.kanvas-board-find .document-search-buttons {
 	display: flex;
 }
-.canvas-node.canvas-board-find-match .canvas-node-container {
+.canvas-node.kanvas-board-find-match .canvas-node-container {
 	box-shadow: 0 0 0 3px var(--text-highlight-bg);
 }
-.canvas-node.canvas-board-find-match.is-current .canvas-node-container {
+.canvas-node.kanvas-board-find-match.is-current .canvas-node-container {
 	box-shadow: 0 0 0 3px var(--text-accent);
 }
 /* The text found inside a card, as search frames it in notes (.search-highlight). */
-.canvas-board-find-text {
+.kanvas-board-find-text {
 	border-radius: 2px;
 	box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-normal) 30%, transparent);
 }
-.canvas-node.is-current .canvas-board-find-text {
+.canvas-node.is-current .kanvas-board-find-text {
 	box-shadow: 0 0 0 3px var(--text-accent);
 }
 /* Folded list rows: color dot, title, muted rest of the card below, fold count. */
-.canvas-board-pane-row.canvas-board-pane-card {
+.kanvas-board-pane-row.kanvas-board-pane-card {
 	display: flex;
 	align-items: baseline;
 	gap: var(--size-2-3);
 	white-space: normal;
 }
-.canvas-board-pane-card .canvas-board-dot {
+.kanvas-board-pane-card .kanvas-board-dot {
 	flex: none;
 	align-self: center;
 }
-.canvas-board-pane-card-text {
+.kanvas-board-pane-card-text {
 	flex: 1;
 	min-width: 0;
 }
-.canvas-board-pane-card-title,
-.canvas-board-pane-card-rest {
+.kanvas-board-pane-card-title,
+.kanvas-board-pane-card-rest {
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-.canvas-board-pane-card-rest,
-.canvas-board-pane-card-count {
+.kanvas-board-pane-card-rest,
+.kanvas-board-pane-card-count {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
-.canvas-board-pane-card-count {
+.kanvas-board-pane-card-count {
 	flex: none;
 }
 /* Settings > Workflow: the color next to its name. */
-.canvas-board-workflow-dot {
+.kanvas-board-workflow-dot {
 	display: inline-block;
 	margin-right: 8px;
 }
 
 /* Tidy layout button: the icon points the way the layout flows. */
-.canvas-board-controls [data-command="tidy-layout"] svg {
-	transform: rotate(var(--canvas-board-tidy-turn, 0deg));
+.kanvas-board-controls [data-command="tidy-layout"] svg {
+	transform: rotate(var(--kanvas-board-tidy-turn, 0deg));
 	transition: transform 120ms ease;
 }
 
@@ -287,7 +287,7 @@
 }
 
 /* Settings: the agent instructions (skill file), edited in place */
-.canvas-board-skill-editor {
+.kanvas-board-skill-editor {
 	width: 100%;
 	min-height: 24em;
 	font-family: var(--font-monospace);

@@ -16,7 +16,7 @@ function frameText(root, query) {
       const hit = node.splitText(offset);
       hit.splitText(query.length);
       const frame = ownerDocument.createElement('span');
-      frame.className = 'canvas-board-find-text';
+      frame.className = 'kanvas-board-find-text';
       hit.replaceWith(frame);
       frame.append(hit);
       here.unshift(frame);

@@ -4,7 +4,7 @@ const COMMANDS = require('./commands/index.js');
 const parseArguments = require('./parseArguments.js');
 
 const USAGE =
-  'Usage: node .obsidian/plugins/canvas-board/canvas.js ' +
+  'Usage: node .obsidian/plugins/kanvas-board/canvas.js ' +
   'read|tree|set|add|remove|edge|layout|pack|unpack|merge|split|extract|' +
   'archive|restore|rollup|check <board> ... (see header)';
 

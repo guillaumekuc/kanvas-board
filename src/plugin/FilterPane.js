@@ -14,17 +14,17 @@ class FilterPane {
     this.canvas = canvas;
     this.isOpen = false;
     this.key = '';
-    this.element = canvas.wrapperEl.createDiv({ cls: 'canvas-board-pane' });
+    this.element = canvas.wrapperEl.createDiv({ cls: 'kanvas-board-pane' });
     stopCanvasEvents(this.element);
     this.buildHead();
-    this.body = this.element.createDiv({ cls: 'canvas-board-pane-body' });
+    this.body = this.element.createDiv({ cls: 'kanvas-board-pane-body' });
     this.buildSections();
     this.buildFoot();
     this.toggle(false);
   }
 
   buildHead() {
-    const head = this.element.createDiv({ cls: 'canvas-board-pane-head' });
+    const head = this.element.createDiv({ cls: 'kanvas-board-pane-head' });
     const button = head.createDiv({
       cls: 'clickable-icon',
       attr: {
@@ -34,7 +34,7 @@ class FilterPane {
     });
     setIcon(button, 'filter');
     button.addEventListener('click', () => this.toggle());
-    this.badge = head.createSpan({ cls: 'canvas-board-pane-badge' });
+    this.badge = head.createSpan({ cls: 'kanvas-board-pane-badge' });
   }
 
   buildSections() {
@@ -42,24 +42,24 @@ class FilterPane {
     const state = () => plugin.viewState(canvas);
     this.colorsEl = this.addSection('Colors', () =>
       state().xcolors.clear(),
-    ).createDiv({ cls: 'canvas-board-chips' });
+    ).createDiv({ cls: 'kanvas-board-chips' });
     this.tagsSection = this.addSection('Tags', () => state().xtags.clear());
-    this.tagsEl = this.tagsSection.createDiv({ cls: 'canvas-board-chips' });
+    this.tagsEl = this.tagsSection.createDiv({ cls: 'kanvas-board-chips' });
     this.foldedSection = this.addSection('Folded', () => {
       const unfolded = [...plugin.folds(canvas).keys()].map((id) => [id, null]);
       plugin.setFolds(canvas, new Map(unfolded));
     });
     this.foldedEl = this.foldedSection.createDiv({
-      cls: 'canvas-board-pane-list',
+      cls: 'kanvas-board-pane-list',
     });
   }
 
   addSection(title, reset) {
-    const sectionEl = this.body.createDiv({ cls: 'canvas-board-pane-section' });
-    const headingEl = sectionEl.createDiv({ cls: 'canvas-board-pane-heading' });
+    const sectionEl = this.body.createDiv({ cls: 'kanvas-board-pane-section' });
+    const headingEl = sectionEl.createDiv({ cls: 'kanvas-board-pane-heading' });
     headingEl.createSpan({ text: title });
     const resetEl = headingEl.createSpan({
-      cls: 'clickable-icon canvas-board-pane-reset',
+      cls: 'clickable-icon kanvas-board-pane-reset',
       attr: { 'aria-label': 'Reset' },
     });
     setIcon(resetEl, 'rotate-ccw');
@@ -71,7 +71,7 @@ class FilterPane {
   }
 
   buildFoot() {
-    const foot = this.body.createDiv({ cls: 'canvas-board-pane-foot' });
+    const foot = this.body.createDiv({ cls: 'kanvas-board-pane-foot' });
     const all = foot.createDiv({
       cls: 'clickable-icon',
       attr: { 'aria-label': 'Unhide all (clear filter and folds)' },
@@ -161,7 +161,7 @@ class FilterPane {
       const count = counts[color] || 0;
       const action = isOut ? 'show' : 'hide';
       const chip = this.colorsEl.createDiv({
-        cls: 'canvas-board-swatch',
+        cls: 'kanvas-board-swatch',
         attr: {
           'aria-label':
             `${label} · ${count} cards · click to ${action} · shift-click ` +
@@ -170,7 +170,7 @@ class FilterPane {
       });
       chip.toggleClass('is-out', isOut);
       chip.createSpan({
-        cls: 'canvas-board-dot',
+        cls: 'kanvas-board-dot',
         attr: {
           style: color ? `background: var(--canvas-color-${color})` : '',
         },
@@ -190,7 +190,7 @@ class FilterPane {
       const isOut = state.xtags.has(tag);
       const action = isOut ? 'show' : 'hide';
       const chip = this.tagsEl.createDiv({
-        cls: 'canvas-board-chip',
+        cls: 'kanvas-board-chip',
         text: '#' + tag,
         attr: { 'aria-label': `click to ${action} · shift-click to select` },
       });
@@ -217,33 +217,33 @@ class FilterPane {
   renderFoldRow(node, direction) {
     const { plugin, canvas } = this;
     const row = this.foldedEl.createDiv({
-      cls: 'canvas-board-pane-row canvas-board-pane-card',
+      cls: 'kanvas-board-pane-row kanvas-board-pane-card',
       attr: {
         'aria-label':
           'Click to unfold the whole branch · shift-click to select the card',
       },
     });
     row.createSpan({
-      cls: 'canvas-board-dot',
+      cls: 'kanvas-board-dot',
       attr: { style: plugin.dotStyle(node.getData().color) },
     });
-    const text = row.createDiv({ cls: 'canvas-board-pane-card-text' });
+    const text = row.createDiv({ cls: 'kanvas-board-pane-card-text' });
     const [title, ...rest] = plugin.boardLibrary.plainLines(
       plugin.cardText(node),
     );
     text.createDiv({
-      cls: 'canvas-board-pane-card-title',
+      cls: 'kanvas-board-pane-card-title',
       text: title || '(empty)',
     });
     if (rest.length) {
       text.createDiv({
-        cls: 'canvas-board-pane-card-rest',
+        cls: 'kanvas-board-pane-card-rest',
         text: rest.join(' · '),
       });
     }
     const levels = plugin.branchLevels(canvas, node.id, direction);
     row.createSpan({
-      cls: 'canvas-board-pane-card-count',
+      cls: 'kanvas-board-pane-card-count',
       text: `· ${levels.flat().length} folded`,
     });
     row.addEventListener('click', (event) =>
