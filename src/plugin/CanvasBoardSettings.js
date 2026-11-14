@@ -166,12 +166,11 @@ class CanvasBoardSettings extends PluginSettingTab {
           .setButtonText('Reset')
           .setWarning()
           .onClick(() => {
-            this.plugin.syncSkill(
+            this.plugin.resetSkill(
               path.join(
                 this.app.vault.adapter.basePath,
                 this.plugin.manifest.dir,
               ),
-              true,
             );
             this.display();
           }),

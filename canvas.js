@@ -1143,7 +1143,7 @@ var require_layoutOps = __commonJS({
   "src/board/layoutOps.js"(exports2, module2) {
     var { SIDES: SIDES2 } = require_constants();
     var fitHeight2 = require_fitHeight();
-    function layoutOps2(canvasData, { ids, direction = "TB", fit = false, dagre, flow = "out" }) {
+    function layoutOps2(canvasData, { ids, direction = "TB", isFitToText = false, dagre, flow = "out" }) {
       const cards = canvasData.nodes.filter((node) => node.type !== "group");
       const pick = new Set(ids && ids.length ? ids : cards.map((node) => node.id));
       const moving = cards.filter((node) => pick.has(node.id));
@@ -1160,7 +1160,7 @@ var require_layoutOps = __commonJS({
       graph.setDefaultEdgeLabel(() => ({}));
       const size = (node) => ({
         width: node.width,
-        height: fit && node.type === "text" ? fitHeight2(node.text, node.width) : node.height
+        height: isFitToText && node.type === "text" ? fitHeight2(node.text, node.width) : node.height
       });
       for (const node of moving) graph.setNode(node.id, size(node));
       const inner = canvasData.edges.filter(
@@ -4716,7 +4716,7 @@ var option = (name) => {
         console.error(`layout: --dir must be TB, LR, BT or RL, not ${direction}`);
         process.exit(1);
       }
-      const operations = layoutOps(readBoard(board), { ids, direction, fit: args.includes("--fit"), dagre: require_dagre_min(), flow: settings().foldDirection });
+      const operations = layoutOps(readBoard(board), { ids, direction, isFitToText: args.includes("--fit"), dagre: require_dagre_min(), flow: settings().foldDirection });
       console.log(writeOps(board, operations), operations.filter((operation) => operation.op === "set").length, "cards");
       break;
     }

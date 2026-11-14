@@ -15,7 +15,7 @@ class NamePrompt extends Modal {
     let value = '';
     let button,
       suggest,
-      picked = false;
+      isPicked = false;
     const clean = (value) => value.trim().replace(/[\\/:#^|[\]]/g, '');
     // Subfolder names (a/b) are allowed for suggestions only: they name an existing file.
     const nameOf = (value) =>
@@ -27,10 +27,14 @@ class NamePrompt extends Modal {
         : clean(value);
     const refresh = () => {
       if (!button) return;
-      const over = !!(overwrite && value.trim() && overwrite(nameOf(value)));
-      button.setButtonText(over ? 'Overwrite' : 'Create');
-      button.buttonEl.toggleClass('mod-warning', over);
-      button.buttonEl.toggleClass('mod-cta', !over);
+      const isOverwrite = !!(
+        overwrite &&
+        value.trim() &&
+        overwrite(nameOf(value))
+      );
+      button.setButtonText(isOverwrite ? 'Overwrite' : 'Create');
+      button.buttonEl.toggleClass('mod-warning', isOverwrite);
+      button.buttonEl.toggleClass('mod-cta', !isOverwrite);
     };
     const submit = () => {
       const name = nameOf(value);
@@ -55,17 +59,17 @@ class NamePrompt extends Modal {
               text.setValue(suggestion);
               value = suggestion;
               refresh();
-              picked = true;
+              isPicked = true;
               setTimeout(() => {
-                picked = false;
-              }, 0); // the Enter that picked does not also submit
+                isPicked = false;
+              }, 0); // the Enter that picked a suggestion does not also submit
             },
           );
         }
         text.inputEl.addEventListener('keydown', (event) => {
           if (
             event.key !== 'Enter' ||
-            picked ||
+            isPicked ||
             (suggest && suggest.suggestEl && suggest.suggestEl.isConnected)
           ) {
             return;

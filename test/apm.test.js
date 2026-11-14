@@ -10,11 +10,17 @@ const unitOf = require('../src/apm/unitOf.js');
 
 assert.strictEqual(rateName(15), 'AP15M');
 assert.strictEqual(rateName(1), 'APM');
-assert.strictEqual(band(10, 3, 25), 'calibrating');
-assert.strictEqual(band(20, 20, 25), 'best');
-assert.strictEqual(band(16, 20, 25), 'green');
-assert.strictEqual(band(1, 20, 25), 'low');
-assert.strictEqual(band(1, 20, 25, true), 'calibrating');
+assert.strictEqual(
+  band(10, { personalBest: 3, lowPercent: 25 }),
+  'calibrating',
+);
+assert.strictEqual(band(20, { personalBest: 20, lowPercent: 25 }), 'best');
+assert.strictEqual(band(16, { personalBest: 20, lowPercent: 25 }), 'green');
+assert.strictEqual(band(1, { personalBest: 20, lowPercent: 25 }), 'low');
+assert.strictEqual(
+  band(1, { personalBest: 20, lowPercent: 25, isWarmingUp: true }),
+  'calibrating',
+);
 const before = cardsOf(
   JSON.stringify({
     nodes: [

@@ -148,20 +148,20 @@ class ApmCounter {
       this.lastSave = now;
       this.save();
     }
-    const shown = !!this.plugin.activeCanvas();
-    if (this.shown !== shown) {
-      this.element.toggle(shown);
-      this.shown = shown;
+    const isShown = !!this.plugin.activeCanvas();
+    if (this.isShown !== isShown) {
+      this.element.toggle(isShown);
+      this.isShown = isShown;
     }
-    if (!shown) return; // the window and the PB keep running, only the display stops outside a canvas
+    if (!isShown) return; // the window and the PB keep running, only the display stops outside a canvas
     const state = this.isIdle(now)
       ? 'idle'
-      : band(
-          pace,
-          settings.pb,
-          settings.lowPercent,
-          now - this.sessionStart < settings.windowMinutes * MINUTE_MS,
-        );
+      : band(pace, {
+          personalBest: settings.pb,
+          lowPercent: settings.lowPercent,
+          isWarmingUp:
+            now - this.sessionStart < settings.windowMinutes * MINUTE_MS,
+        });
     if (this.state !== state) {
       if (this.state) this.element.removeClass('apm-' + this.state);
       this.element.addClass('apm-' + state);
