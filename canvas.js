@@ -173,6 +173,32 @@ var require_activeTree = __commonJS({
   }
 });
 
+// src/workflow/cardLinkTargets.js
+var require_cardLinkTargets = __commonJS({
+  "src/workflow/cardLinkTargets.js"(exports2, module2) {
+    var WIKILINK = /\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g;
+    function cardLinkTargets(node) {
+      if (node.type === "file") return [node.file];
+      return [...(node.text || "").matchAll(WIKILINK)].map(
+        (match) => match[1].trim()
+      );
+    }
+    module2.exports = cardLinkTargets;
+  }
+});
+
+// src/workflow/cardTextOk.js
+var require_cardTextOk = __commonJS({
+  "src/workflow/cardTextOk.js"(exports2, module2) {
+    var cardTextOk = (raw) => {
+      const text = raw.trim();
+      if (!text.includes("[[")) return text.split("\n").length <= 3;
+      return /^\[\[[^\]]+\]\]( · .+)?$/.test(text) || /^[^\n]+ · done · \[\[[^\]]+\]\]$/.test(text);
+    };
+    module2.exports = cardTextOk;
+  }
+});
+
 // src/board/vaultPath.js
 var require_vaultPath = __commonJS({
   "src/board/vaultPath.js"(exports2, module2) {
@@ -260,6 +286,23 @@ var require_findFile = __commonJS({
   }
 });
 
+// src/workflow/cardIssues.js
+var require_cardIssues = __commonJS({
+  "src/workflow/cardIssues.js"(exports2, module2) {
+    var cardLinkTargets = require_cardLinkTargets();
+    var cardTextOk = require_cardTextOk();
+    var findFile = require_findFile();
+    var TEXT_SHAPES = "card text is neither a wish (\u2264 3 lines), `[[Note]] \xB7 reason` nor `<recap> \xB7 done \xB7 [[Output]]`";
+    function cardIssues(node, depth) {
+      const issues = cardLinkTargets(node).filter((link) => !findFile(link)).map((link) => `broken link [[${link}]]`);
+      const isTopText = node.type === "text" && depth === 0;
+      if (isTopText && !cardTextOk(node.text || "")) issues.push(TEXT_SHAPES);
+      return issues;
+    }
+    module2.exports = cardIssues;
+  }
+});
+
 // src/board/cardLinks.js
 var require_cardLinks = __commonJS({
   "src/board/cardLinks.js"(exports2, module2) {
@@ -278,15 +321,18 @@ var require_cardLinks = __commonJS({
   }
 });
 
-// src/workflow/cardTextOk.js
-var require_cardTextOk = __commonJS({
-  "src/workflow/cardTextOk.js"(exports2, module2) {
-    var cardTextOk = (raw) => {
-      const text = raw.trim();
-      if (!text.includes("[[")) return text.split("\n").length <= 3;
-      return /^\[\[[^\]]+\]\]( · .+)?$/.test(text) || /^[^\n]+ · done · \[\[[^\]]+\]\]$/.test(text);
-    };
-    module2.exports = cardTextOk;
+// src/workflow/isStaleOrange.js
+var require_isStaleOrange = __commonJS({
+  "src/workflow/isStaleOrange.js"(exports2, module2) {
+    var { ORANGE_STALE_MS, WORKING } = require_constants2();
+    var fileSystem2 = require("fs");
+    var vaultPath2 = require_vaultPath();
+    function isStaleOrange(node, note) {
+      if (node.color !== WORKING) return false;
+      const age = Date.now() - fileSystem2.statSync(vaultPath2(note)).mtimeMs;
+      return age > ORANGE_STALE_MS;
+    }
+    module2.exports = isStaleOrange;
   }
 });
 
@@ -304,6 +350,38 @@ var require_noteContexts = __commonJS({
   }
 });
 
+// src/workflow/noteIssues.js
+var require_noteIssues = __commonJS({
+  "src/workflow/noteIssues.js"(exports2, module2) {
+    var noteContexts = require_noteContexts();
+    var REQUIRED_SECTIONS = ["Aim", "Design"];
+    function noteIssues(source, color) {
+      const frontmatter = (source.match(/^---\n([\s\S]*?)\n---/) || [])[1];
+      const keys = frontmatter ? [...frontmatter.matchAll(/^(\w[\w-]*):/gm)].map((match) => match[1]) : [];
+      const hasHeading = (heading) => new RegExp(`^${heading}s*$`, "m").test(source);
+      const issues = [];
+      if (keys.join() !== "context") {
+        const listed = keys.join(", ") || "none";
+        issues.push(`note frontmatter is not \`context\` only (${listed})`);
+      }
+      if (noteContexts(frontmatter).length !== 1) {
+        issues.push("note does not have exactly one context");
+      }
+      for (const section of REQUIRED_SECTIONS) {
+        if (!hasHeading(`## ${section}`)) issues.push(`note has no ## ${section}`);
+      }
+      if (!hasHeading("### Done when")) {
+        issues.push("note has no ### Done when (under Aim)");
+      }
+      if (color === "4" && !hasHeading("## Output")) {
+        issues.push("green card, note has no ## Output");
+      }
+      return issues;
+    }
+    module2.exports = noteIssues;
+  }
+});
+
 // src/workflow/notesFolder.js
 var require_notesFolder = __commonJS({
   "src/workflow/notesFolder.js"(exports2, module2) {
@@ -311,6 +389,22 @@ var require_notesFolder = __commonJS({
     var settings2 = require_settings();
     var notesFolder = () => String(settings2().notesFolder || DEFAULT_NOTES_FOLDER).replace(/[/]+$/, "") + "/";
     module2.exports = notesFolder;
+  }
+});
+
+// src/board/readOrNull.js
+var require_readOrNull = __commonJS({
+  "src/board/readOrNull.js"(exports2, module2) {
+    var fileSystem2 = require("fs");
+    var vaultPath2 = require_vaultPath();
+    function readOrNull(relativePath) {
+      try {
+        return fileSystem2.readFileSync(vaultPath2(relativePath), "utf8");
+      } catch {
+        return null;
+      }
+    }
+    module2.exports = readOrNull;
   }
 });
 
@@ -402,83 +496,43 @@ var require_readBoard = __commonJS({
 // src/workflow/check.js
 var require_check = __commonJS({
   "src/workflow/check.js"(exports2, module2) {
-    var { ORANGE_STALE_MS, WORKING } = require_constants2();
-    var vaultPath2 = require_vaultPath();
+    var cardIssues = require_cardIssues();
     var cardLinks2 = require_cardLinks();
-    var cardTextOk = require_cardTextOk();
-    var findFile = require_findFile();
-    var fileSystem2 = require("fs");
-    var noteContexts = require_noteContexts();
+    var isStaleOrange = require_isStaleOrange();
+    var noteIssues = require_noteIssues();
     var notesFolder = require_notesFolder();
+    var readOrNull = require_readOrNull();
     var readBoard2 = require_readBoard();
+    var MAX_DEPTH = 2;
+    var STALE = "orange card, note untouched for 1h+ (interrupted pass?)";
     function check2(board, ids) {
+      const folder = notesFolder();
       const issues = [];
-      const walk = (board2, depth, seen) => {
-        seen.add(board2);
-        const canvasData = readBoard2(board2);
-        for (const node of canvasData.nodes) {
-          if (node.type === "group" || !node.color) continue;
-          const add = (issue) => issues.push({
-            board: board2,
-            id: node.id,
-            text: (node.text || node.file || "").split("\n")[0],
-            issue
-          });
-          const scoped = !ids || ids.has(node.id);
-          const links = node.type === "file" ? [node.file] : [
-            ...(node.text || "").matchAll(
-              /\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g
-            )
-          ].map((match) => match[1].trim());
-          if (scoped) {
-            for (const link of links) {
-              if (!findFile(link)) add(`broken link [[${link}]]`);
-            }
-          }
-          if (scoped && node.type === "text" && depth === 0 && !cardTextOk(node.text || "")) {
-            add(
-              "card text is neither a wish (\u2264 3 lines), `[[Note]] \xB7 reason` nor `<recap> \xB7 done \xB7 [[Output]]`"
-            );
-          }
+      const seen = /* @__PURE__ */ new Set();
+      const walk = (current, depth) => {
+        seen.add(current);
+        const colored = readBoard2(current).nodes.filter(
+          (node) => node.type !== "group" && node.color
+        );
+        for (const node of colored) {
+          const isScoped = !ids || ids.has(node.id);
           const { note, canvas } = cardLinks2(node);
-          if (note && note.startsWith(folder)) {
-            const source = fileSystem2.readFileSync(vaultPath2(note), "utf8");
-            if (scoped) {
-              const frontmatter = (source.match(/^---\n([\s\S]*?)\n---/) || [])[1];
-              const keys = frontmatter ? [...frontmatter.matchAll(/^(\w[\w-]*):/gm)].map(
-                (match) => match[1]
-              ) : [];
-              if (keys.join() !== "context") {
-                add(
-                  `note frontmatter is not \`context\` only (${keys.join(", ") || "none"})`
-                );
-              }
-              if (noteContexts(frontmatter).length !== 1) {
-                add("note does not have exactly one context");
-              }
-              for (const section of ["Aim", "Design"]) {
-                if (!new RegExp(`^## ${section}\\s*$`, "m").test(source)) {
-                  add(`note has no ## ${section}`);
-                }
-              }
-              if (!/^### Done when\s*$/m.test(source)) {
-                add("note has no ### Done when (under Aim)");
-              }
-              if (node.color === "4" && !/^## Output\s*$/m.test(source)) {
-                add("green card, note has no ## Output");
-              }
-            }
-            if (node.color === WORKING && Date.now() - fileSystem2.statSync(vaultPath2(note)).mtimeMs > ORANGE_STALE_MS) {
-              add("orange card, note untouched for 1h+ (interrupted pass?)");
-            }
-          }
-          if (canvas && !seen.has(canvas) && depth < 2) {
-            walk(canvas, depth + 1, seen);
+          const isPlanNote = Boolean(note && note.startsWith(folder));
+          const found = [
+            ...isScoped ? cardIssues(node, depth) : [],
+            ...isScoped && isPlanNote ? noteIssues(readOrNull(note), node.color) : [],
+            ...isPlanNote && isStaleOrange(node, note) ? [STALE] : []
+          ];
+          const text = (node.text || node.file || "").split("\n")[0];
+          issues.push(
+            ...found.map((issue) => ({ board: current, id: node.id, text, issue }))
+          );
+          if (canvas && !seen.has(canvas) && depth < MAX_DEPTH) {
+            walk(canvas, depth + 1);
           }
         }
       };
-      const folder = notesFolder();
-      walk(board, 0, /* @__PURE__ */ new Set());
+      walk(board, 0);
       return { issues };
     }
     module2.exports = check2;
@@ -1382,22 +1436,6 @@ var require_parseOrNull = __commonJS({
       }
     }
     module2.exports = parseOrNull;
-  }
-});
-
-// src/board/readOrNull.js
-var require_readOrNull = __commonJS({
-  "src/board/readOrNull.js"(exports2, module2) {
-    var fileSystem2 = require("fs");
-    var vaultPath2 = require_vaultPath();
-    function readOrNull(relativePath) {
-      try {
-        return fileSystem2.readFileSync(vaultPath2(relativePath), "utf8");
-      } catch {
-        return null;
-      }
-    }
-    module2.exports = readOrNull;
   }
 });
 
