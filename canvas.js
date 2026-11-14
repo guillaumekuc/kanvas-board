@@ -318,7 +318,8 @@ function restoreOps(d, src) {
 
 // --- Obsidian CLI -----------------------------------------------------------------------------------
 
-const OBSIDIAN = ['obsidian', 'C:\\Program Files\\Obsidian\\Obsidian.com'];
+// On PATH first (the CLI registers it there), then the default install of each platform.
+const OBSIDIAN = ['obsidian', 'C:\\Program Files\\Obsidian\\Obsidian.com', '/Applications/Obsidian.app/Contents/MacOS/Obsidian'];
 
 function obsidianEval(code) {
   for (const bin of OBSIDIAN) {
