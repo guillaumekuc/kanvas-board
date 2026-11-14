@@ -62,7 +62,24 @@ async function main() {
   const plugin = new PluginClass(app, manifest);
   await plugin.onload();
   for (const tab of plugin.recorded.settingTabs) tab.display();
+  const created = {};
+  plugin.app.vault = {
+    adapter: app.vault.adapter,
+    getAbstractFileByPath: () => null,
+    createFolder: async () => {},
+    create: async (file, content) => {
+      created[file] = JSON.parse(content);
+      return { path: file };
+    },
+  };
+  const seeded = { seed: 7 };
+  Math.random = () => {
+    seeded.seed = (seeded.seed * 1103515245 + 12345) % 2147483648;
+    return seeded.seed / 2147483648;
+  };
+  await plugin.createStarterBoard();
   const report = {
+    starterBoard: created,
     commands: plugin.recorded.commands.sort(),
     ribbonIcons: plugin.recorded.ribbonIcons,
     api: Object.keys(plugin.api || {}).sort(),
