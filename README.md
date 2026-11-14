@@ -31,7 +31,7 @@ A cyan card that is clear enough skips the brief and the plan.
 
 Not in the community plugin directory yet.
 
-1. Copy `main.js`, `manifest.json`, `styles.css`, `canvas.js` and the `skill/` folder into `<vault>/.obsidian/plugins/canvas-board/` (or clone this repo there).
+1. Copy `main.js`, `manifest.json`, `styles.css`, `canvas.js`, `workflow.js`, `apm.js`, `dagre.min.js` and the `skill/` folder into `<vault>/.obsidian/plugins/canvas-board/` (or clone this repo there).
 2. Settings > Community plugins: enable **Kanvas board**.
 3. Command **Kanvas board: Create a starter board**: a board with the color legend and first steps.
 
@@ -91,10 +91,6 @@ The plugin starts processes (`child_process`): the terminal for a pass, and `can
 | Claude path | empty: `~/.local/bin/claude`, else `claude` |
 
 No setting screen: `skipFolders` in `data.json` (folder names, e.g. `["private"]`) keeps `canvas.js` out of those folders when it looks up linked notes.
-
-## Development
-
-`main.js` and `canvas.js` are built from `src/` (layout and design patterns: `src/README.md`) and committed. After `npm install`: `npm run build` bundles them, `npm test` runs the tests, `npm run check` runs build, tests and the style check, which must pass before a merge into `main` (`npm run hooks` installs that check as the repo's pre-merge-commit hook).
 
 ## License
 
