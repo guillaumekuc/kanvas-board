@@ -1,15 +1,10 @@
-const {
-  COLORS,
-  COLOR_NUM,
-  DEFAULTS,
-  LAYOUT_DIRS,
-  WORKFLOW,
-} = require('./constants.js');
+const { COLORS, COLOR_NUM, DEFAULTS, LAYOUT_DIRS } = require('./constants.js');
 const { Notice, Plugin, setIcon } = require('obsidian');
 const { spawn } = require('child_process');
 const boardLibrary = require('./boardLibrary.js');
 const COMMAND_GROUPS = require('./commands/index.js');
 const createApi = require('./createApi.js');
+const createStarterBoard = require('./starterBoard/createStarterBoard.js');
 const startApmCounter = require('./startApmCounter.js');
 const CanvasBoardSettings = require('./CanvasBoardSettings.js');
 const emptyViewState = require('./emptyViewState.js');
@@ -286,124 +281,8 @@ class CanvasBoardPlugin extends Plugin {
     await this.app.workspace.getLeaf(false).openFile(file);
   }
 
-  // Onboarding: the default board when it does not exist yet, else "Starter board.canvas" (numbered when taken).
-  // A legend group (one card per color: its label and what it does, from Settings > Workflow) and a group of
-  // first steps, one of them a wish to color cyan and run a pass on. Opens it.
-  async createStarterBoard() {
-    const vault = this.app.vault;
-    let board = this.settings.defaultBoard;
-    if (vault.getAbstractFileByPath(board)) {
-      const folder =
-        path.posix.dirname(board) === '.'
-          ? ''
-          : `${path.posix.dirname(board)}/`;
-      let suffix = 1;
-      do {
-        board = `${folder}Starter board${suffix > 1 ? ` ${suffix}` : ''}.canvas`;
-      } while (vault.getAbstractFileByPath(board) && ++suffix);
-    }
-    const id = () =>
-      Array.from({ length: 16 }, () =>
-        Math.floor(Math.random() * 16).toString(16),
-      ).join('');
-    const nodes = [];
-    const edges = [];
-    const columnWidth = 400;
-    nodes.push({
-      id: id(),
-      type: 'group',
-      label: 'How the colors work',
-      x: -40,
-      y: -80,
-      width: columnWidth + 80,
-      height: WORKFLOW.length * 100 + 100,
-    });
-    // Legend cards stay uncolored (a colored one would be state: a pass would take the cyan and purple ones),
-    // an emoji dot stands for the color.
-    const DOT = {
-      cyan: '🔵',
-      purple: '🟣',
-      orange: '🟠',
-      yellow: '🟡',
-      red: '🔴',
-      green: '🟢',
-      none: '⚪',
-    };
-    WORKFLOW.forEach(([name, meaning], index) => {
-      nodes.push({
-        id: id(),
-        type: 'text',
-        text: `${DOT[name]} **${this.colorLabel(name)}** (${COLOR_NUM[name] ? name : 'uncolored'})\n${meaning}`,
-        x: 0,
-        y: index * 100,
-        width: columnWidth,
-        height: 80,
-      });
-    });
-    const steps = [
-      '**1. Write a wish**\nOne card, one thing you want done, in your own words. Uncolored cards are ideas: the agent never touches them.',
-      '**2. Color it**\nCyan: the agent carries it to done. Purple: one step (a brief, then a plan), then it hands back. Color hotkeys: Settings > Kanvas board > Hotkeys.',
-      '**3. Run a pass**\nCommand "Kanvas board: Run pass". A terminal opens with the agent on this board; it turns the cards it takes orange.',
-      "**4. Answer**\nYellow: a question or a review for you, in the card's note. Answer there, color the card cyan or purple again, run the next pass.",
-    ];
-    const stepsX = columnWidth + 160;
-    nodes.push({
-      id: id(),
-      type: 'group',
-      label: 'First steps',
-      x: stepsX - 40,
-      y: -80,
-      width: columnWidth + 80,
-      height: steps.length * 160 + 280,
-    });
-    let previous;
-    steps.forEach((text, index) => {
-      const card = {
-        id: id(),
-        type: 'text',
-        text,
-        x: stepsX,
-        y: index * 160,
-        width: columnWidth,
-        height: 130,
-      };
-      nodes.push(card);
-      if (previous) {
-        edges.push({
-          id: id(),
-          fromNode: previous,
-          fromSide: 'bottom',
-          toNode: card.id,
-          toSide: 'top',
-        });
-      }
-      previous = card.id;
-    });
-    nodes.push({
-      id: id(),
-      type: 'text',
-      text: 'Try it: color this card cyan, then run a pass.\n\nWrite a short note that explains this board in my own words.',
-      x: stepsX,
-      y: steps.length * 160 + 20,
-      width: columnWidth,
-      height: 130,
-    });
-    try {
-      const folder = path.posix.dirname(board);
-      if (folder !== '.' && !vault.getAbstractFileByPath(folder)) {
-        await vault.createFolder(folder);
-      }
-      const file = await vault.create(
-        board,
-        JSON.stringify({ nodes, edges }, null, '\t'),
-      );
-      await this.app.workspace.getLeaf(false).openFile(file);
-      new Notice(`Kanvas board: starter board created (${board})`);
-    } catch (error) {
-      new Notice(
-        `Kanvas board: could not create the starter board (${error.message})`,
-      );
-    }
+  createStarterBoard() {
+    return createStarterBoard(this);
   }
 
   async setLayoutDirection(direction) {

@@ -5402,8 +5402,171 @@ var require_createApi = __commonJS({
   }
 });
 
-// src/apm/constants.js
+// src/plugin/starterBoard/constants.js
 var require_constants3 = __commonJS({
+  "src/plugin/starterBoard/constants.js"(exports2, module2) {
+    var COLUMN_WIDTH = 400;
+    var STEPS_X = COLUMN_WIDTH + 160;
+    var DOT = {
+      cyan: "\u{1F535}",
+      purple: "\u{1F7E3}",
+      orange: "\u{1F7E0}",
+      yellow: "\u{1F7E1}",
+      red: "\u{1F534}",
+      green: "\u{1F7E2}",
+      none: "\u26AA"
+    };
+    var STEPS = [
+      "**1. Write a wish**\nOne card, one thing you want done, in your own words. Uncolored cards are ideas: the agent never touches them.",
+      "**2. Color it**\nCyan: the agent carries it to done. Purple: one step (a brief, then a plan), then it hands back. Color hotkeys: Settings > Kanvas board > Hotkeys.",
+      '**3. Run a pass**\nCommand "Kanvas board: Run pass". A terminal opens with the agent on this board; it turns the cards it takes orange.',
+      "**4. Answer**\nYellow: a question or a review for you, in the card's note. Answer there, color the card cyan or purple again, run the next pass."
+    ];
+    var TRY_IT = "Try it: color this card cyan, then run a pass.\n\nWrite a short note that explains this board in my own words.";
+    module2.exports = { COLUMN_WIDTH, STEPS_X, DOT, STEPS, TRY_IT };
+  }
+});
+
+// src/plugin/starterBoard/firstStepsCanvas.js
+var require_firstStepsCanvas = __commonJS({
+  "src/plugin/starterBoard/firstStepsCanvas.js"(exports2, module2) {
+    var { COLUMN_WIDTH, STEPS, STEPS_X, TRY_IT } = require_constants3();
+    var newId = require_newId();
+    var STEP_HEIGHT = 160;
+    function firstStepsCanvas() {
+      const group = {
+        id: newId(),
+        type: "group",
+        label: "First steps",
+        x: STEPS_X - 40,
+        y: -80,
+        width: COLUMN_WIDTH + 80,
+        height: STEPS.length * STEP_HEIGHT + 280
+      };
+      const card = (text, row) => ({
+        id: newId(),
+        type: "text",
+        text,
+        x: STEPS_X,
+        y: row * STEP_HEIGHT,
+        width: COLUMN_WIDTH,
+        height: 130
+      });
+      const steps = [];
+      const edges = [];
+      for (const [row, text] of STEPS.entries()) {
+        const step = card(text, row);
+        const above = steps[steps.length - 1];
+        steps.push(step);
+        if (!above) continue;
+        edges.push({
+          id: newId(),
+          fromNode: above.id,
+          fromSide: "bottom",
+          toNode: step.id,
+          toSide: "top"
+        });
+      }
+      const tryIt = {
+        ...card(TRY_IT, STEPS.length),
+        y: STEPS.length * STEP_HEIGHT + 20
+      };
+      return { nodes: [group, ...steps, tryIt], edges };
+    }
+    module2.exports = firstStepsCanvas;
+  }
+});
+
+// src/plugin/starterBoard/legendNodes.js
+var require_legendNodes = __commonJS({
+  "src/plugin/starterBoard/legendNodes.js"(exports2, module2) {
+    var { COLOR_NUM, WORKFLOW } = require_constants();
+    var { COLUMN_WIDTH, DOT } = require_constants3();
+    var newId = require_newId();
+    function legendNodes(colorLabel) {
+      const group = {
+        id: newId(),
+        type: "group",
+        label: "How the colors work",
+        x: -40,
+        y: -80,
+        width: COLUMN_WIDTH + 80,
+        height: WORKFLOW.length * 100 + 100
+      };
+      const cards = WORKFLOW.map(([name, meaning], index) => {
+        const colorName = COLOR_NUM[name] ? name : "uncolored";
+        return {
+          id: newId(),
+          type: "text",
+          text: `${DOT[name]} **${colorLabel(name)}** (${colorName})
+${meaning}`,
+          x: 0,
+          y: index * 100,
+          width: COLUMN_WIDTH,
+          height: 80
+        };
+      });
+      return [group, ...cards];
+    }
+    module2.exports = legendNodes;
+  }
+});
+
+// src/plugin/starterBoard/starterBoardPath.js
+var require_starterBoardPath = __commonJS({
+  "src/plugin/starterBoard/starterBoardPath.js"(exports2, module2) {
+    var path = require("path");
+    function starterBoardPath(vault, defaultBoard) {
+      if (!vault.getAbstractFileByPath(defaultBoard)) return defaultBoard;
+      const parent = path.posix.dirname(defaultBoard);
+      const folder = parent === "." ? "" : `${parent}/`;
+      for (let suffix = 1; ; suffix++) {
+        const board = `${folder}Starter board${suffix > 1 ? ` ${suffix}` : ""}.canvas`;
+        if (!vault.getAbstractFileByPath(board)) return board;
+      }
+    }
+    module2.exports = starterBoardPath;
+  }
+});
+
+// src/plugin/starterBoard/createStarterBoard.js
+var require_createStarterBoard = __commonJS({
+  "src/plugin/starterBoard/createStarterBoard.js"(exports2, module2) {
+    var { Notice } = require("obsidian");
+    var firstStepsCanvas = require_firstStepsCanvas();
+    var legendNodes = require_legendNodes();
+    var path = require("path");
+    var starterBoardPath = require_starterBoardPath();
+    async function createStarterBoard(plugin) {
+      const { vault } = plugin.app;
+      const board = starterBoardPath(vault, plugin.settings.defaultBoard);
+      const legend = legendNodes((name) => plugin.colorLabel(name));
+      const { nodes, edges } = firstStepsCanvas();
+      const content = JSON.stringify(
+        { nodes: [...legend, ...nodes], edges },
+        null,
+        "	"
+      );
+      try {
+        const folder = path.posix.dirname(board);
+        if (folder !== "." && !vault.getAbstractFileByPath(folder)) {
+          await vault.createFolder(folder);
+        }
+        const file = await vault.create(board, content);
+        await plugin.app.workspace.getLeaf(false).openFile(file);
+        new Notice(`Kanvas board: starter board created (${board})`);
+      } catch (error) {
+        new Notice(
+          `Kanvas board: could not create the starter board (${error.message})`
+        );
+      }
+    }
+    module2.exports = createStarterBoard;
+  }
+});
+
+// src/apm/constants.js
+var require_constants4 = __commonJS({
   "src/apm/constants.js"(exports2, module2) {
     var MINUTE_MS = 6e4;
     var INPUT_MS = 1e4;
@@ -5431,7 +5594,7 @@ var require_constants3 = __commonJS({
 // src/apm/band.js
 var require_band = __commonJS({
   "src/apm/band.js"(exports2, module2) {
-    var { MIN_PB } = require_constants3();
+    var { MIN_PB } = require_constants4();
     function band(pace, { personalBest, lowPercent, isWarmingUp = false }) {
       if (personalBest < MIN_PB) return "calibrating";
       if (pace >= personalBest) return "best";
@@ -5448,7 +5611,7 @@ var require_band = __commonJS({
 // src/apm/cardsOf.js
 var require_cardsOf = __commonJS({
   "src/apm/cardsOf.js"(exports2, module2) {
-    var { CONTENT_KEYS } = require_constants3();
+    var { CONTENT_KEYS } = require_constants4();
     var cardsOf = (json) => {
       const map = /* @__PURE__ */ new Map();
       for (const node of JSON.parse(json || "{}").nodes || []) {
@@ -5497,7 +5660,7 @@ var require_unitOf = __commonJS({
 // src/apm/ApmCounter.js
 var require_ApmCounter = __commonJS({
   "src/apm/ApmCounter.js"(exports2, module2) {
-    var { INPUT_MS, MINUTE_MS, SAVE_EVERY_MS } = require_constants3();
+    var { INPUT_MS, MINUTE_MS, SAVE_EVERY_MS } = require_constants4();
     var band = require_band();
     var cardsOf = require_cardsOf();
     var rateName = require_rateName();
@@ -5700,7 +5863,7 @@ var require_legacyApmSettings = __commonJS({
 // src/apm/loadSettings.js
 var require_loadSettings = __commonJS({
   "src/apm/loadSettings.js"(exports2, module2) {
-    var { DEFAULTS } = require_constants3();
+    var { DEFAULTS } = require_constants4();
     var unitOf = require_unitOf();
     function loadSettings(stored, legacy) {
       const settings = Object.assign({}, DEFAULTS, stored || legacy || {});
@@ -6316,18 +6479,13 @@ var require_nextTurn = __commonJS({
 // src/plugin/CanvasBoardPlugin.js
 var require_CanvasBoardPlugin = __commonJS({
   "src/plugin/CanvasBoardPlugin.js"(exports2, module2) {
-    var {
-      COLORS,
-      COLOR_NUM,
-      DEFAULTS,
-      LAYOUT_DIRS,
-      WORKFLOW
-    } = require_constants();
+    var { COLORS, COLOR_NUM, DEFAULTS, LAYOUT_DIRS } = require_constants();
     var { Notice, Plugin, setIcon } = require("obsidian");
     var { spawn } = require("child_process");
     var boardLibrary = require_boardLibrary();
     var COMMAND_GROUPS = require_commands();
     var createApi = require_createApi();
+    var createStarterBoard = require_createStarterBoard();
     var startApmCounter = require_startApmCounter();
     var CanvasBoardSettings = require_CanvasBoardSettings();
     var emptyViewState = require_emptyViewState();
@@ -6565,120 +6723,8 @@ var require_CanvasBoardPlugin = __commonJS({
         }
         await this.app.workspace.getLeaf(false).openFile(file);
       }
-      // Onboarding: the default board when it does not exist yet, else "Starter board.canvas" (numbered when taken).
-      // A legend group (one card per color: its label and what it does, from Settings > Workflow) and a group of
-      // first steps, one of them a wish to color cyan and run a pass on. Opens it.
-      async createStarterBoard() {
-        const vault = this.app.vault;
-        let board = this.settings.defaultBoard;
-        if (vault.getAbstractFileByPath(board)) {
-          const folder = path.posix.dirname(board) === "." ? "" : `${path.posix.dirname(board)}/`;
-          let suffix = 1;
-          do {
-            board = `${folder}Starter board${suffix > 1 ? ` ${suffix}` : ""}.canvas`;
-          } while (vault.getAbstractFileByPath(board) && ++suffix);
-        }
-        const id = () => Array.from(
-          { length: 16 },
-          () => Math.floor(Math.random() * 16).toString(16)
-        ).join("");
-        const nodes = [];
-        const edges = [];
-        const columnWidth = 400;
-        nodes.push({
-          id: id(),
-          type: "group",
-          label: "How the colors work",
-          x: -40,
-          y: -80,
-          width: columnWidth + 80,
-          height: WORKFLOW.length * 100 + 100
-        });
-        const DOT = {
-          cyan: "\u{1F535}",
-          purple: "\u{1F7E3}",
-          orange: "\u{1F7E0}",
-          yellow: "\u{1F7E1}",
-          red: "\u{1F534}",
-          green: "\u{1F7E2}",
-          none: "\u26AA"
-        };
-        WORKFLOW.forEach(([name, meaning], index) => {
-          nodes.push({
-            id: id(),
-            type: "text",
-            text: `${DOT[name]} **${this.colorLabel(name)}** (${COLOR_NUM[name] ? name : "uncolored"})
-${meaning}`,
-            x: 0,
-            y: index * 100,
-            width: columnWidth,
-            height: 80
-          });
-        });
-        const steps = [
-          "**1. Write a wish**\nOne card, one thing you want done, in your own words. Uncolored cards are ideas: the agent never touches them.",
-          "**2. Color it**\nCyan: the agent carries it to done. Purple: one step (a brief, then a plan), then it hands back. Color hotkeys: Settings > Kanvas board > Hotkeys.",
-          '**3. Run a pass**\nCommand "Kanvas board: Run pass". A terminal opens with the agent on this board; it turns the cards it takes orange.',
-          "**4. Answer**\nYellow: a question or a review for you, in the card's note. Answer there, color the card cyan or purple again, run the next pass."
-        ];
-        const stepsX = columnWidth + 160;
-        nodes.push({
-          id: id(),
-          type: "group",
-          label: "First steps",
-          x: stepsX - 40,
-          y: -80,
-          width: columnWidth + 80,
-          height: steps.length * 160 + 280
-        });
-        let previous;
-        steps.forEach((text, index) => {
-          const card = {
-            id: id(),
-            type: "text",
-            text,
-            x: stepsX,
-            y: index * 160,
-            width: columnWidth,
-            height: 130
-          };
-          nodes.push(card);
-          if (previous) {
-            edges.push({
-              id: id(),
-              fromNode: previous,
-              fromSide: "bottom",
-              toNode: card.id,
-              toSide: "top"
-            });
-          }
-          previous = card.id;
-        });
-        nodes.push({
-          id: id(),
-          type: "text",
-          text: "Try it: color this card cyan, then run a pass.\n\nWrite a short note that explains this board in my own words.",
-          x: stepsX,
-          y: steps.length * 160 + 20,
-          width: columnWidth,
-          height: 130
-        });
-        try {
-          const folder = path.posix.dirname(board);
-          if (folder !== "." && !vault.getAbstractFileByPath(folder)) {
-            await vault.createFolder(folder);
-          }
-          const file = await vault.create(
-            board,
-            JSON.stringify({ nodes, edges }, null, "	")
-          );
-          await this.app.workspace.getLeaf(false).openFile(file);
-          new Notice(`Kanvas board: starter board created (${board})`);
-        } catch (error) {
-          new Notice(
-            `Kanvas board: could not create the starter board (${error.message})`
-          );
-        }
+      createStarterBoard() {
+        return createStarterBoard(this);
       }
       async setLayoutDirection(direction) {
         this.settings.layoutDirection = direction;
