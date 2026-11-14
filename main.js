@@ -2,7 +2,7 @@
 // canvas-board skill (Claude Code) on the vault, and an API that canvas.js calls (through `obsidian eval`)
 // to edit open boards, a "Tidy layout" command (dagre, through canvas.js), refactor commands (pack, unpack dissolve / copy, merge,
 // split, extract), archive/restore, view tools (search current canvas, filter pane, fold, select children / same tag / same color), card templates and a status bar card count. Writes skill/SKILL.md to
-// .claude/skills/canvas-board/ on load when missing; after that the vault copy is the user's (command "Reset agent skill").
+// .claude/skills/canvas-board/ on load when missing; after that the vault copy is the user's, edited in Settings > Agent instructions (command "Reset agent skill").
 // The agent workflow (what a pass takes, roll-up, check) is workflow.js; here only the "Workflow" toggles gate.
 // apm.js: the APM counter in the status bar, on canvases only.
 const { Plugin, Notice, PluginSettingTab, Setting, Modal, FuzzySuggestModal, AbstractInputSuggest, Scope, setIcon } = require('obsidian');
@@ -959,9 +959,13 @@ module.exports = class CanvasBoardPlugin extends Plugin {
 
 	// The plugin folder holds the skill's default; the vault copy is written only when missing (then it is the
 	// user's, plugin updates never overwrite it) or on "Reset agent skill" (`force`).
+	skillPath() {
+		return path.join(this.app.vault.adapter.basePath, '.claude', 'skills', 'canvas-board', 'SKILL.md');
+	}
+
 	syncSkill(dir, force = false) {
 		const src = path.join(dir, 'skill', 'SKILL.md');
-		const dest = path.join(this.app.vault.adapter.basePath, '.claude', 'skills', 'canvas-board', 'SKILL.md');
+		const dest = this.skillPath();
 		try {
 			if (!force && fs.existsSync(dest)) return;
 			fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -1665,10 +1669,23 @@ class CanvasBoardSettings extends PluginSettingTab {
 		heading('Pass');
 		text('Claude path', 'Empty: ~/.local/bin/claude (claude.exe on Windows) if it exists, else claude on PATH.', 'claudePath');
 		text('Terminal command', 'Starts the pass. Empty: Windows Terminal, macOS Terminal, or the first known terminal on Linux (gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm, foot, xterm). Otherwise {vault}, {board}, {claude} are replaced; quote parts with spaces.', 'terminal');
-		new Setting(containerEl).setName('Agent skill').setDesc('.claude/skills/canvas-board/SKILL.md is written once from the plugin, then it is yours: plugin updates never overwrite it. Reset brings back the plugin\'s version.').addButton(b => b
-			.setButtonText('Reset skill')
+		// The instructions the agent follows on a pass, edited here; the file stays where Claude Code finds the skill.
+		const skillFile = this.plugin.skillPath();
+		new Setting(containerEl).setName('Agent instructions').setDesc('What the agent does on a pass. Saved when the field loses focus, to .claude/skills/canvas-board/SKILL.md (where Claude Code reads it; any agent can be pointed at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin\'s version.').addButton(b => b
+			.setButtonText('Reset')
 			.setWarning()
-			.onClick(() => this.plugin.syncSkill(path.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir), true)));
+			.onClick(() => { this.plugin.syncSkill(path.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir), true); this.display(); }));
+		const editor = containerEl.createEl('textarea', { cls: 'canvas-board-skill-editor', attr: { spellcheck: 'false', rows: '24' } });
+		try { editor.value = fs.readFileSync(skillFile, 'utf8'); } catch (e) { editor.placeholder = 'No instructions file yet: Reset writes the plugin\'s version.'; }
+		editor.addEventListener('change', () => {
+			try {
+				fs.mkdirSync(path.dirname(skillFile), { recursive: true });
+				fs.writeFileSync(skillFile, editor.value);
+				new Notice('Canvas board: agent instructions saved');
+			} catch (e) {
+				new Notice(`Canvas board: could not save the agent instructions (${e.message})`);
+			}
+		});
 		heading('APM counter').setDesc('Canvas cards touched in a rolling window, in the status bar while a canvas is the active tab.');
 		const apm = this.plugin.apm;
 		const a = apm.settings;
