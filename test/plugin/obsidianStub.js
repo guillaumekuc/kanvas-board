@@ -3,17 +3,17 @@
 const anything = () => {
   const assigned = new Map();
   return new Proxy(function stub() {}, {
-  set: (target, key, value) => assigned.set(key, value),
-  get: (target, key) => {
-    if (assigned.has(key)) return assigned.get(key);
-    if (key === Symbol.toPrimitive) return () => '';
-    if (key === 'then') return undefined;
-    if (key === Symbol.iterator) return [][Symbol.iterator].bind([]);
-    if (key === 'length') return 0;
-    return anything();
-  },
-  apply: () => anything(),
-  construct: () => anything(),
+    set: (target, key, value) => assigned.set(key, value),
+    get: (target, key) => {
+      if (assigned.has(key)) return assigned.get(key);
+      if (key === Symbol.toPrimitive) return () => '';
+      if (key === 'then') return undefined;
+      if (key === Symbol.iterator) return [][Symbol.iterator].bind([]);
+      if (key === 'length') return 0;
+      return anything();
+    },
+    apply: () => anything(),
+    construct: () => anything(),
   });
 };
 
@@ -65,11 +65,14 @@ class Plugin extends Component {
   async saveData() {}
 }
 
-module.exports = new Proxy({
-  Plugin,
-  PluginSettingTab: Component,
-  Modal: Component,
-  FuzzySuggestModal: Component,
-  AbstractInputSuggest: Component,
-}, { get: (stubs, key) => stubs[key] || anything() });
+module.exports = new Proxy(
+  {
+    Plugin,
+    PluginSettingTab: Component,
+    Modal: Component,
+    FuzzySuggestModal: Component,
+    AbstractInputSuggest: Component,
+  },
+  { get: (stubs, key) => stubs[key] || anything() },
+);
 module.exports.anything = anything;

@@ -11,13 +11,39 @@ var require_constants = __commonJS({
     var ROOT = path2.resolve(__dirname, "..", "..", "..");
     var DEFAULT_BOARD2 = "Board.canvas";
     var SKIP_DIRS = /* @__PURE__ */ new Set([".git", ".obsidian", ".trash", "node_modules"]);
-    var COLORS = { red: "1", orange: "2", yellow: "3", green: "4", cyan: "5", purple: "6" };
+    var COLORS = {
+      red: "1",
+      orange: "2",
+      yellow: "3",
+      green: "4",
+      cyan: "5",
+      purple: "6"
+    };
     var URGENCY = ["1", "3", "2", "5", "6", "4"];
     var TEMPLATE_DIR = "Templates/Canvas";
     var ARCHIVE_DIR = "Board notes/Archive";
-    var OBSIDIAN = ["obsidian", "C:\\Program Files\\Obsidian\\Obsidian.com", "/Applications/Obsidian.app/Contents/MacOS/Obsidian"];
-    var SIDES2 = { TB: ["bottom", "top"], LR: ["right", "left"], BT: ["top", "bottom"], RL: ["left", "right"] };
-    module2.exports = { ROOT, DEFAULT_BOARD: DEFAULT_BOARD2, SKIP_DIRS, COLORS, URGENCY, TEMPLATE_DIR, ARCHIVE_DIR, OBSIDIAN, SIDES: SIDES2 };
+    var OBSIDIAN = [
+      "obsidian",
+      "C:\\Program Files\\Obsidian\\Obsidian.com",
+      "/Applications/Obsidian.app/Contents/MacOS/Obsidian"
+    ];
+    var SIDES2 = {
+      TB: ["bottom", "top"],
+      LR: ["right", "left"],
+      BT: ["top", "bottom"],
+      RL: ["left", "right"]
+    };
+    module2.exports = {
+      ROOT,
+      DEFAULT_BOARD: DEFAULT_BOARD2,
+      SKIP_DIRS,
+      COLORS,
+      URGENCY,
+      TEMPLATE_DIR,
+      ARCHIVE_DIR,
+      OBSIDIAN,
+      SIDES: SIDES2
+    };
   }
 });
 
@@ -29,7 +55,13 @@ var require_constants2 = __commonJS({
     var DEFAULT_NOTES_FOLDER = "Board notes";
     var WORKING = "2";
     var WAITING = /* @__PURE__ */ new Set(["1", "3"]);
-    module2.exports = { ORANGE_STALE_MS, DEFAULT_PASS_COLORS, DEFAULT_NOTES_FOLDER, WORKING, WAITING };
+    module2.exports = {
+      ORANGE_STALE_MS,
+      DEFAULT_PASS_COLORS,
+      DEFAULT_NOTES_FOLDER,
+      WORKING,
+      WAITING
+    };
   }
 });
 
@@ -38,7 +70,9 @@ var require_activeNode = __commonJS({
   "src/workflow/activeNode.js"(exports2, module2) {
     var { WAITING } = require_constants2();
     function activeNode(t, total, active) {
-      const ids = new Set(t.cards.filter((c) => active.has(c.color)).map((c) => c.id));
+      const ids = new Set(
+        t.cards.filter((c) => active.has(c.color)).map((c) => c.id)
+      );
       const near = /* @__PURE__ */ new Set();
       for (const e of t.edges) {
         if (ids.has(e.from) && !ids.has(e.to)) near.add(e.to);
@@ -48,8 +82,14 @@ var require_activeNode = __commonJS({
       for (const c of t.cards) {
         if (WAITING.has(c.color)) total.waiting++;
         const inside = c.inside && activeNode(c.inside, total, active);
-        if (ids.has(c.id) || inside && inside.cards.length) cards.push({ ...c, inside: inside && inside.cards.length ? inside : void 0 });
-        else if (near.has(c.id)) context.push({ id: c.id, color: c.color, text: c.text, file: c.file });
+        if (ids.has(c.id) || inside && inside.cards.length) {
+          cards.push({
+            ...c,
+            inside: inside && inside.cards.length ? inside : void 0
+          });
+        } else if (near.has(c.id)) {
+          context.push({ id: c.id, color: c.color, text: c.text, file: c.file });
+        }
       }
       const kept = new Set(cards.map((c) => c.id));
       const edges = t.edges.filter((e) => kept.has(e.from) || kept.has(e.to));
@@ -64,7 +104,9 @@ var require_parseColors = __commonJS({
   "src/workflow/parseColors.js"(exports2, module2) {
     var { COLORS } = require_constants();
     function parseColors(s) {
-      return new Set(String(s || "").split(/[\s,]+/).filter(Boolean).map((c) => COLORS[c.toLowerCase()] || c).filter((c) => /^[1-6]$/.test(c)));
+      return new Set(
+        String(s || "").split(/[\s,]+/).filter(Boolean).map((c) => COLORS[c.toLowerCase()] || c).filter((c) => /^[1-6]$/.test(c))
+      );
     }
     module2.exports = parseColors;
   }
@@ -77,7 +119,9 @@ var require_settings = __commonJS({
     var path2 = require("path");
     var settings2 = () => {
       try {
-        return JSON.parse(fs2.readFileSync(path2.join(__dirname, "data.json"), "utf8"));
+        return JSON.parse(
+          fs2.readFileSync(path2.join(__dirname, "data.json"), "utf8")
+        );
       } catch (e) {
         return {};
       }
@@ -110,7 +154,13 @@ var require_activeTree = __commonJS({
       const active = /* @__PURE__ */ new Set([...goColors(), WORKING]);
       const total = { waiting: 0 };
       const a = activeNode(t, total, active);
-      return { board: a.board, waiting: total.waiting, cards: a.cards, context: a.context, edges: a.edges };
+      return {
+        board: a.board,
+        waiting: total.waiting,
+        cards: a.cards,
+        context: a.context,
+        edges: a.edges
+      };
     }
     module2.exports = activeTree2;
   }
@@ -133,7 +183,9 @@ var require_settings2 = __commonJS({
     var path2 = require("path");
     var settings2 = () => {
       try {
-        return JSON.parse(fs2.readFileSync(path2.join(__dirname, "data.json"), "utf8"));
+        return JSON.parse(
+          fs2.readFileSync(path2.join(__dirname, "data.json"), "utf8")
+        );
       } catch (e) {
         return {};
       }
@@ -202,9 +254,14 @@ var require_cardLinks = __commonJS({
   "src/board/cardLinks.js"(exports2, module2) {
     var findFile = require_findFile();
     function cardLinks2(n) {
-      const targets = n.type === "file" ? [n.file] : [...(n.text || "").matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map((m) => findFile(m[1].trim()));
+      const targets = n.type === "file" ? [n.file] : [...(n.text || "").matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map(
+        (m) => findFile(m[1].trim())
+      );
       const found = targets.filter(Boolean);
-      return { note: found.find((f) => f.endsWith(".md")) || null, canvas: found.find((f) => f.endsWith(".canvas")) || null };
+      return {
+        note: found.find((f) => f.endsWith(".md")) || null,
+        canvas: found.find((f) => f.endsWith(".canvas")) || null
+      };
     }
     module2.exports = cardLinks2;
   }
@@ -254,7 +311,10 @@ var require_obsidianEval = __commonJS({
     function obsidianEval(code) {
       for (const bin of OBSIDIAN) {
         try {
-          const out = execFileSync(bin, ["eval", `code=${code}`], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+          const out = execFileSync(bin, ["eval", `code=${code}`], {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"]
+          });
           const m = out.match(/=>\s?([\s\S]*)$/);
           if (!m) throw new Error(out.trim());
           return m[1].trim();
@@ -273,7 +333,9 @@ var require_obsidianEval = __commonJS({
 var require_api = __commonJS({
   "src/board/api.js"(exports2, module2) {
     var obsidianEval = require_obsidianEval();
-    var api = (fn, ...a) => obsidianEval(`(async()=>{const p=app.plugins.plugins['canvas-board'];if(!p||!p.api)return 'no plugin';const r=await p.api.${fn}(${a.map((x) => JSON.stringify(x)).join(",")});return r===null?'closed':r})()`);
+    var api = (fn, ...a) => obsidianEval(
+      `(async()=>{const p=app.plugins.plugins['canvas-board'];if(!p||!p.api)return 'no plugin';const r=await p.api.${fn}(${a.map((x) => JSON.stringify(x)).join(",")});return r===null?'closed':r})()`
+    );
     module2.exports = api;
   }
 });
@@ -329,28 +391,57 @@ var require_check = __commonJS({
         const d = readBoard2(b);
         for (const n of d.nodes) {
           if (n.type === "group" || !n.color) continue;
-          const add = (issue) => issues.push({ board: b, id: n.id, text: (n.text || n.file || "").split("\n")[0], issue });
+          const add = (issue) => issues.push({
+            board: b,
+            id: n.id,
+            text: (n.text || n.file || "").split("\n")[0],
+            issue
+          });
           const scoped = !ids || ids.has(n.id);
-          const links = n.type === "file" ? [n.file] : [...(n.text || "").matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map((m) => m[1].trim());
+          const links = n.type === "file" ? [n.file] : [
+            ...(n.text || "").matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)
+          ].map((m) => m[1].trim());
           if (scoped) {
             for (const l of links) if (!findFile(l)) add(`broken link [[${l}]]`);
           }
-          if (scoped && n.type === "text" && depth === 0 && !cardTextOk(n.text || "")) add("card text is neither a wish (\u2264 3 lines), `[[Note]] \xB7 reason` nor `<recap> \xB7 done \xB7 [[Output]]`");
+          if (scoped && n.type === "text" && depth === 0 && !cardTextOk(n.text || "")) {
+            add(
+              "card text is neither a wish (\u2264 3 lines), `[[Note]] \xB7 reason` nor `<recap> \xB7 done \xB7 [[Output]]`"
+            );
+          }
           const { note, canvas } = cardLinks2(n);
           if (note && note.startsWith(folder)) {
             const src = fs2.readFileSync(abs2(note), "utf8");
             if (scoped) {
               const fm = (src.match(/^---\n([\s\S]*?)\n---/) || [])[1];
               const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map((m) => m[1]) : [];
-              if (keys.join() !== "context") add(`note frontmatter is not \`context\` only (${keys.join(", ") || "none"})`);
-              if (noteContexts(fm).length !== 1) add("note does not have exactly one context");
-              for (const s of ["Aim", "Design"]) if (!new RegExp(`^## ${s}\\s*$`, "m").test(src)) add(`note has no ## ${s}`);
-              if (!/^### Done when\s*$/m.test(src)) add("note has no ### Done when (under Aim)");
-              if (n.color === "4" && !/^## Output\s*$/m.test(src)) add("green card, note has no ## Output");
+              if (keys.join() !== "context") {
+                add(
+                  `note frontmatter is not \`context\` only (${keys.join(", ") || "none"})`
+                );
+              }
+              if (noteContexts(fm).length !== 1) {
+                add("note does not have exactly one context");
+              }
+              for (const s of ["Aim", "Design"]) {
+                if (!new RegExp(`^## ${s}\\s*$`, "m").test(src)) {
+                  add(`note has no ## ${s}`);
+                }
+              }
+              if (!/^### Done when\s*$/m.test(src)) {
+                add("note has no ### Done when (under Aim)");
+              }
+              if (n.color === "4" && !/^## Output\s*$/m.test(src)) {
+                add("green card, note has no ## Output");
+              }
             }
-            if (n.color === WORKING && Date.now() - fs2.statSync(abs2(note)).mtimeMs > ORANGE_STALE_MS) add("orange card, note untouched for 1h+ (interrupted pass?)");
+            if (n.color === WORKING && Date.now() - fs2.statSync(abs2(note)).mtimeMs > ORANGE_STALE_MS) {
+              add("orange card, note untouched for 1h+ (interrupted pass?)");
+            }
           }
-          if (canvas && !seen.has(canvas) && depth < 2) walk(canvas, depth + 1, seen);
+          if (canvas && !seen.has(canvas) && depth < 2) {
+            walk(canvas, depth + 1, seen);
+          }
         }
       };
       const folder = notesFolder();
@@ -370,7 +461,9 @@ var require_desiredColor = __commonJS({
       const own = rolled ? null : card.color;
       if (inner.red || own === "1") return "1";
       if (inner.yellow || own === "3") return "3";
-      if (rolled && (card.color === "1" || card.color === "3")) return inner.allGreen ? "4" : null;
+      if (rolled && (card.color === "1" || card.color === "3")) {
+        return inner.allGreen ? "4" : null;
+      }
       return card.color || null;
     }
     module2.exports = desiredColor;
@@ -403,15 +496,32 @@ var require_tree = __commonJS({
         board,
         cards: d.nodes.filter((n) => n.type !== "group").map((n) => {
           const { note, canvas } = cardLinks2(n);
-          const card = { id: n.id, color: n.color || null, text: n.type === "text" ? n.text : void 0, file: n.file };
+          const card = {
+            id: n.id,
+            color: n.color || null,
+            text: n.type === "text" ? n.text : void 0,
+            file: n.file
+          };
           if (note) {
-            const ageDays = Math.floor((Date.now() - fs2.statSync(abs2(note)).mtimeMs) / 864e5);
-            card.note = { path: note, ageDays, ...noteInfo ? noteInfo(note) : {} };
+            const ageDays = Math.floor(
+              (Date.now() - fs2.statSync(abs2(note)).mtimeMs) / 864e5
+            );
+            card.note = {
+              path: note,
+              ageDays,
+              ...noteInfo ? noteInfo(note) : {}
+            };
           }
-          if (canvas && !seen.has(canvas) && depth < 2) card.inside = tree(canvas, { noteInfo }, depth + 1, seen);
+          if (canvas && !seen.has(canvas) && depth < 2) {
+            card.inside = tree(canvas, { noteInfo }, depth + 1, seen);
+          }
           return card;
         }),
-        edges: d.edges.map((e) => ({ from: e.fromNode, to: e.toNode, label: e.label }))
+        edges: d.edges.map((e) => ({
+          from: e.fromNode,
+          to: e.toNode,
+          label: e.label
+        }))
       };
     }
     module2.exports = tree;
@@ -427,8 +537,14 @@ var require_noteState = __commonJS({
       const text = fs2.readFileSync(abs2(rel), "utf8");
       const parts = [...text.matchAll(/^\s*- \[([ xX])\] /gm)];
       const done = parts.filter((m) => m[1] !== " ").length;
-      const questions = [...text.split(/^## Decisions Record/m)[0].matchAll(/^\s*- \[\?\] /gm)].length;
-      return { level: parts.length ? "plan" : "brief", parts: { done, total: parts.length }, questions };
+      const questions = [
+        ...text.split(/^## Decisions Record/m)[0].matchAll(/^\s*- \[\?\] /gm)
+      ].length;
+      return {
+        level: parts.length ? "plan" : "brief",
+        parts: { done, total: parts.length },
+        questions
+      };
     }
     module2.exports = noteState;
   }
@@ -469,7 +585,9 @@ var require_applyOps = __commonJS({
             n.text = o.text;
             delete n.file;
           }
-          for (const k of ["x", "y", "width", "height"]) if (o[k] !== void 0) n[k] = o[k];
+          for (const k of ["x", "y", "width", "height"]) {
+            if (o[k] !== void 0) n[k] = o[k];
+          }
         } else if (o.op === "sides") {
           const e = d.edges.find((e2) => e2.id === o.id);
           if (e) {
@@ -493,7 +611,9 @@ var require_applyOps = __commonJS({
             e.fromEnd = o.fromEnd;
             e.toEnd = o.toEnd;
           }
-        } else if (o.op === "unedge") d.edges = d.edges.filter((e) => e.id !== o.id);
+        } else if (o.op === "unedge") {
+          d.edges = d.edges.filter((e) => e.id !== o.id);
+        }
       }
       return retyped;
     }
@@ -532,7 +652,9 @@ var require_writeOps = __commonJS({
     function writeOps2(board, ops) {
       const out = api("apply", board, ops);
       if (out === "obsidian") return "obsidian";
-      if (out !== null && out !== "closed") throw new Error(`Obsidian edit failed: ${out}`);
+      if (out !== null && out !== "closed") {
+        throw new Error(`Obsidian edit failed: ${out}`);
+      }
       const d = readFileBoard(board);
       applyOps(d, ops);
       fs2.writeFileSync(abs2(board), serialize2(d));
@@ -565,10 +687,17 @@ var require_rollup = __commonJS({
             let text = c.text;
             if (text !== void 0) {
               text = text.replace(/ · \d+ inside| · \d+d$/g, "");
-              if (inner.red + inner.yellow) text += ` \xB7 ${inner.red + inner.yellow} inside`;
+              if (inner.red + inner.yellow) {
+                text += ` \xB7 ${inner.red + inner.yellow} inside`;
+              }
             }
             if (want !== color || text !== void 0 && text !== c.text) {
-              ops.push({ op: "set", id: c.id, color: want === null ? "" : want, ...text !== c.text ? { text } : {} });
+              ops.push({
+                op: "set",
+                id: c.id,
+                color: want === null ? "" : want,
+                ...text !== c.text ? { text } : {}
+              });
               color = want;
             }
           }
@@ -578,13 +707,17 @@ var require_rollup = __commonJS({
           if (color === "4") green++;
         }
         for (const c of node.cards) {
-          if (c.color !== "3" || !c.note || c.text === void 0 || c.inside) continue;
+          if (c.color !== "3" || !c.note || c.text === void 0 || c.inside) {
+            continue;
+          }
           const base = c.text.replace(/ · \d+d$/, "");
           const days = staleDays();
           const text = days > 0 && c.note.ageDays >= days ? `${base} \xB7 ${c.note.ageDays}d` : base;
           if (text !== c.text) ops.push({ op: "set", id: c.id, text });
         }
-        if (ops.length) changes.push({ board: node.board, via: writeOps2(node.board, ops), ops });
+        if (ops.length) {
+          changes.push({ board: node.board, via: writeOps2(node.board, ops), ops });
+        }
         return { red, yellow, allGreen: cards > 0 && green === cards };
       };
       walk(t);
@@ -600,7 +733,9 @@ var require_archiveDir = __commonJS({
     var { ARCHIVE_DIR } = require_constants();
     var path2 = require("path");
     function archiveDir2(board, s = {}) {
-      if (s.archiveMode === "global") return String(s.archiveFolder || ARCHIVE_DIR).trim().replace(/[/\\]+$/, "") || ARCHIVE_DIR;
+      if (s.archiveMode === "global") {
+        return String(s.archiveFolder || ARCHIVE_DIR).trim().replace(/[/\\]+$/, "") || ARCHIVE_DIR;
+      }
       const b = String(board).replace(/\\/g, "/"), dir = path2.posix.dirname(b);
       return (dir === "." ? "" : dir + "/") + path2.posix.basename(b, ".canvas") + " archive";
     }
@@ -632,7 +767,18 @@ var require_archiveNote = __commonJS({
     function archiveNote2(d, id, board, date, contexts = ["G&A"]) {
       const n = d.nodes.find((n2) => n2.id === id);
       if (!n) throw new Error("no node " + id);
-      const edges = d.edges.filter((e) => e.fromNode === id || e.toNode === id).map((e) => yamlStr([e.id, e.fromNode, e.fromSide || "", e.toNode, e.toSide || "", e.label || ""].join(" | ")));
+      const edges = d.edges.filter((e) => e.fromNode === id || e.toNode === id).map(
+        (e) => yamlStr(
+          [
+            e.id,
+            e.fromNode,
+            e.fromSide || "",
+            e.toNode,
+            e.toSide || "",
+            e.label || ""
+          ].join(" | ")
+        )
+      );
       const fm = [
         "---",
         "context:",
@@ -654,7 +800,11 @@ var require_archiveNote = __commonJS({
         ""
       ].join("\n");
       const body = n.type === "text" ? n.text : n.type === "file" ? `[[${n.file}]]` : n.type === "link" ? n.url : n.label || "";
-      return { name: noteName(n.type === "text" ? n.text : n.file || n.url || n.label), content: fm + body + "\n", ops: [{ op: "remove", id }] };
+      return {
+        name: noteName(n.type === "text" ? n.text : n.file || n.url || n.label),
+        content: fm + body + "\n",
+        ops: [{ op: "remove", id }]
+      };
     }
     module2.exports = archiveNote2;
   }
@@ -682,7 +832,12 @@ var require_bounds = __commonJS({
   "src/board/bounds.js"(exports2, module2) {
     var bounds = (ns) => {
       const x = Math.min(...ns.map((n) => n.x)), y = Math.min(...ns.map((n) => n.y));
-      return { x, y, w: Math.max(...ns.map((n) => n.x + n.width)) - x, h: Math.max(...ns.map((n) => n.y + n.height)) - y };
+      return {
+        x,
+        y,
+        w: Math.max(...ns.map((n) => n.x + n.width)) - x,
+        h: Math.max(...ns.map((n) => n.y + n.height)) - y
+      };
     };
     module2.exports = bounds;
   }
@@ -701,8 +856,13 @@ var require_withGroupMembers = __commonJS({
   "src/board/withGroupMembers.js"(exports2, module2) {
     function withGroupMembers(d, ids) {
       const pick = new Set(ids);
-      for (const g of d.nodes.filter((n) => n.type === "group" && pick.has(n.id)))
-        for (const n of d.nodes) if (n.x >= g.x && n.y >= g.y && n.x + n.width <= g.x + g.width && n.y + n.height <= g.y + g.height) pick.add(n.id);
+      for (const g of d.nodes.filter((n) => n.type === "group" && pick.has(n.id))) {
+        for (const n of d.nodes) {
+          if (n.x >= g.x && n.y >= g.y && n.x + n.width <= g.x + g.width && n.y + n.height <= g.y + g.height) {
+            pick.add(n.id);
+          }
+        }
+      }
       return pick;
     }
     module2.exports = withGroupMembers;
@@ -737,7 +897,14 @@ var require_collapseOps = __commonJS({
       const ops = [{ op: "add", node: card }];
       for (const e of d.edges) {
         const from = pick.has(e.fromNode), to = pick.has(e.toNode);
-        if (from !== to) ops.push({ op: "retarget", id: e.id, fromNode: from ? card.id : e.fromNode, toNode: to ? card.id : e.toNode });
+        if (from !== to) {
+          ops.push({
+            op: "retarget",
+            id: e.id,
+            fromNode: from ? card.id : e.fromNode,
+            toNode: to ? card.id : e.toNode
+          });
+        }
       }
       for (const n of moving) ops.push({ op: "remove", id: n.id });
       return { ops, sub, id: card.id };
@@ -783,15 +950,28 @@ var require_expandOps = __commonJS({
       const card = d.nodes.find((n) => n.id === id);
       if (!card) throw new Error("no node " + id);
       if (!sub.nodes.length) throw new Error("empty subcanvas");
-      const taken = new Set(d.nodes.map((n) => n.id).concat(d.edges.map((e) => e.id)));
-      const ids = new Map(sub.nodes.map((n) => [n.id, taken.has(n.id) ? newId2() : n.id]));
+      const taken = new Set(
+        d.nodes.map((n) => n.id).concat(d.edges.map((e) => e.id))
+      );
+      const ids = new Map(
+        sub.nodes.map((n) => [n.id, taken.has(n.id) ? newId2() : n.id])
+      );
       const b = bounds(sub.nodes);
       const others = d.nodes.filter((n) => n.id !== id);
       let ox = Math.round(card.x + (card.width - b.w) / 2) - b.x;
       const oy = Math.round(card.y + (card.height - b.h) / 2) - b.y;
-      const hits = () => sub.nodes.some((p) => others.some((n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
+      const hits = () => sub.nodes.some(
+        (p) => others.some(
+          (n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y
+        )
+      );
       for (let k = 0; k < 200 && hits(); k++) ox += 40;
-      const nodes = sub.nodes.map((n) => ({ ...n, id: ids.get(n.id), x: n.x + ox, y: n.y + oy }));
+      const nodes = sub.nodes.map((n) => ({
+        ...n,
+        id: ids.get(n.id),
+        x: n.x + ox,
+        y: n.y + oy
+      }));
       let first = nodes.filter((n) => n.type !== "group").sort(byReading)[0] || nodes[0];
       const ops = [];
       if (group) {
@@ -809,9 +989,27 @@ var require_expandOps = __commonJS({
         ops.push({ op: "add", node: first });
       }
       ops.push(...nodes.map((node) => ({ op: "add", node })));
-      for (const e of sub.edges) ops.push({ op: "edge", edge: { ...e, id: taken.has(e.id) ? newId2() : e.id, fromNode: ids.get(e.fromNode), toNode: ids.get(e.toNode) } });
-      for (const e of d.edges) if (e.fromNode === id || e.toNode === id)
-        ops.push({ op: "retarget", id: e.id, fromNode: e.fromNode === id ? first.id : e.fromNode, toNode: e.toNode === id ? first.id : e.toNode });
+      for (const e of sub.edges) {
+        ops.push({
+          op: "edge",
+          edge: {
+            ...e,
+            id: taken.has(e.id) ? newId2() : e.id,
+            fromNode: ids.get(e.fromNode),
+            toNode: ids.get(e.toNode)
+          }
+        });
+      }
+      for (const e of d.edges) {
+        if (e.fromNode === id || e.toNode === id) {
+          ops.push({
+            op: "retarget",
+            id: e.id,
+            fromNode: e.fromNode === id ? first.id : e.fromNode,
+            toNode: e.toNode === id ? first.id : e.toNode
+          });
+        }
+      }
       ops.push({ op: "remove", id });
       return group ? Object.assign(ops, { group: first.id }) : ops;
     }
@@ -824,7 +1022,15 @@ var require_fitHeight = __commonJS({
   "src/board/fitHeight.js"(exports2, module2) {
     function fitHeight2(text, w) {
       const perLine = Math.max(10, Math.floor((w - 40) / 8));
-      const lines = String(text || "").split("\n").reduce((s, l) => s + Math.max(1, Math.ceil(l.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").length / perLine)), 0);
+      const lines = String(text || "").split("\n").reduce(
+        (s, l) => s + Math.max(
+          1,
+          Math.ceil(
+            l.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").length / perLine
+          )
+        ),
+        0
+      );
       return Math.max(60, lines * 26 + 34);
     }
     module2.exports = fitHeight2;
@@ -838,17 +1044,32 @@ var require_extractOps = __commonJS({
     var newId2 = require_newId();
     function extractOps2(d, id, part, from) {
       const card = d.nodes.find((n) => n.id === id);
-      if (!card || card.type !== "text") throw new Error("extract takes one text card");
+      if (!card || card.type !== "text") {
+        throw new Error("extract takes one text card");
+      }
       const at = from !== void 0 && card.text.slice(from, from + part.length) === part ? from : card.text.indexOf(part);
       if (!part.trim() || at < 0) throw new Error("text not found in the card");
       const left = (card.text.slice(0, at) + card.text.slice(at + part.length)).replace(/\n{3,}/g, "\n\n").trim();
       const text = part.trim();
       const height = fitHeight2(text, card.width);
       let y = card.y;
-      while (d.nodes.some((n) => n.x === card.x + card.width + 40 && n.y === y)) y += 40;
-      const node = { id: newId2(), type: "text", text, x: card.x + card.width + 40, y, width: card.width, height };
+      while (d.nodes.some((n) => n.x === card.x + card.width + 40 && n.y === y)) {
+        y += 40;
+      }
+      const node = {
+        id: newId2(),
+        type: "text",
+        text,
+        x: card.x + card.width + 40,
+        y,
+        width: card.width,
+        height
+      };
       if (card.color) node.color = card.color;
-      return [{ op: "set", id, text: left, height: fitHeight2(left, card.width) }, { op: "add", node }];
+      return [
+        { op: "set", id, text: left, height: fitHeight2(left, card.width) },
+        { op: "add", node }
+      ];
     }
     module2.exports = extractOps2;
   }
@@ -882,31 +1103,73 @@ var require_layoutOps = __commonJS({
       const fixed = cards.filter((n) => !pick.has(n.id));
       if (!moving.length) return [];
       const g = new dagre.graphlib.Graph();
-      g.setGraph({ rankdir: dir, nodesep: 40, ranksep: 80, marginx: 0, marginy: 0 });
+      g.setGraph({
+        rankdir: dir,
+        nodesep: 40,
+        ranksep: 80,
+        marginx: 0,
+        marginy: 0
+      });
       g.setDefaultEdgeLabel(() => ({}));
-      const size = (n) => ({ width: n.width, height: fit && n.type === "text" ? fitHeight2(n.text, n.width) : n.height });
+      const size = (n) => ({
+        width: n.width,
+        height: fit && n.type === "text" ? fitHeight2(n.text, n.width) : n.height
+      });
       for (const n of moving) g.setNode(n.id, size(n));
-      const inner = d.edges.filter((e) => pick.has(e.fromNode) && pick.has(e.toNode));
+      const inner = d.edges.filter(
+        (e) => pick.has(e.fromNode) && pick.has(e.toNode)
+      );
       const back = (e) => flow === "in" || /depends on/i.test(e.label || "");
-      for (const e of inner) back(e) ? g.setEdge(e.toNode, e.fromNode) : g.setEdge(e.fromNode, e.toNode);
+      for (const e of inner) {
+        back(e) ? g.setEdge(e.toNode, e.fromNode) : g.setEdge(e.fromNode, e.toNode);
+      }
       dagre.layout(g);
-      const box = (ns) => ns.reduce((b2, n) => ({ x0: Math.min(b2.x0, n.x), y0: Math.min(b2.y0, n.y), x1: Math.max(b2.x1, n.x + n.width), y1: Math.max(b2.y1, n.y + n.height) }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+      const box = (ns) => ns.reduce(
+        (b2, n) => ({
+          x0: Math.min(b2.x0, n.x),
+          y0: Math.min(b2.y0, n.y),
+          x1: Math.max(b2.x1, n.x + n.width),
+          y1: Math.max(b2.y1, n.y + n.height)
+        }),
+        { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
+      );
       const placed = moving.map((n) => {
         const p = g.node(n.id);
-        return { id: n.id, x: Math.round(p.x - p.width / 2), y: Math.round(p.y - p.height / 2), width: p.width, height: p.height };
+        return {
+          id: n.id,
+          x: Math.round(p.x - p.width / 2),
+          y: Math.round(p.y - p.height / 2),
+          width: p.width,
+          height: p.height
+        };
       });
       const b = box(placed), was = box(moving);
       const cx = Math.round((was.x0 + was.x1 - b.x0 - b.x1) / 2), cy = Math.round((was.y0 + was.y1 - b.y0 - b.y1) / 2);
       let ox = cx, oy = cy;
-      const hits = () => placed.some((p) => fixed.some((n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y));
+      const hits = () => placed.some(
+        (p) => fixed.some(
+          (n) => p.x + ox < n.x + n.width + 40 && p.x + ox + p.width + 40 > n.x && p.y + oy < n.y + n.height + 40 && p.y + oy + p.height + 40 > n.y
+        )
+      );
       for (let k = 1; k <= 400 && hits(); k++) {
         const step = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 40;
         if (dir === "LR" || dir === "RL") oy = cy + step;
         else ox = cx + step;
       }
-      const ops = placed.map((p) => ({ op: "set", id: p.id, x: p.x + ox, y: p.y + oy, width: p.width, height: p.height }));
+      const ops = placed.map((p) => ({
+        op: "set",
+        id: p.id,
+        x: p.x + ox,
+        y: p.y + oy,
+        width: p.width,
+        height: p.height
+      }));
       const [fromSide, toSide] = SIDES2[dir];
-      for (const e of inner) ops.push(back(e) ? { op: "sides", id: e.id, fromSide: toSide, toSide: fromSide } : { op: "sides", id: e.id, fromSide, toSide });
+      for (const e of inner) {
+        ops.push(
+          back(e) ? { op: "sides", id: e.id, fromSide: toSide, toSide: fromSide } : { op: "sides", id: e.id, fromSide, toSide }
+        );
+      }
       return ops;
     }
     module2.exports = layoutOps2;
@@ -918,7 +1181,12 @@ var require_relinkText = __commonJS({
   "src/board/relinkText.js"(exports2, module2) {
     var path2 = require("path");
     function relinkText(text, hits, to) {
-      return (text || "").replace(/!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g, (m, target, sub, alias) => hits(target.trim()) ? to(alias || path2.posix.basename(target.trim()).replace(/\.canvas$/, "")) : m);
+      return (text || "").replace(
+        /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
+        (m, target, sub, alias) => hits(target.trim()) ? to(
+          alias || path2.posix.basename(target.trim()).replace(/\.canvas$/, "")
+        ) : m
+      );
     }
     module2.exports = relinkText;
   }
@@ -955,7 +1223,11 @@ var require_linksTo = __commonJS({
         } catch (e) {
           continue;
         }
-        for (const n of d.nodes || []) if (!(f === board && n.id === skipId) && (n.type === "file" ? n.file === rel : relinkText(n.text, hits, () => "\0") !== (n.text || ""))) out.push(`${f} (${n.id})`);
+        for (const n of d.nodes || []) {
+          if (!(f === board && n.id === skipId) && (n.type === "file" ? n.file === rel : relinkText(n.text, hits, () => "\0") !== (n.text || ""))) {
+            out.push(`${f} (${n.id})`);
+          }
+        }
       }
       return out;
     }
@@ -981,13 +1253,24 @@ var require_mergeOps = __commonJS({
     function mergeOps2(d, ids) {
       const cards = d.nodes.filter((n) => ids.includes(n.id)).sort(byReading);
       if (cards.length < 2) throw new Error("merge needs 2+ cards");
-      if (cards.some((n) => n.type !== "text")) throw new Error("merge takes text cards only");
+      if (cards.some((n) => n.type !== "text")) {
+        throw new Error("merge takes text cards only");
+      }
       const [keep, ...rest] = cards;
       const gone = new Set(rest.map((n) => n.id));
       const all = new Set(cards.map((n) => n.id));
       const text = cards.map((n) => n.text.trim()).join("\n\n");
       const width = Math.max(...cards.map((n) => n.width));
-      const ops = [{ op: "set", id: keep.id, text, color: mostUrgent(cards.map((n) => n.color || "")), width, height: fitHeight2(text, width) }];
+      const ops = [
+        {
+          op: "set",
+          id: keep.id,
+          text,
+          color: mostUrgent(cards.map((n) => n.color || "")),
+          width,
+          height: fitHeight2(text, width)
+        }
+      ];
       const center = (n) => [n.x + n.width / 2, n.y + n.height / 2];
       const dist = (a, b) => Math.hypot(center(a)[0] - center(b)[0], center(a)[1] - center(b)[1]);
       const twoWay = (e) => e.fromEnd === "arrow" && e.toEnd !== "none";
@@ -995,11 +1278,16 @@ var require_mergeOps = __commonJS({
       for (const e of d.edges) {
         if (!all.has(e.fromNode) && !all.has(e.toNode)) continue;
         if (all.has(e.fromNode) && all.has(e.toNode)) {
-          if (gone.has(e.fromNode) || gone.has(e.toNode)) ops.push({ op: "unedge", id: e.id });
+          if (gone.has(e.fromNode) || gone.has(e.toNode)) {
+            ops.push({ op: "unedge", id: e.id });
+          }
           continue;
         }
         const out = all.has(e.fromNode), other = out ? e.toNode : e.fromNode;
-        const len = dist(d.nodes.find((n) => n.id === (out ? e.fromNode : e.toNode)), d.nodes.find((n) => n.id === other) || keep);
+        const len = dist(
+          d.nodes.find((n) => n.id === (out ? e.fromNode : e.toNode)),
+          d.nodes.find((n) => n.id === other) || keep
+        );
         if (!byOther.has(other)) byOther.set(other, []);
         byOther.get(other).push({ e, out, len });
       }
@@ -1007,11 +1295,21 @@ var require_mergeOps = __commonJS({
         list.sort((a, b) => a.len - b.len);
         const best = list.find((x) => twoWay(x.e)) || list[0];
         const both = list.some((x) => x.out) && list.some((x) => !x.out);
-        for (const x of list) if (x !== best) ops.push({ op: "unedge", id: x.e.id });
+        for (const x of list) {
+          if (x !== best) ops.push({ op: "unedge", id: x.e.id });
+        }
         const e = best.e;
-        if (gone.has(e.fromNode) || gone.has(e.toNode))
-          ops.push({ op: "retarget", id: e.id, fromNode: gone.has(e.fromNode) ? keep.id : e.fromNode, toNode: gone.has(e.toNode) ? keep.id : e.toNode });
-        if (both && !twoWay(e)) ops.push({ op: "ends", id: e.id, fromEnd: "arrow", toEnd: "arrow" });
+        if (gone.has(e.fromNode) || gone.has(e.toNode)) {
+          ops.push({
+            op: "retarget",
+            id: e.id,
+            fromNode: gone.has(e.fromNode) ? keep.id : e.fromNode,
+            toNode: gone.has(e.toNode) ? keep.id : e.toNode
+          });
+        }
+        if (both && !twoWay(e)) {
+          ops.push({ op: "ends", id: e.id, fromEnd: "arrow", toEnd: "arrow" });
+        }
       }
       for (const n of rest) ops.push({ op: "remove", id: n.id });
       return ops;
@@ -1026,7 +1324,9 @@ var require_place = __commonJS({
     function place2(d, near, w, h) {
       const p = d.nodes.find((n) => n.id === near);
       if (!p) throw new Error("no node " + near);
-      const overlaps = (x, y) => d.nodes.some((n) => x < n.x + n.width + 20 && x + w + 20 > n.x && y < n.y + n.height + 20 && y + h + 20 > n.y);
+      const overlaps = (x, y) => d.nodes.some(
+        (n) => x < n.x + n.width + 20 && x + w + 20 > n.x && y < n.y + n.height + 20 && y + h + 20 > n.y
+      );
       for (let k = 0; k < 20; k++) {
         const right = { x: p.x + p.width + 40, y: p.y + k * (h + 40) };
         if (!overlaps(right.x, right.y)) return right;
@@ -1045,7 +1345,9 @@ var require_restoreOps = __commonJS({
     var newId2 = require_newId();
     function restoreOps2(d, src) {
       const fm = (src.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) || [])[1];
-      if (!fm || !/^archived-from:/m.test(fm)) throw new Error("not an archived card note");
+      if (!fm || !/^archived-from:/m.test(fm)) {
+        throw new Error("not an archived card note");
+      }
       const get = (k) => {
         const m = new RegExp(`^${k}: (.*)$`, "m").exec(fm);
         if (!m) return void 0;
@@ -1057,7 +1359,14 @@ var require_restoreOps = __commonJS({
       const type = get("card-type") || "text";
       const ids = new Set(d.nodes.map((n) => n.id));
       const id = ids.has(get("card-id")) ? newId2() : get("card-id");
-      const node = { id, type, x: Number(get("x")), y: Number(get("y")), width: Number(get("width")), height: Number(get("height")) };
+      const node = {
+        id,
+        type,
+        x: Number(get("x")),
+        y: Number(get("y")),
+        width: Number(get("width")),
+        height: Number(get("height"))
+      };
       if (type === "text") node.text = body;
       if (type === "file") node.file = get("card-file");
       if (type === "link") node.url = get("card-url");
@@ -1066,9 +1375,13 @@ var require_restoreOps = __commonJS({
       const old = get("card-id");
       const edgeIds = new Set(d.edges.map((e) => e.id));
       for (const m of fm.matchAll(/^ {2}- (".*")$/gm)) {
-        const [eid, from, fromSide, to, toSide, label] = JSON.parse(m[1]).split(" | ");
+        const [eid, from, fromSide, to, toSide, label] = JSON.parse(m[1]).split(
+          " | "
+        );
         const fromNode = from === old ? id : from, toNode = to === old ? id : to;
-        if (edgeIds.has(eid) || !(fromNode === id || ids.has(fromNode)) || !(toNode === id || ids.has(toNode))) continue;
+        if (edgeIds.has(eid) || !(fromNode === id || ids.has(fromNode)) || !(toNode === id || ids.has(toNode))) {
+          continue;
+        }
         const edge = { id: eid, fromNode, toNode };
         if (fromSide) edge.fromSide = fromSide;
         if (toSide) edge.toSide = toSide;
@@ -1106,7 +1419,9 @@ var require_splitOps = __commonJS({
     var splitText = require_splitText();
     function splitOps2(d, id, by = "paragraph") {
       const card = d.nodes.find((n) => n.id === id);
-      if (!card || card.type !== "text") throw new Error("split takes one text card");
+      if (!card || card.type !== "text") {
+        throw new Error("split takes one text card");
+      }
       const pieces = splitText(card.text || "", by);
       if (pieces.length < 2) throw new Error(`nothing to split by ${by}`);
       let y = card.y;

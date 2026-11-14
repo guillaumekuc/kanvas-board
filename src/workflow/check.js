@@ -18,26 +18,57 @@ function check(board, ids) {
     const d = readBoard(b);
     for (const n of d.nodes) {
       if (n.type === 'group' || !n.color) continue;
-      const add = issue => issues.push({ board: b, id: n.id, text: (n.text || n.file || '').split('\n')[0], issue });
+      const add = (issue) =>
+        issues.push({
+          board: b,
+          id: n.id,
+          text: (n.text || n.file || '').split('\n')[0],
+          issue,
+        });
       const scoped = !ids || ids.has(n.id);
-      const links = n.type === 'file' ? [n.file] : [...(n.text || '').matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map(m => m[1].trim());
-      if (scoped) for (const l of links) if (!findFile(l)) add(`broken link [[${l}]]`);
-      if (scoped && n.type === 'text' && depth === 0 && !cardTextOk(n.text || '')) add('card text is neither a wish (≤ 3 lines), `[[Note]] · reason` nor `<recap> · done · [[Output]]`'); // plan-canvas cards are parts, free text
+      const links =
+        n.type === 'file'
+          ? [n.file]
+          : [
+              ...(n.text || '').matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g),
+            ].map((m) => m[1].trim());
+      if (scoped) {for (const l of links) if (!findFile(l)) add(`broken link [[${l}]]`);}
+      if (
+        scoped &&
+        n.type === 'text' &&
+        depth === 0 &&
+        !cardTextOk(n.text || '')
+      ) {
+add(
+          'card text is neither a wish (≤ 3 lines), `[[Note]] · reason` nor `<recap> · done · [[Output]]`',
+        );
+} // plan-canvas cards are parts, free text
       const { note, canvas } = cardLinks(n);
       if (note && note.startsWith(folder)) {
         const src = fs.readFileSync(abs(note), 'utf8');
         if (scoped) {
           const fm = (src.match(/^---\n([\s\S]*?)\n---/) || [])[1];
-          const keys = fm ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map(m => m[1]) : [];
-          if (keys.join() !== 'context') add(`note frontmatter is not \`context\` only (${keys.join(', ') || 'none'})`);
-          if (noteContexts(fm).length !== 1) add('note does not have exactly one context');
-          for (const s of ['Aim', 'Design']) if (!new RegExp(`^## ${s}\\s*$`, 'm').test(src)) add(`note has no ## ${s}`);
-          if (!/^### Done when\s*$/m.test(src)) add('note has no ### Done when (under Aim)');
-          if (n.color === '4' && !/^## Output\s*$/m.test(src)) add('green card, note has no ## Output');
+          const keys = fm
+            ? [...fm.matchAll(/^(\w[\w-]*):/gm)].map((m) => m[1])
+            : [];
+          if (keys.join() !== 'context') {
+add(
+              `note frontmatter is not \`context\` only (${keys.join(', ') || 'none'})`,
+            );
+}
+          if (noteContexts(fm).length !== 1) {add('note does not have exactly one context');}
+          for (const s of ['Aim', 'Design']) {
+if (!new RegExp(`^## ${s}\\s*$`, 'm').test(src)) {add(`note has no ## ${s}`);}
+}
+          if (!/^### Done when\s*$/m.test(src)) {add('note has no ### Done when (under Aim)');}
+          if (n.color === '4' && !/^## Output\s*$/m.test(src)) {add('green card, note has no ## Output');}
         }
-        if (n.color === WORKING && Date.now() - fs.statSync(abs(note)).mtimeMs > ORANGE_STALE_MS) add('orange card, note untouched for 1h+ (interrupted pass?)');
+        if (
+          n.color === WORKING &&
+          Date.now() - fs.statSync(abs(note)).mtimeMs > ORANGE_STALE_MS
+        ) {add('orange card, note untouched for 1h+ (interrupted pass?)');}
       }
-      if (canvas && !seen.has(canvas) && depth < 2) walk(canvas, depth + 1, seen);
+      if (canvas && !seen.has(canvas) && depth < 2) {walk(canvas, depth + 1, seen);}
     }
   };
   const folder = notesFolder();

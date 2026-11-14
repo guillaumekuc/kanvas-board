@@ -11,7 +11,10 @@ module.exports = {
       Program(program) {
         const entities = program.body.flatMap(entityNodes);
         for (const extraEntity of entities.slice(1)) {
-          context.report({ node: extraEntity, message: `File holds ${entities.length} entities; keep one per file.` });
+          context.report({
+            node: extraEntity,
+            message: `File holds ${entities.length} entities; keep one per file.`,
+          });
         }
       },
     };

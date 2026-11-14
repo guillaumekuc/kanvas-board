@@ -4,8 +4,8 @@ const splitText = require('./splitText.js');
 
 // One text card becomes one card per piece, stacked under it; the first keeps the id, color and edges.
 function splitOps(d, id, by = 'paragraph') {
-  const card = d.nodes.find(n => n.id === id);
-  if (!card || card.type !== 'text') throw new Error('split takes one text card');
+  const card = d.nodes.find((n) => n.id === id);
+  if (!card || card.type !== 'text') {throw new Error('split takes one text card');}
   const pieces = splitText(card.text || '', by);
   if (pieces.length < 2) throw new Error(`nothing to split by ${by}`);
   let y = card.y;
