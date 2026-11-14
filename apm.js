@@ -44,7 +44,7 @@ function loadSettings(stored, legacy) {
 }
 
 class ApmCounter {
-	// plugin: the Canvas board plugin (registerEvent, registerDomEvent, registerInterval, addStatusBarItem, activeCanvas, app);
+	// plugin: the Kanvas board plugin (registerEvent, registerDomEvent, registerInterval, addStatusBarItem, activeCanvas, app);
 	// save(): writes the plugin's data.json, with this.settings in it.
 	constructor(plugin, settings, save) {
 		this.plugin = plugin;
