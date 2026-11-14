@@ -35,10 +35,10 @@ const BOARD = {
       position: [300, 200],
     }),
     card('nest0000000000a6', '[[Sub.canvas|Sub]]', {
-      color: null,
+      color: '3',
       position: [600, 200],
     }),
-    card('orng0000000000a7', 'Running elsewhere', {
+    card('orng0000000000a7', '[[Brief note]] · running', {
       color: '2',
       position: [0, 400],
     }),
@@ -75,6 +75,14 @@ const BOARD = {
 const SUB = {
   nodes: [
     card('sub00000000000b1', 'Nested red', { color: '1', position: [0, 0] }),
+    card('sub00000000000b3', '[[Missing note]] · 1 questions', {
+      color: '3',
+      position: [0, 200],
+    }),
+    card('sub00000000000b4', '[[Bad note]] · review', {
+      color: '5',
+      position: [300, 200],
+    }),
     card('sub00000000000b2', 'Nested green', {
       color: '4',
       position: [300, 0],
@@ -86,6 +94,8 @@ const SUB = {
 const NOTES = {
   'Projects/_assets/plans/Brief note.md':
     '---\ncontext:\n  - PD\n---\n## Aim\nA brief.\n### Done when\n- it works\n\n## Design\nx\n\n## Open questions\n- [?] Which way?\n',
+  'Projects/_assets/plans/Bad note.md':
+    '---\ncontext:\n  - PD\n  - G&A\nstatus: open\n---\n## Design\nNo aim.\n',
   'Projects/_assets/plans/Plan note.md':
     '---\ncontext:\n  - PD\n---\n## Aim\nA plan.\n### Done when\n- done\n\n## Design\ny\n\n## Parts\n- [x] first\n- [ ] second\n',
 };
@@ -101,7 +111,10 @@ module.exports = function writeFixture(vaultRoot, pluginSources) {
   for (const [name, source] of Object.entries(pluginSources)) {
     fileSystem.cpSync(source, path.join(pluginDir, name), { recursive: true });
   }
-  fileSystem.writeFileSync(path.join(pluginDir, 'data.json'), '{}');
+  fileSystem.writeFileSync(
+    path.join(pluginDir, 'data.json'),
+    JSON.stringify({ notesFolder: 'Projects/_assets/plans' }),
+  );
   const files = {
     'Board.canvas': JSON.stringify(BOARD, null, '\t'),
     'Sub.canvas': JSON.stringify(SUB, null, '\t'),
