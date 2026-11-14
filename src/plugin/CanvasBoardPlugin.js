@@ -16,6 +16,12 @@ const nextTurn = require('./nextTurn.js');
 const parseColors = require('./parseColors.js');
 const path = require('path');
 
+const CONTROL_BUTTONS = [
+  ['find', 'Search current canvas', 'search'],
+  ['filter', 'Filter cards', 'filter'],
+  ['tidy-layout', 'Tidy layout', 'network'],
+];
+
 class CanvasBoardPlugin extends Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULTS, await this.loadData());
@@ -314,115 +320,125 @@ class CanvasBoardPlugin extends Plugin {
 
   // Buttons on a canvas view, added once (tick runs every 2 s and adds back what the canvas redrew away).
   decorate(view) {
-    const canvas = view.canvas;
-    // View header: Run pass, a command about the whole board.
+    this.decorateHeader(view);
+    const controls =
+      view.canvas.wrapperEl &&
+      view.canvas.wrapperEl.querySelector('.canvas-controls');
+    if (controls) this.decorateControls(view, controls);
+    this.decorateSelectionToolbar(view.canvas);
+  }
+
+  // View header: Run pass, a command about the whole board.
+  decorateHeader(view) {
     if (!view.canvasBoardAction && view.addAction) {
       view.canvasBoardAction = view.addAction('play', 'Run pass', () =>
         this.runPass(),
       );
     }
-    if (view.canvasBoardAction) {
-      view.canvasBoardAction.setAttr(
+    if (!view.canvasBoardAction) return;
+    view.canvasBoardAction.setAttr(
+      'aria-label',
+      this.keyedLabel('Run pass', 'run-pass'),
+    );
+  }
+
+  // Control bar (top right): Search, Filter, Tidy layout, above Canvas help.
+  decorateControls(view, controls) {
+    const group =
+      controls.querySelector('.canvas-board-controls') ||
+      this.addControlGroup(view, controls);
+    for (const button of group.children) {
+      button.setAttr(
         'aria-label',
-        this.keyedLabel('Run pass', 'run-pass'),
+        this.keyedLabel(button.dataset.label, button.dataset.command),
       );
     }
-    // Control bar (top right): Search, Filter, Tidy layout, above Canvas help.
-    const controls =
-      canvas.wrapperEl && canvas.wrapperEl.querySelector('.canvas-controls');
-    if (controls) {
-      let group = controls.querySelector('.canvas-board-controls');
-      if (!group) {
-        group = createDiv({
-          cls: 'canvas-control-group mod-raised canvas-board-controls',
-        });
-        const help = controls.lastElementChild;
-        controls.insertBefore(group, help);
-        for (const [id, label, icon] of [
-          ['find', 'Search current canvas', 'search'],
-          ['filter', 'Filter cards', 'filter'],
-          ['tidy-layout', 'Tidy layout', 'network'],
-        ]) {
-          const button = group.createDiv({
-            cls: 'canvas-control-item',
-            attr: {
-              'data-command': id,
-              'data-label': label,
-              'data-tooltip-position': 'left',
-            },
-          });
-          setIcon(button, icon);
-          button.addEventListener('click', (event) => {
-            if (id === 'tidy-layout' && event.shiftKey) {
-              this.cycleLayoutDirection();
-            } else this.runOn(view, id);
-          });
-        }
-      }
-      for (const button of group.children) {
-        button.setAttr(
-          'aria-label',
-          this.keyedLabel(button.dataset.label, button.dataset.command),
-        );
-      }
-      // The tidy icon points the way the layout flows; its tooltip says so and how to change it.
-      const tidy = group.querySelector('[data-command="tidy-layout"]');
-      const direction =
-        LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
-      if (tidy) {
-        this.tidyTurn = nextTurn(
-          this.tidyTurn ?? direction.turn,
-          direction.turn,
-        );
-        tidy.style.setProperty(
-          '--canvas-board-tidy-turn',
-          `${this.tidyTurn}deg`,
-        );
-        tidy.setAttr(
-          'aria-label',
-          this.keyedLabel(
-            `Tidy layout: ${direction.name}\nShift-click: next direction`,
-            'tidy-layout',
-          ),
-        );
-      }
-    }
-    // Selection toolbar: Fold, Unfold, Archive after the canvas's own buttons, when they apply.
-    const menu = canvas.menu;
-    if (menu && menu.render && !menu.canvasBoardRender) {
-      const original = (menu.canvasBoardRender = menu.render);
-      const plugin = this;
-      menu.render = function (...values) {
-        const result = original.apply(this, values);
-        try {
-          plugin.menuButtons(canvas);
-        } catch (error) {
-          console.error('canvas-board: selection toolbar', error);
-        }
-        return result;
-      };
-      // The color picker opens on click: its swatches get the state as tooltip.
-      menu.canvasBoardObserver = new MutationObserver(() => {
-        for (const item of menu.menuEl.querySelectorAll(
-          '.canvas-color-picker-item:not(.canvas-color-picker-custom)',
-        )) {
-          const color =
-            (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || '';
-          const row = COLORS.find((x) => x[1] === color);
-          if (row) {
-            item.setAttrs({
-              'aria-label': this.keyedLabel(
-                this.colorLabel(row[0]),
-                `color-${row[2]}`,
-              ),
-              'data-tooltip-position': 'top',
-            });
-          }
-        }
+    const tidy = group.querySelector('[data-command="tidy-layout"]');
+    if (tidy) this.decorateTidyButton(tidy);
+  }
+
+  addControlGroup(view, controls) {
+    const group = createDiv({
+      cls: 'canvas-control-group mod-raised canvas-board-controls',
+    });
+    controls.insertBefore(group, controls.lastElementChild);
+    for (const [id, label, icon] of CONTROL_BUTTONS) {
+      const button = group.createDiv({
+        cls: 'canvas-control-item',
+        attr: {
+          'data-command': id,
+          'data-label': label,
+          'data-tooltip-position': 'left',
+        },
       });
-      menu.canvasBoardObserver.observe(menu.menuEl, {
-        childList: true,
-        subtree: true,
+      setIcon(button, icon);
+      button.addEventListener('click', (event) => {
+        const isNextDirection = id === 'tidy-layout' && event.shiftKey;
+        if (isNextDirection) this.cycleLayoutDirection();
+        else this.runOn(view, id);
+      });
+    }
+    return group;
+  }
+
+  // The tidy icon points the way the layout flows; its tooltip says so and
+  // how to change it.
+  decorateTidyButton(tidy) {
+    const direction =
+      LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
+    this.tidyTurn = nextTurn(this.tidyTurn ?? direction.turn, direction.turn);
+    tidy.style.setProperty('--canvas-board-tidy-turn', `${this.tidyTurn}deg`);
+    tidy.setAttr(
+      'aria-label',
+      this.keyedLabel(
+        `Tidy layout: ${direction.name}
+Shift-click: next direction`,
+        'tidy-layout',
+      ),
+    );
+  }
+
+  // Selection toolbar: Fold, Unfold, Archive after the canvas's own buttons,
+  // when they apply.
+  decorateSelectionToolbar(canvas) {
+    const menu = canvas.menu;
+    if (!menu || !menu.render || menu.canvasBoardRender) return;
+    const original = (menu.canvasBoardRender = menu.render);
+    const plugin = this;
+    menu.render = function (...values) {
+      const result = original.apply(this, values);
+      try {
+        plugin.menuButtons(canvas);
+      } catch (error) {
+        console.error('canvas-board: selection toolbar', error);
+      }
+      return result;
+    };
+    // The color picker opens on click: its swatches get the state as tooltip.
+    menu.canvasBoardObserver = new MutationObserver(() =>
+      this.labelColorSwatches(menu.menuEl),
+    );
+    menu.canvasBoardObserver.observe(menu.menuEl, {
+      childList: true,
+      subtree: true,
+    });
+  }
+
+  labelColorSwatches(menuEl) {
+    const swatches = menuEl.querySelectorAll(
+      '.canvas-color-picker-item:not(.canvas-color-picker-custom)',
+    );
+    for (const item of swatches) {
+      const color =
+        (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || '';
+      const row = COLORS.find((x) => x[1] === color);
+      if (!row) continue;
+      item.setAttrs({
+        'aria-label': this.keyedLabel(
+          this.colorLabel(row[0]),
+          `color-${row[2]}`,
+        ),
+        'data-tooltip-position': 'top',
       });
     }
   }
