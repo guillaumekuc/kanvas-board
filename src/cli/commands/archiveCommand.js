@@ -15,7 +15,8 @@ function archiveCommand(cli) {
   const ids = cli.rest[0].split(',');
   for (const id of ids) {
     const node = canvasData.nodes.find((each) => each.id === id);
-    const contexts = node && cardContexts(node);
+    const contexts =
+      (node && cardContexts(node)) || settings().archiveContexts;
     const date = today();
     const archived = archiveNote(canvasData, { id, board, date, contexts });
     const folder = archiveDir(board, settings());
