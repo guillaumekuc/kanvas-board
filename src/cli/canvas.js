@@ -1,7 +1,35 @@
+const { DEFAULT_BOARD, settings } = require('../board/store.js');
+const { commands: COMMANDS } = require('./commands.js');
+
+// `canvas.js <command> <board> [values] [--option value] [--flag]`: what the
+// commands read from it.
+function parseArguments(args) {
+  function isValue(index) {
+    return index > 0 && args[index - 1].startsWith('--');
+  }
+  const positional = args.filter(
+    (argument, index) => !argument.startsWith('--') && !isValue(index),
+  );
+  const [commandName, boardArg, ...rest] = positional;
+  function option(name) {
+    const index = args.indexOf(name);
+    return index >= 0 ? args[index + 1] : undefined;
+  }
+  const defaultBoard = String(settings().defaultBoard || '').trim();
+  return {
+    commandName,
+    board: boardArg || defaultBoard || DEFAULT_BOARD,
+    boardArg,
+    rest,
+    option,
+    list: (name) => (option(name) || '').split(',').filter(Boolean),
+    hasFlag: (name) => args.includes(name),
+    print: (value) => console.log(JSON.stringify(value, null, 2)),
+  };
+}
+
 // The canvas.js command line; usage in usage.txt (also the top of the built
 // canvas.js).
-const COMMANDS = require('./commands/index.js');
-const parseArguments = require('./parseArguments.js');
 
 const USAGE =
   'Usage: node .obsidian/plugins/kanvas-board/canvas.js ' +
