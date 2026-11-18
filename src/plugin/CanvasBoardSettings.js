@@ -1,7 +1,7 @@
-const { COLORS, COLOR_NUM, DEFAULTS, WORKFLOW } = require('./constants.js');
+const { COLORS, COLOR_NUM, DEFAULTS, WORKFLOW } = require('./shared.js');
 const { Notice, PluginSettingTab, Setting } = require('obsidian');
 const fileSystem = require('fs');
-const parseColors = require('./parseColors.js');
+const { parseColors } = require('./pass.js');
 const path = require('path');
 
 class CanvasBoardSettings extends PluginSettingTab {

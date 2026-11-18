@@ -1,6 +1,15 @@
 const assert = require('assert');
-const agentWords = require('../src/plugin/agentWords.js');
-const terminalLaunch = require('../src/plugin/terminalLaunch.js');
+const Module = require('module');
+
+// pass.js also holds startPass, which needs Obsidian: stub it.
+const resolve = Module._resolveFilename;
+Module._resolveFilename = function resolveStub(request, ...rest) {
+  if (request === 'obsidian') {
+    return require.resolve('./plugin/obsidianStub.js');
+  }
+  return resolve.call(this, request, ...rest);
+};
+const { agentWords, terminalLaunch } = require('../src/plugin/pass.js');
 
 const prompt = 'Run a Kanvas board pass on B.canvas: follow skill.md';
 

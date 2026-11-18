@@ -1,12 +1,14 @@
 // node test/apm.test.js: the APM counter with Obsidian stubbed.
 const assert = require('assert');
-const ApmCounter = require('../src/apm/ApmCounter.js');
-const loadSettings = require('../src/apm/loadSettings.js');
-const band = require('../src/apm/band.js');
-const rateName = require('../src/apm/rateName.js');
-const touchedCards = require('../src/apm/touchedCards.js');
-const cardsOf = require('../src/apm/cardsOf.js');
-const unitOf = require('../src/apm/unitOf.js');
+const {
+  ApmCounter,
+  loadSettings,
+  band,
+  rateName,
+  touchedCards,
+  cardsOf,
+  unitOf,
+} = require('../src/apm/apm.js');
 
 assert.strictEqual(rateName(15), 'AP15M');
 assert.strictEqual(rateName(1), 'APM');
