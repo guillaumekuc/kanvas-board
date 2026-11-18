@@ -41,8 +41,12 @@ module.exports = [
       'no-else-return': ['error', { allowElseIf: false }],
       'no-lonely-if': 'error',
       'max-depth': ['error', 2],
-      // One entity per file
-      'style/one-entity-per-file': 'error',
+      // Deep modules grouped by feature: about 200-500 lines a file, never
+      // past 1000
+      'max-lines': [
+        'error',
+        { max: 1000, skipBlankLines: true, skipComments: true },
+      ],
       // Avoid globals
       'no-implicit-globals': 'error',
       'no-global-assign': 'error',
