@@ -5,8 +5,8 @@ const yamlStr = require('./yamlStr.js');
 // whose frontmatter keeps what a restore needs: board, id, place, size, color
 // and its edges. Listed by Canvas archive.base. Returns { name, content,
 // operations }. `contexts`: the context of the note the archived card links,
-// else G&A.
-function archiveNote(canvasData, { id, board, date, contexts = ['G&A'] }) {
+// else data.json `archiveContexts`, else none.
+function archiveNote(canvasData, { id, board, date, contexts = [] }) {
   const node = canvasData.nodes.find((node) => node.id === id);
   if (!node) throw new Error('no node ' + id);
   const edges = canvasData.edges
@@ -25,7 +25,7 @@ function archiveNote(canvasData, { id, board, date, contexts = ['G&A'] }) {
     );
   const frontmatter = [
     '---',
-    'context:',
+    ...(contexts.length ? ['context:'] : []),
     ...contexts.map((context) => `  - ${context}`),
     `archived-from: "[[${board}]]"`,
     `archived: ${date}`,

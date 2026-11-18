@@ -90,7 +90,7 @@ The plugin starts processes (`child_process`): the terminal for a pass, and `can
 | Terminal command | empty: the platform's terminal |
 | Agent command | empty: Claude Code (`~/.local/bin/claude`, else `claude`) |
 
-No setting screen: `skipFolders` in `data.json` (folder names, e.g. `["private"]`) keeps `canvas.js` out of those folders when it looks up linked notes.
+No setting screen: `skipFolders` in `data.json` (folder names, e.g. `["private"]`) keeps `canvas.js` out of those folders when it looks up linked notes. `archiveContexts` (e.g. `["work"]`) is the `context` of an archive note whose card links no note with one; default: none.
 
 ## License
 
