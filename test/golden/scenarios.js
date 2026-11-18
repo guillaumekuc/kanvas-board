@@ -30,7 +30,7 @@ module.exports = {
       BOARD,
       'ctx00000000000a5',
       '--file',
-      'Projects/_assets/plans/Plan note.md',
+      'Plans/Plan note.md',
     ],
   ],
   add: [
