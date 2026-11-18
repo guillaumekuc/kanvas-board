@@ -94,14 +94,15 @@ const SUB = {
 };
 
 const NOTES = {
-  'Projects/_assets/plans/Brief note.md':
-    '---\ncontext:\n  - PD\n---\n## Aim\nA brief.\n### Done ' +
+  'Plans/Brief note.md':
+    '---\ncontext:\n  - work\n---\n## Aim\nA brief.\n### Done ' +
     'when\n- it works\n\n## Design\nx\n\n## Open questions\n- [?] ' +
     'Which way?\n',
-  'Projects/_assets/plans/Bad note.md':
-    '---\ncontext:\n  - PD\n  - G&A\nstatus: open\n---\n## Design\nNo aim.\n',
-  'Projects/_assets/plans/Plan note.md':
-    '---\ncontext:\n  - PD\n---\n## Aim\nA plan.\n### Done ' +
+  'Plans/Bad note.md':
+    '---\ncontext:\n  - work\n  - home\nstatus: open\n---\n' +
+    '## Design\nNo aim.\n',
+  'Plans/Plan note.md':
+    '---\ncontext:\n  - work\n---\n## Aim\nA plan.\n### Done ' +
     'when\n- done\n\n## Design\ny\n\n## Parts\n- [x] first\n- [ ] ' +
     'second\n',
 };
@@ -119,7 +120,7 @@ module.exports = function writeFixture(vaultRoot, pluginSources) {
   }
   fileSystem.writeFileSync(
     path.join(pluginDir, 'data.json'),
-    JSON.stringify({ notesFolder: 'Projects/_assets/plans' }),
+    JSON.stringify({ notesFolder: 'Plans' }),
   );
   const files = {
     'Board.canvas': JSON.stringify(BOARD, null, '\t'),
