@@ -15,7 +15,9 @@ function registerArchiveCommand(plugin) {
           id: node.id,
           board,
           date: window.moment().format('YYYY-MM-DD'),
-          contexts: plugin.cardContexts(node, board),
+          contexts:
+            plugin.cardContexts(node, board) ||
+            plugin.settings.archiveContexts,
         });
         notes.push(plugin.freePath(folder + '/', archived.name, '.md'));
         await plugin.app.vault.create(

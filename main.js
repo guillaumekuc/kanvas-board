@@ -309,7 +309,7 @@ var require_archiveNote = __commonJS({
   "src/board/archiveNote.js"(exports2, module2) {
     var noteName = require_noteName();
     var yamlStr = require_yamlStr();
-    function archiveNote(canvasData, { id, board, date, contexts = ["G&A"] }) {
+    function archiveNote(canvasData, { id, board, date, contexts = [] }) {
       const node = canvasData.nodes.find((node2) => node2.id === id);
       if (!node) throw new Error("no node " + id);
       const edges = canvasData.edges.filter((edge) => edge.fromNode === id || edge.toNode === id).map(
@@ -326,7 +326,7 @@ var require_archiveNote = __commonJS({
       );
       const frontmatter = [
         "---",
-        "context:",
+        ...contexts.length ? ["context:"] : [],
         ...contexts.map((context) => `  - ${context}`),
         `archived-from: "[[${board}]]"`,
         `archived: ${date}`,
@@ -4649,7 +4649,7 @@ var require_registerArchiveCommand = __commonJS({
               id: node.id,
               board,
               date: window.moment().format("YYYY-MM-DD"),
-              contexts: plugin.cardContexts(node, board)
+              contexts: plugin.cardContexts(node, board) || plugin.settings.archiveContexts
             });
             notes.push(plugin.freePath(folder + "/", archived.name, ".md"));
             await plugin.app.vault.create(
