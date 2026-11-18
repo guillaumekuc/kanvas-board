@@ -25,13 +25,7 @@ module.exports = {
       '--text',
       'Renamed',
     ],
-    [
-      'set',
-      BOARD,
-      'ctx00000000000a5',
-      '--file',
-      'Plans/Plan note.md',
-    ],
+    ['set', BOARD, 'ctx00000000000a5', '--file', 'Plans/Plan note.md'],
   ],
   add: [
     [
