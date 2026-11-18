@@ -5286,7 +5286,7 @@ var require_registerViewCommands = __commonJS({
           if (!checking) {
             let findBar = plugin.finds.get(canvas);
             if (!findBar) {
-              findBar = new FindBar(this, canvas);
+              findBar = new FindBar(plugin, canvas);
               plugin.finds.set(canvas, findBar);
             }
             findBar.open();
