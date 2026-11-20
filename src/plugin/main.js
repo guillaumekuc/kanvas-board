@@ -1,1 +1,1 @@
-module.exports = require('./CanvasBoardPlugin.js');
+export { default } from './CanvasBoardPlugin.js';

@@ -1,6 +1,6 @@
 # Source layout
 
-Files group by feature ("change together, stay together"): about 200–500 lines each, never past 1000 (style check `max-lines`). `npm run build` bundles `plugin/main.js` into `main.js` (loaded by Obsidian) and `cli/canvas.js` into `canvas.js` (run by the agent); both are committed, so the plugin folder works without a build.
+`src/` is ES modules (`src/package.json`): imports at the top of each file, no `require`. Files group by feature ("change together, stay together"): about 200–500 lines each, never past 1000 (style check `max-lines`). `npm run build` bundles `plugin/main.js` into `main.js` (loaded by Obsidian) and `cli/canvas.js` into `canvas.js` (run by the agent); both are committed, so the plugin folder works without a build.
 
 - `board/`: read and edit canvas boards.
 	- `store.js`: constants, settings (`data.json`), vault paths and the file index, reading and writing boards, the operation handlers and `applyOps` / `writeOps` (through the plugin's API when the board is open in Obsidian).

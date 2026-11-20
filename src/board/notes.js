@@ -1,7 +1,7 @@
-const path = require('path');
-const fileSystem = require('fs');
-const { relinkText } = require('./refactor.js');
-const {
+import path from 'path';
+import fileSystem from 'fs';
+import { relinkText } from './refactor.js';
+import {
   findFile,
   parseOrNull,
   readOrNull,
@@ -11,7 +11,7 @@ const {
   COLORS,
   ARCHIVE_DIR,
   newId,
-} = require('./store.js');
+} from './store.js';
 
 function cardLinks(node) {
   const targets =
@@ -303,7 +303,7 @@ function restoreOps(canvasData, source) {
   return { board, operations };
 }
 
-module.exports = {
+export {
   cardLinks,
   linksTo,
   noteContexts,

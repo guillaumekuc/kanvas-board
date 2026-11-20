@@ -1,9 +1,16 @@
-const { execFileSync } = require('child_process');
-const path = require('path');
-const fileSystem = require('fs');
+import { execFileSync } from 'child_process';
+import path from 'path';
+import fileSystem from 'fs';
+import { fileURLToPath } from 'url';
 
+// The plugin folder: __dirname of the built bundles (main.js and canvas.js
+// are CommonJS). Unbundled (tests import src/ directly) it is the repo root.
+const PLUGIN_DIR =
+  typeof __dirname === 'string'
+    ? __dirname
+    : path.resolve(fileURLToPath(import.meta.url), '..', '..', '..');
 // <vault>/.obsidian/plugins/kanvas-board
-const ROOT = path.resolve(__dirname, '..', '..', '..');
+const ROOT = path.resolve(PLUGIN_DIR, '..', '..', '..');
 const DEFAULT_BOARD = 'Board.canvas';
 // plus data.json `skipFolders` (folder names), see findFile
 const SKIP_DIRS = new Set(['.git', '.obsidian', '.trash', 'node_modules']);
@@ -46,7 +53,7 @@ function mostUrgent(colors) {
 function settings() {
   try {
     return JSON.parse(
-      fileSystem.readFileSync(path.join(__dirname, 'data.json'), 'utf8'),
+      fileSystem.readFileSync(path.join(PLUGIN_DIR, 'data.json'), 'utf8'),
     );
   } catch (error) {
     return {};
@@ -331,8 +338,9 @@ function freePath(folder, name, extension) {
   }
 }
 
-module.exports = {
+export {
   ROOT,
+  PLUGIN_DIR,
   DEFAULT_BOARD,
   SKIP_DIRS,
   COLORS,

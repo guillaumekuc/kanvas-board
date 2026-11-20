@@ -1,7 +1,7 @@
-const { Notice } = require('obsidian');
-const path = require('path');
-const { newId } = require('../board/store.js');
-const { COLOR_NUM, WORKFLOW } = require('./shared.js');
+import { Notice } from 'obsidian';
+import path from 'path';
+import { newId } from '../board/store.js';
+import { COLOR_NUM, WORKFLOW } from './shared.js';
 
 const COLUMN_WIDTH = 400;
 const STEPS_X = COLUMN_WIDTH + 160;
@@ -36,8 +36,6 @@ const STEPS = [
 const TRY_IT =
   'Try it: color this card cyan, then run a pass.\n\n' +
   'Write a short note that explains this board in my own words.';
-
-module.exports = { COLUMN_WIDTH, STEPS_X, DOT, STEPS, TRY_IT };
 
 const STEP_HEIGHT = 160;
 
@@ -151,9 +149,4 @@ async function createStarterBoard(plugin) {
   }
 }
 
-module.exports = {
-  firstStepsCanvas,
-  legendNodes,
-  starterBoardPath,
-  createStarterBoard,
-};
+export { firstStepsCanvas, legendNodes, starterBoardPath, createStarterBoard };
