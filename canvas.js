@@ -4335,7 +4335,7 @@ function noteIssues(source, color) {
   const frontmatter = (source.match(FRONTMATTER2) || [])[1];
   const keys = frontmatter ? [...frontmatter.matchAll(FRONTMATTER_KEY)].map((match) => match[1]) : [];
   function hasHeading(heading) {
-    const headingLine = new RegExp(`^${heading}s*$`, "m");
+    const headingLine = new RegExp(`^${heading}\\s*$`, "m");
     return headingLine.test(source);
   }
   const issues = [];

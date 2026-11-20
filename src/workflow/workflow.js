@@ -190,7 +190,7 @@ function noteIssues(source, color) {
     ? [...frontmatter.matchAll(FRONTMATTER_KEY)].map((match) => match[1])
     : [];
   function hasHeading(heading) {
-    const headingLine = new RegExp(`^${heading}\s*$`, 'm');
+    const headingLine = new RegExp(`^${heading}\\s*$`, 'm');
     return headingLine.test(source);
   }
   const issues = [];
