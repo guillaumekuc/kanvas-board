@@ -3171,6 +3171,8 @@ var import_path = __toESM(require("path"), 1);
 var import_fs = __toESM(require("fs"), 1);
 var import_url = require("url");
 var import_meta = {};
+var MARKDOWN_FILE = /\.md$/;
+var EVAL_RESULT = /=>\s?([\s\S]*)$/;
 var PLUGIN_DIR = typeof __dirname === "string" ? __dirname : import_path.default.resolve((0, import_url.fileURLToPath)(import_meta.url), "..", "..", "..");
 var ROOT = import_path.default.resolve(PLUGIN_DIR, "..", "..", "..");
 var DEFAULT_BOARD = "Board.canvas";
@@ -3249,7 +3251,7 @@ var VaultFileIndex = class {
       this.files.set(key, relativePath);
     }
     this.files.set(relativePath, relativePath);
-    this.files.set(relativePath.replace(/\.md$/, ""), relativePath);
+    this.files.set(relativePath.replace(MARKDOWN_FILE, ""), relativePath);
   }
 };
 var vaultFileIndex = new VaultFileIndex();
@@ -3285,7 +3287,7 @@ function tryEval(binary, code) {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
-    const match = out.match(/=>\s?([\s\S]*)$/);
+    const match = out.match(EVAL_RESULT);
     if (!match) {
       throw new Error(out.trim());
     }
@@ -3463,6 +3465,8 @@ var import_dagre_min = __toESM(require_dagre_min(), 1);
 var import_path5 = __toESM(require("path"), 1);
 
 // src/board/geometry.js
+var WIKILINK_SHOWN_TEXT = /\[\[([^\]|]*\|)?([^\]]*)\]\]/g;
+var DEPENDS_ON_LABEL = /depends on/i;
 function bounds(nodes) {
   const left = Math.min(...nodes.map((node) => node.x)), top = Math.min(...nodes.map((node) => node.y));
   return {
@@ -3514,9 +3518,7 @@ function fitHeight(text, width) {
   const lines = String(text || "").split("\n").reduce(
     (lines2, line) => lines2 + Math.max(
       1,
-      Math.ceil(
-        line.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").length / perLine
-      )
+      Math.ceil(line.replace(WIKILINK_SHOWN_TEXT, "$2").length / perLine)
     ),
     0
   );
@@ -3539,7 +3541,7 @@ function groupAround(nodes, label) {
   };
 }
 function isBackEdge(edge, flow) {
-  return flow === "in" || /depends on/i.test(edge.label || "");
+  return flow === "in" || DEPENDS_ON_LABEL.test(edge.label || "");
 }
 function isTwoWay(edge) {
   return edge.fromEnd === "arrow" && edge.toEnd !== "none";
@@ -3679,6 +3681,12 @@ var import_fs2 = __toESM(require("fs"), 1);
 
 // src/board/refactor.js
 var import_path2 = __toESM(require("path"), 1);
+var EXTRA_BLANK_LINES = /\n{3,}/g;
+var HEADING_SEPARATOR = /^h([1-6])$/;
+var TOP_LEVEL_BULLET = /^([-*+]|\d+[.)]) /;
+var BLANK_LINE = /\n\s*\n/;
+var WIKILINK_PARTS = /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g;
+var CANVAS_FILE = /\.canvas$/;
 function collapseOps(canvasData, { ids, file, label }) {
   const pick = withGroupMembers(canvasData, ids);
   const moving = canvasData.nodes.filter((node) => pick.has(node.id));
@@ -3782,7 +3790,7 @@ function extractOps(canvasData, { id, part, from }) {
   if (!part.trim() || offset < 0) {
     throw new Error("text not found in the card");
   }
-  const left = (card.text.slice(0, offset) + card.text.slice(offset + part.length)).replace(/\n{3,}/g, "\n\n").trim();
+  const left = (card.text.slice(0, offset) + card.text.slice(offset + part.length)).replace(EXTRA_BLANK_LINES, "\n\n").trim();
   const text = part.trim();
   const height = fitHeight(text, card.width);
   let top = card.y;
@@ -3884,16 +3892,23 @@ function mergeOps(canvasData, ids) {
     ...rest.map((node) => ({ op: "remove", id: node.id }))
   ];
 }
+function pieceStart(separator) {
+  const headingMatch = HEADING_SEPARATOR.exec(separator);
+  if (headingMatch) {
+    const headingOfLevel = new RegExp(`^#{${headingMatch[1]}} `);
+    return headingOfLevel;
+  }
+  return separator === "bullet" ? TOP_LEVEL_BULLET : null;
+}
 function splitText(text, separator) {
-  const headingMatch = /^h([1-6])$/.exec(separator);
-  const starts = headingMatch ? new RegExp(`^#{${headingMatch[1]}} `) : separator === "bullet" ? /^([-*+]|\d+[.)]) / : null;
+  const starts = pieceStart(separator);
   const pieces = starts ? text.split("\n").reduce((pieces2, line) => {
     if (starts.test(line) || !pieces2.length) {
       pieces2.push([]);
     }
     pieces2[pieces2.length - 1].push(line);
     return pieces2;
-  }, []).map((pieceLines) => pieceLines.join("\n")) : text.split(/\n\s*\n/);
+  }, []).map((pieceLines) => pieceLines.join("\n")) : text.split(BLANK_LINE);
   return pieces.map((piece) => piece.trim()).filter(Boolean);
 }
 function splitOps(canvasData, id, separator = "paragraph") {
@@ -3920,24 +3935,40 @@ function splitOps(canvasData, id, separator = "paragraph") {
   });
 }
 function relinkText(text, hits, replace) {
-  return (text || "").replace(
-    /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
-    (link, ...groups) => {
-      const [target, , alias] = groups;
-      if (!hits(target.trim())) {
-        return link;
-      }
-      const name2 = import_path2.default.posix.basename(target.trim()).replace(/\.canvas$/, "");
-      return replace(alias || name2);
+  return (text || "").replace(WIKILINK_PARTS, (link, ...groups) => {
+    const [target, , alias] = groups;
+    if (!hits(target.trim())) {
+      return link;
     }
-  );
+    const name2 = import_path2.default.posix.basename(target.trim()).replace(CANVAS_FILE, "");
+    return replace(alias || name2);
+  });
 }
 
 // src/board/notes.js
+var WIKILINK_TARGET = /\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g;
+var QUOTED_VALUE = /^(["'])(.*)\1$/;
+var CONTEXT_FIELD = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m;
+var OUTER_BRACKETS = /^\[|\]$/g;
+var FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+var FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/;
+var LINE_MARKUP_PREFIX = /^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/;
+var WIKILINK_SHOWN_TEXT2 = /\[\[([^\]|]*\|)?([^\]]*)\]\]/g;
+var NOTE_NAME_FORBIDDEN = /[#^|[\]*_`>:\\/"?<]/g;
+var LEADING_LINE_BREAK = /^\r?\n/;
+var LINE_BREAK = /\r?\n/;
+var LIST_ITEM_DASH = /^\s+-\s*/;
+var WHITESPACE_RUN = /\s+/g;
+var TRAILING_SLASHES = /[/\\]+$/;
+var BACKSLASH = /\\/g;
+var ARCHIVED_FROM_FIELD = /^archived-from:/m;
+var OUTER_WIKILINK_BRACKETS = /^\[\[|\]\]$/g;
+var TRAILING_WHITESPACE = /\s+$/;
+var ARCHIVED_EDGE_LINE = /^ {2}- (".*")$/gm;
 function cardLinks(node) {
-  const targets = node.type === "file" ? [node.file] : [
-    ...(node.text || "").matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)
-  ].map((match) => findFile(match[1].trim()));
+  const targets = node.type === "file" ? [node.file] : [...(node.text || "").matchAll(WIKILINK_TARGET)].map(
+    (match) => findFile(match[1].trim())
+  );
   const found = targets.filter(Boolean);
   return {
     note: found.find((file) => file.endsWith(".md")) || null,
@@ -3980,22 +4011,22 @@ function noteContexts(frontmatter) {
     return [];
   }
   function unquote(value) {
-    return value.trim().replace(/^(["'])(.*)\1$/, "$2");
+    return value.trim().replace(QUOTED_VALUE, "$2");
   }
-  const match = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m.exec(frontmatter);
+  const match = CONTEXT_FIELD.exec(frontmatter);
   if (!match) {
     return [];
   }
-  return (match[1].trim() ? match[1].replace(/^\[|\]$/g, "").split(",") : match[2].split(/\r?\n/).filter((line) => line.trim()).map((line) => line.replace(/^\s+-\s*/, ""))).map(unquote).filter(Boolean);
+  return (match[1].trim() ? match[1].replace(OUTER_BRACKETS, "").split(",") : match[2].split(LINE_BREAK).filter((line) => line.trim()).map((line) => line.replace(LIST_ITEM_DASH, ""))).map(unquote).filter(Boolean);
 }
 function cardContexts(node) {
   const { note } = cardLinks(node);
-  const frontmatter = note && (import_fs2.default.readFileSync(vaultPath(note), "utf8").match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1];
+  const frontmatter = note && (import_fs2.default.readFileSync(vaultPath(note), "utf8").match(FRONTMATTER) || [])[1];
   const contexts = noteContexts(frontmatter);
   return contexts.length ? contexts : void 0;
 }
 function noteName(text) {
-  return (String(text).split("\n").find((line) => line.trim()) || "Card").replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, "").replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/[#^|[\]*_`>:\\/"?<]/g, "").replace(/\s+/g, " ").trim().slice(0, 60).trim() || "Card";
+  return (String(text).split("\n").find((line) => line.trim()) || "Card").replace(LINE_MARKUP_PREFIX, "").replace(WIKILINK_SHOWN_TEXT2, "$2").replace(NOTE_NAME_FORBIDDEN, "").replace(WHITESPACE_RUN, " ").trim().slice(0, 60).trim() || "Card";
 }
 function yamlStr(value) {
   return JSON.stringify(String(value));
@@ -4040,9 +4071,9 @@ function colorArg(color) {
 }
 function archiveDir(board, options = {}) {
   if (options.archiveMode === "global") {
-    return String(options.archiveFolder || ARCHIVE_DIR).trim().replace(/[/\\]+$/, "") || ARCHIVE_DIR;
+    return String(options.archiveFolder || ARCHIVE_DIR).trim().replace(TRAILING_SLASHES, "") || ARCHIVE_DIR;
   }
-  const boardPath = String(board).replace(/\\/g, "/"), folder = import_path3.default.posix.dirname(boardPath);
+  const boardPath = String(board).replace(BACKSLASH, "/"), folder = import_path3.default.posix.dirname(boardPath);
   return (folder === "." ? "" : folder + "/") + import_path3.default.posix.basename(boardPath, ".canvas") + " archive";
 }
 function archiveNote(canvasData, { id, board, date, contexts = [] }) {
@@ -4092,20 +4123,21 @@ function archiveNote(canvasData, { id, board, date, contexts = [] }) {
   };
 }
 function restoreOps(canvasData, source) {
-  const frontmatter = (source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) || [])[1];
-  if (!frontmatter || !/^archived-from:/m.test(frontmatter)) {
+  const frontmatter = (source.match(FRONTMATTER_BLOCK) || [])[1];
+  if (!frontmatter || !ARCHIVED_FROM_FIELD.test(frontmatter)) {
     throw new Error("not an archived card note");
   }
   function get(field) {
-    const match = new RegExp(`^${field}: (.*)$`, "m").exec(frontmatter);
+    const fieldLine = new RegExp(`^${field}: (.*)$`, "m");
+    const match = fieldLine.exec(frontmatter);
     if (!match) {
       return void 0;
     }
     const value = match[1].trim();
     return value.startsWith('"') ? JSON.parse(value) : value;
   }
-  const board = get("archived-from").replace(/^\[\[|\]\]$/g, "");
-  const body = source.slice(source.indexOf("---", 3) + 3).replace(/^\r?\n/, "").replace(/\s+$/, "");
+  const board = get("archived-from").replace(OUTER_WIKILINK_BRACKETS, "");
+  const body = source.slice(source.indexOf("---", 3) + 3).replace(LEADING_LINE_BREAK, "").replace(TRAILING_WHITESPACE, "");
   const type = get("card-type") || "text";
   const ids = new Set(canvasData.nodes.map((node2) => node2.id));
   const id = ids.has(get("card-id")) ? newId() : get("card-id");
@@ -4139,7 +4171,7 @@ function restoredEdgeOps(canvasData, frontmatter, { archivedId, restoredId }) {
   const ids = new Set(canvasData.nodes.map((node) => node.id));
   const edgeIds = new Set(canvasData.edges.map((edge) => edge.id));
   const operations = [];
-  for (const edgeLine of frontmatter.matchAll(/^ {2}- (".*")$/gm)) {
+  for (const edgeLine of frontmatter.matchAll(ARCHIVED_EDGE_LINE)) {
     const [edgeId, from, fromSide, toId, toSide, label] = JSON.parse(
       edgeLine[1]
     ).split(" | ");
@@ -4169,6 +4201,19 @@ function restoredEdgeOps(canvasData, frontmatter, { archivedId, restoredId }) {
 // src/workflow/workflow.js
 var import_fs3 = __toESM(require("fs"), 1);
 var import_path4 = __toESM(require("path"), 1);
+var LIST_SEPARATOR = /[\s,]+/;
+var CANVAS_COLOR_NUMBER = /^[1-6]$/;
+var ROLLUP_SUFFIXES = / · \d+ inside| · \d+d$/g;
+var STALE_SUFFIX = / · \d+d$/;
+var INSIDE_SUFFIX = / · \d+ inside/;
+var NOTE_CARD_TEXT = /^\[\[[^\]]+\]\]( · .+)?$/;
+var DONE_CARD_TEXT = /^[^\n]+ · done · \[\[[^\]]+\]\]$/;
+var FRONTMATTER2 = /^---\n([\s\S]*?)\n---/;
+var FRONTMATTER_KEY = /^(\w[\w-]*):/gm;
+var TRAILING_SLASHES2 = /[/]+$/;
+var PART_CHECKBOX = /^\s*- \[([ xX])\] /gm;
+var DECISIONS_RECORD_HEADING = /^## Decisions Record/m;
+var OPEN_QUESTION = /^\s*- \[\?\] /gm;
 var ORANGE_STALE_MS = 36e5;
 var DEFAULT_PASS_COLORS = "cyan purple";
 var DEFAULT_NOTES_FOLDER = "Board notes";
@@ -4215,7 +4260,7 @@ function activeNode(boardTree, total, active) {
 }
 function parseColors(value) {
   return new Set(
-    String(value || "").split(/[\s,]+/).filter(Boolean).map((color) => COLORS[color.toLowerCase()] || color).filter((color) => /^[1-6]$/.test(color))
+    String(value || "").split(LIST_SEPARATOR).filter(Boolean).map((color) => COLORS[color.toLowerCase()] || color).filter((color) => CANVAS_COLOR_NUMBER.test(color))
   );
 }
 function settings2() {
@@ -4248,7 +4293,7 @@ function ageSuffixOperation(card, days) {
   if (!isAging) {
     return null;
   }
-  const base = card.text.replace(/ · \d+d$/, "");
+  const base = card.text.replace(STALE_SUFFIX, "");
   const isStale = days > 0 && card.note.ageDays >= days;
   const text = isStale ? `${base} \xB7 ${card.note.ageDays}d` : base;
   return text === card.text ? null : { op: "set", id: card.id, text };
@@ -4267,7 +4312,7 @@ function cardTextOk(raw) {
   if (!text.includes("[[")) {
     return text.split("\n").length <= 3;
   }
-  return /^\[\[[^\]]+\]\]( · .+)?$/.test(text) || /^[^\n]+ · done · \[\[[^\]]+\]\]$/.test(text);
+  return NOTE_CARD_TEXT.test(text) || DONE_CARD_TEXT.test(text);
 }
 var TEXT_SHAPES = "card text is neither a wish (\u2264 3 lines), `[[Note]] \xB7 reason` nor `<recap> \xB7 done \xB7 [[Output]]`";
 function cardIssues(node, depth) {
@@ -4287,10 +4332,11 @@ function isStaleOrange(node, note) {
 }
 var REQUIRED_SECTIONS = ["Aim", "Design"];
 function noteIssues(source, color) {
-  const frontmatter = (source.match(/^---\n([\s\S]*?)\n---/) || [])[1];
-  const keys = frontmatter ? [...frontmatter.matchAll(/^(\w[\w-]*):/gm)].map((match) => match[1]) : [];
+  const frontmatter = (source.match(FRONTMATTER2) || [])[1];
+  const keys = frontmatter ? [...frontmatter.matchAll(FRONTMATTER_KEY)].map((match) => match[1]) : [];
   function hasHeading(heading) {
-    return new RegExp(`^${heading}s*$`, "m").test(source);
+    const headingLine = new RegExp(`^${heading}\\s*$`, "m");
+    return headingLine.test(source);
   }
   const issues = [];
   if (keys.join() !== "context") {
@@ -4315,7 +4361,7 @@ function noteIssues(source, color) {
 }
 function notesFolder() {
   return String(settings2().notesFolder || DEFAULT_NOTES_FOLDER).replace(
-    /[/]+$/,
+    TRAILING_SLASHES2,
     ""
   ) + "/";
 }
@@ -4368,7 +4414,7 @@ function desiredColor(card, inner, goColors2) {
   if (goColors2.has(card.color)) {
     return card.color;
   }
-  const rolled = card.text !== void 0 && / · \d+ inside/.test(card.text);
+  const rolled = card.text !== void 0 && INSIDE_SUFFIX.test(card.text);
   const own = rolled ? null : card.color;
   if (inner.red || own === "1") {
     return "1";
@@ -4384,7 +4430,7 @@ function desiredColor(card, inner, goColors2) {
 function nestedCardUpdate(card, inner, goColorSet) {
   const color = desiredColor(card, inner, goColorSet);
   const waiting = inner.red + inner.yellow;
-  const text = card.text === void 0 ? void 0 : card.text.replace(/ · \d+ inside| · \d+d$/g, "") + (waiting ? ` \xB7 ${waiting} inside` : "");
+  const text = card.text === void 0 ? void 0 : card.text.replace(ROLLUP_SUFFIXES, "") + (waiting ? ` \xB7 ${waiting} inside` : "");
   const isTextChanged = text !== card.text;
   if (color === card.color && !isTextChanged) {
     return { color: card.color, operation: null };
@@ -4401,10 +4447,10 @@ function nestedCardUpdate(card, inner, goColorSet) {
 }
 function noteState(relativePath) {
   const text = import_fs3.default.readFileSync(vaultPath(relativePath), "utf8");
-  const parts = [...text.matchAll(/^\s*- \[([ xX])\] /gm)];
+  const parts = [...text.matchAll(PART_CHECKBOX)];
   const done = parts.filter((match) => match[1] !== " ").length;
   const questions = [
-    ...text.split(/^## Decisions Record/m)[0].matchAll(/^\s*- \[\?\] /gm)
+    ...text.split(DECISIONS_RECORD_HEADING)[0].matchAll(OPEN_QUESTION)
   ].length;
   return {
     level: parts.length ? "plan" : "brief",
@@ -4448,6 +4494,7 @@ function rollup(board) {
 }
 
 // src/cli/commands.js
+var DEPENDS_ON_LABEL2 = /depends on/i;
 var DEFAULT_WIDTH = 320;
 function addCommand(cli2) {
   const text = cli2.option("--text") || "";
@@ -4504,7 +4551,7 @@ function checkCommand(cli2) {
 function edgeCommand(cli2) {
   const label = cli2.option("--label");
   const [flowFrom, flowTo] = SIDES[defaultDir()];
-  const isAgainstFlow = /depends on/i.test(label || "");
+  const isAgainstFlow = DEPENDS_ON_LABEL2.test(label || "");
   const [fromSide, toSide] = isAgainstFlow ? [flowTo, flowFrom] : [flowFrom, flowTo];
   const [fromNode, toNode] = cli2.rest;
   const edge = { id: newId(), fromNode, fromSide, toNode, toSide };

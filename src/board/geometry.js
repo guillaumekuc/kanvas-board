@@ -1,5 +1,8 @@
 import { newId, SIDES, settings } from './store.js';
 
+const WIKILINK_SHOWN_TEXT = /\[\[([^\]|]*\|)?([^\]]*)\]\]/g;
+const DEPENDS_ON_LABEL = /depends on/i;
+
 function bounds(nodes) {
   const left = Math.min(...nodes.map((node) => node.x)),
     top = Math.min(...nodes.map((node) => node.y));
@@ -77,10 +80,7 @@ function fitHeight(text, width) {
         lines +
         Math.max(
           1,
-          Math.ceil(
-            line.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2').length /
-              perLine,
-          ),
+          Math.ceil(line.replace(WIKILINK_SHOWN_TEXT, '$2').length / perLine),
         ),
       0,
     );
@@ -110,7 +110,7 @@ function groupAround(nodes, label) {
 // from, and "depends on" edges point at the prerequisite: both come first,
 // so they rank reversed.
 function isBackEdge(edge, flow) {
-  return flow === 'in' || /depends on/i.test(edge.label || '');
+  return flow === 'in' || DEPENDS_ON_LABEL.test(edge.label || '');
 }
 
 function isTwoWay(edge) {

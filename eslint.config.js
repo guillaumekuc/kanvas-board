@@ -55,6 +55,8 @@ module.exports = [
       'max-params': ['error', 3],
       'max-len': ['error', { code: 80, ignoreUrls: true }],
       semi: ['error', 'always'],
+      // Name your regexes
+      'style/named-regex': 'error',
     },
   },
   // src/ is ES modules: imports at the top of the file, no require

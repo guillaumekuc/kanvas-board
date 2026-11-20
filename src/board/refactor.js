@@ -12,6 +12,23 @@ import {
 } from './geometry.js';
 import { newId, mostUrgent } from './store.js';
 
+const EXTRA_BLANK_LINES = /\n{3,}/g;
+const HEADING_SEPARATOR = /^h([1-6])$/;
+const TOP_LEVEL_BULLET = /^([-*+]|\d+[.)]) /;
+const BLANK_LINE = /\n\s*\n/;
+const NOTE_OR_CANVAS_FILE = /\.(md|canvas)$/;
+const ALIASED_WIKILINK = /!?\[\[([^\]|]+)\|([^\]]+)\]\]/g;
+const HEADING_OR_BLOCK_WIKILINK = /!?\[\[([^\]#]*)#\^?([^\]]+)\]\]/g;
+const WIKILINK_PARTS = /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g;
+const PLAIN_WIKILINK = /!?\[\[([^\]]+)\]\]/g;
+const MARKDOWN_LINK = /!?\[([^\]]*)\]\([^)]*\)/g;
+const LINE_MARKUP_PREFIX =
+  /^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/;
+const INLINE_MARKS = /\*\*|__|~~|==|`/g;
+const ITALIC = /(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g;
+const WHITESPACE_RUN = /\s+/g;
+const CANVAS_FILE = /\.canvas$/;
+
 // Selected cards move to `file` (a new .canvas) at their relative places, with
 // the edges between them; one card `[[file|label]]` takes their place, centered
 // on where they were, and the edges that crossed the boundary now end on it.
@@ -140,7 +157,7 @@ function extractOps(canvasData, { id, part, from }) {
   const left = (
     card.text.slice(0, offset) + card.text.slice(offset + part.length)
   )
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(EXTRA_BLANK_LINES, '\n\n')
     .trim();
   const text = part.trim();
   const height = fitHeight(text, card.width);
@@ -267,15 +284,21 @@ function mergeOps(canvasData, ids) {
   ];
 }
 
+// The line that starts a new piece: a heading of the separator's level, a
+// top-level bullet, or null (paragraphs split on blank lines instead).
+function pieceStart(separator) {
+  const headingMatch = HEADING_SEPARATOR.exec(separator);
+  if (headingMatch) {
+    const headingOfLevel = new RegExp(`^#{${headingMatch[1]}} `);
+    return headingOfLevel;
+  }
+  return separator === 'bullet' ? TOP_LEVEL_BULLET : null;
+}
+
 // separator: paragraph (blank lines), bullet (top-level list items), h1..h6 (a
 // new piece at each heading of that level).
 function splitText(text, separator) {
-  const headingMatch = /^h([1-6])$/.exec(separator);
-  const starts = headingMatch
-    ? new RegExp(`^#{${headingMatch[1]}} `)
-    : separator === 'bullet'
-      ? /^([-*+]|\d+[.)]) /
-      : null;
+  const starts = pieceStart(separator);
   const pieces = starts
     ? text
         .split('\n')
@@ -287,7 +310,7 @@ function splitText(text, separator) {
           return pieces;
         }, [])
         .map((pieceLines) => pieceLines.join('\n'))
-    : text.split(/\n\s*\n/);
+    : text.split(BLANK_LINE);
   return pieces.map((piece) => piece.trim()).filter(Boolean);
 }
 
@@ -323,27 +346,22 @@ function splitOps(canvasData, id, separator = 'paragraph') {
 // quote, list and checkbox markers dropped; #tags kept.
 function plainLines(text) {
   function name(linkTarget) {
-    return linkTarget
-      .replace(/\.(md|canvas)$/, '')
-      .split('/')
-      .pop();
+    return linkTarget.replace(NOTE_OR_CANVAS_FILE, '').split('/').pop();
   }
   return String(text || '')
     .split('\n')
     .map((line) =>
       line
-        .replace(/!?\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
-        .replace(
-          /!?\[\[([^\]#]*)#\^?([^\]]+)\]\]/g,
-          (match, linkTarget, heading) =>
-            linkTarget ? `${name(linkTarget)} › ${heading}` : heading,
+        .replace(ALIASED_WIKILINK, '$2')
+        .replace(HEADING_OR_BLOCK_WIKILINK, (match, linkTarget, heading) =>
+          linkTarget ? `${name(linkTarget)} › ${heading}` : heading,
         )
-        .replace(/!?\[\[([^\]]+)\]\]/g, (match, linkTarget) => name(linkTarget))
-        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-        .replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/, '')
-        .replace(/\*\*|__|~~|==|`/g, '')
-        .replace(/(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g, '$1$2')
-        .replace(/\s+/g, ' ')
+        .replace(PLAIN_WIKILINK, (match, linkTarget) => name(linkTarget))
+        .replace(MARKDOWN_LINK, '$1')
+        .replace(LINE_MARKUP_PREFIX, '')
+        .replace(INLINE_MARKS, '')
+        .replace(ITALIC, '$1$2')
+        .replace(WHITESPACE_RUN, ' ')
         .trim(),
     )
     .filter(Boolean);
@@ -352,17 +370,14 @@ function plainLines(text) {
 // Wikilinks (and embeds) in `text` whose target `hits(linkpath)` become
 // `replace(label)`; label = alias, else file name.
 function relinkText(text, hits, replace) {
-  return (text || '').replace(
-    /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
-    (link, ...groups) => {
-      const [target, , alias] = groups; // the #subpath group is not needed
-      if (!hits(target.trim())) {
-        return link;
-      }
-      const name = path.posix.basename(target.trim()).replace(/\.canvas$/, '');
-      return replace(alias || name);
-    },
-  );
+  return (text || '').replace(WIKILINK_PARTS, (link, ...groups) => {
+    const [target, , alias] = groups; // the #subpath group is not needed
+    if (!hits(target.trim())) {
+      return link;
+    }
+    const name = path.posix.basename(target.trim()).replace(CANVAS_FILE, '');
+    return replace(alias || name);
+  });
 }
 
 // A template is a .canvas file (Templates/Canvas/). Its cards get new ids and
