@@ -152,8 +152,10 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
         'such a card and the agent takes those cards. All off: the ' +
         'agent never starts.',
     );
-    const goColors = pass.parseColors(this.plugin.settings.passColors);
+    this.displayAgentInstructions();
     const instructions = this.readSkillParts();
+    this.addGeneralSkillField();
+    const goColors = pass.parseColors(this.plugin.settings.passColors);
     for (const { name, meaning } of shared.WORKFLOW) {
       const colorNumber = shared.COLOR_NUM[name];
       const row = new obsidian.Setting(containerEl)
@@ -179,6 +181,40 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
         `Agent instructions: ${agentInstructions.sectionTitle(name)}`,
       );
     }
+    this.watchSkillFields(this.plugin.skillPath());
+  }
+
+  // The general instructions and Reset, at the top of Workflow.
+  displayAgentInstructions() {
+    const { containerEl } = this;
+    // The instructions the agent follows on a pass, edited here; the pass
+    // prompt points the agent at the file. The general part and its Reset
+    // come first, then each color's part under its row.
+    new obsidian.Setting(containerEl)
+      .setName('Agent instructions')
+      .setDesc(
+        'What the agent does on a pass: the general part below, then ' +
+          'one part per color, under each color (the agent reads them ' +
+          'all; the toggles decide which cards it works). Saved when a ' +
+          `field loses focus, to ${this.plugin.skillRelativePath()} (the ` +
+          'pass prompt points any agent at it). Written once from the ' +
+          'plugin, then yours: plugin updates never overwrite it. ' +
+          "Reset brings back the plugin's version.",
+      )
+      .addButton((button) =>
+        button
+          .setButtonText('Reset')
+          .setWarning()
+          .onClick(() => {
+            this.plugin.resetSkill(
+              path.join(
+                this.app.vault.adapter.basePath,
+                this.plugin.manifest.dir,
+              ),
+            );
+            this.display();
+          }),
+      );
   }
 
   // On: cards of this color trigger the agent (setting passColors).
@@ -235,36 +271,6 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
         'spaces.',
       'terminal',
     );
-    // The instructions the agent follows on a pass, edited here; the pass
-    // prompt points the agent at the file.
-    const skillFile = this.plugin.skillPath();
-    new obsidian.Setting(containerEl)
-      .setName('Agent instructions')
-      .setDesc(
-        'What the agent does on a pass: the general part below, then ' +
-          'one part per color, under each color in Workflow (the agent ' +
-          'reads them all; the toggles decide which cards it works). ' +
-          'Saved when a field ' +
-          `loses focus, to ${this.plugin.skillRelativePath()} (the ` +
-          'pass prompt points any agent at it). Written once from the ' +
-          'plugin, then yours: plugin updates never overwrite it. ' +
-          "Reset brings back the plugin's version.",
-      )
-      .addButton((button) =>
-        button
-          .setButtonText('Reset')
-          .setWarning()
-          .onClick(() => {
-            this.plugin.resetSkill(
-              path.join(
-                this.app.vault.adapter.basePath,
-                this.plugin.manifest.dir,
-              ),
-            );
-            this.display();
-          }),
-      );
-    this.addSkillEditors(skillFile);
   }
 
   // The skill file split into its general part and one part per color
@@ -280,10 +286,8 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     return this.skillParts;
   }
 
-  // The general field goes under Pass; the color fields were added under
-  // each color in Workflow. Any of them saves the whole file.
-  addSkillEditors(skillFile) {
-    const colorNames = shared.WORKFLOW.map(({ name: colorName }) => colorName);
+  // The general field, at the top of Workflow before the color rows.
+  addGeneralSkillField() {
     const general = this.addSkillField(
       this.skillParts.general,
       'Agent instructions',
@@ -293,6 +297,12 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
         "No instructions file yet: Reset writes the plugin's version.";
     }
     this.skillFields.general = general;
+  }
+
+  // Any instructions field (general or a color's) saves the whole file.
+  watchSkillFields(skillFile) {
+    const colorNames = shared.WORKFLOW.map(({ name: colorName }) => colorName);
+    const general = this.skillFields.general;
     const colorFields = this.skillFields.colors;
     const fields = [general, ...Object.values(colorFields)];
     for (const field of fields) {
