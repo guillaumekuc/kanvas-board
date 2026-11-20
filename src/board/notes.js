@@ -44,7 +44,9 @@ function linksTo(relativePath, board, skipId) {
       : isLinking(node.text);
   }
   function linksIn(file, source) {
-    if (file.endsWith('.md')) return isLinking(source) ? [file] : [];
+    if (file.endsWith('.md')) {
+      return isLinking(source) ? [file] : [];
+    }
     const nodes = (parseOrNull(source) || {}).nodes || [];
     return nodes
       .filter((node) => !(file === board && node.id === skipId))
@@ -54,9 +56,13 @@ function linksTo(relativePath, board, skipId) {
   const name = path.posix.basename(relativePath);
   const found = [];
   for (const file of vaultFileIndex.paths()) {
-    if (file === relativePath || !LINKABLE.test(file)) continue;
+    if (file === relativePath || !LINKABLE.test(file)) {
+      continue;
+    }
     const source = readOrNull(file);
-    if (source && source.includes(name)) found.push(...linksIn(file, source));
+    if (source && source.includes(name)) {
+      found.push(...linksIn(file, source));
+    }
   }
   return found;
 }
@@ -64,12 +70,16 @@ function linksTo(relativePath, board, skipId) {
 // Contexts in a note's frontmatter text: the `context:` list (or a single
 // value).
 function noteContexts(frontmatter) {
-  if (!frontmatter) return [];
+  if (!frontmatter) {
+    return [];
+  }
   function unquote(value) {
     return value.trim().replace(/^(["'])(.*)\1$/, '$2');
   }
   const match = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m.exec(frontmatter);
-  if (!match) return [];
+  if (!match) {
+    return [];
+  }
   return (
     match[1].trim()
       ? match[1].replace(/^\[|\]$/g, '').split(',')
@@ -192,7 +202,9 @@ function archiveDir(board, options = {}) {
 // else data.json `archiveContexts`, else none.
 function archiveNote(canvasData, { id, board, date, contexts = [] }) {
   const node = canvasData.nodes.find((node) => node.id === id);
-  if (!node) throw new Error('no node ' + id);
+  if (!node) {
+    throw new Error('no node ' + id);
+  }
   const edges = canvasData.edges
     .filter((edge) => edge.fromNode === id || edge.toNode === id)
     .map((edge) =>
@@ -254,7 +266,9 @@ function restoreOps(canvasData, source) {
   }
   function get(field) {
     const match = new RegExp(`^${field}: (.*)$`, 'm').exec(frontmatter);
-    if (!match) return undefined;
+    if (!match) {
+      return undefined;
+    }
     const value = match[1].trim();
     return value.startsWith('"') ? JSON.parse(value) : value;
   }
@@ -274,33 +288,57 @@ function restoreOps(canvasData, source) {
     width: Number(get('width')),
     height: Number(get('height')),
   };
-  if (type === 'text') node.text = body;
-  if (type === 'file') node.file = get('card-file');
-  if (type === 'link') node.url = get('card-url');
-  if (get('color')) node.color = get('color');
-  const operations = [{ op: 'add', node }];
-  const old = get('card-id');
+  if (type === 'text') {
+    node.text = body;
+  }
+  if (type === 'file') {
+    node.file = get('card-file');
+  }
+  if (type === 'link') {
+    node.url = get('card-url');
+  }
+  if (get('color')) {
+    node.color = get('color');
+  }
+  const edges = restoredEdgeOps(canvasData, frontmatter, {
+    archivedId: get('card-id'),
+    restoredId: id,
+  });
+  return { board, operations: [{ op: 'add', node }, ...edges] };
+}
+
+// The archived card's edges (frontmatter lines "  - "id | from | ..."") as
+// edge operations, skipping edges already there or whose other end is gone.
+function restoredEdgeOps(canvasData, frontmatter, { archivedId, restoredId }) {
+  const ids = new Set(canvasData.nodes.map((node) => node.id));
   const edgeIds = new Set(canvasData.edges.map((edge) => edge.id));
+  const operations = [];
   for (const edgeLine of frontmatter.matchAll(/^ {2}- (".*")$/gm)) {
     const [edgeId, from, fromSide, toId, toSide, label] = JSON.parse(
       edgeLine[1],
     ).split(' | ');
-    const fromNode = from === old ? id : from,
-      toNode = toId === old ? id : toId;
-    if (
-      edgeIds.has(edgeId) ||
-      !(fromNode === id || ids.has(fromNode)) ||
-      !(toNode === id || ids.has(toNode))
-    ) {
+    const fromNode = from === archivedId ? restoredId : from;
+    const toNode = toId === archivedId ? restoredId : toId;
+    const isEndMissing = [fromNode, toNode].some(
+      (end) => end !== restoredId && !ids.has(end),
+    );
+    if (edgeIds.has(edgeId) || isEndMissing) {
       continue;
     }
-    const edge = { id: edgeId, fromNode, toNode };
-    if (fromSide) edge.fromSide = fromSide;
-    if (toSide) edge.toSide = toSide;
-    if (label) edge.label = label;
+    // Optional fields (sides, label) only when the archive had them
+    const edge = Object.fromEntries(
+      Object.entries({
+        id: edgeId,
+        fromNode,
+        toNode,
+        fromSide,
+        toSide,
+        label,
+      }).filter(([, value]) => value),
+    );
     operations.push({ op: 'edge', edge });
   }
-  return { board, operations };
+  return operations;
 }
 
 export {

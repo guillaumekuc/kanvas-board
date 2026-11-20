@@ -39,8 +39,9 @@ function groupLinkOperations(plugin, canvas, unpacked) {
 function relinkCanvasData(canvasData, redirect) {
   const { library, subcanvasPath, here, hits, toLink } = redirect;
   for (const node of canvasData.nodes || []) {
-    if (node.type === 'file' && node.file === subcanvasPath) node.file = here;
-    else if (node.type === 'text') {
+    if (node.type === 'file' && node.file === subcanvasPath) {
+      node.file = here;
+    } else if (node.type === 'text') {
       node.text = library.relinkText(node.text, hits, toLink);
     }
   }
@@ -59,7 +60,9 @@ async function redirectOutsideLinks(plugin, unpacked) {
   );
   for (const filePath of paths) {
     const linkingFile = plugin.app.vault.getAbstractFileByPath(filePath);
-    if (!linkingFile) continue;
+    if (!linkingFile) {
+      continue;
+    }
     const hits = isSubcanvas(filePath);
     const redirect = { library, subcanvasPath: file.path, here, hits, toLink };
     const open = filePath.endsWith('.canvas') && plugin.openCanvas(filePath);
@@ -128,8 +131,12 @@ async function unpackSubcanvas(plugin, canvas, request) {
     );
   }
   plugin.edit(canvas, operations);
-  if (mode === 'group') await redirectOutsideLinks(plugin, unpacked);
-  if (mode !== 'copy') await plugin.app.fileManager.trashFile(file);
+  if (mode === 'group') {
+    await redirectOutsideLinks(plugin, unpacked);
+  }
+  if (mode !== 'copy') {
+    await plugin.app.fileManager.trashFile(file);
+  }
   const counts = {
     cardCount: subcanvas.nodes.length,
     linkCount: links.length,

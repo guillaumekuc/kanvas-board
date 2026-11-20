@@ -18,8 +18,11 @@ Math.random = () => {
 const RealDate = Date;
 global.Date = class FixedDate extends RealDate {
   constructor(...values) {
-    if (values.length === 0) super(FIXED_NOW);
-    else super(...values);
+    if (values.length === 0) {
+      super(FIXED_NOW);
+    } else {
+      super(...values);
+    }
   }
 
   static now() {

@@ -51,7 +51,9 @@ function centeredFreeOffset(nodes, card, others) {
     y: Math.round(card.y + (card.height - box.height) / 2) - box.y,
   };
   for (let step = 0; step < CENTERED_MAX_STEPS; step++) {
-    if (!overlapsAny(nodes, others, offset)) break;
+    if (!overlapsAny(nodes, others, offset)) {
+      break;
+    }
     offset.x += STEP;
   }
   return offset;
@@ -135,7 +137,9 @@ function nearestFreeOffset(placed, { moving, fixed, direction }) {
   const axis = ACROSS_ROWS.has(direction) ? 'y' : 'x';
   const offset = { ...center };
   for (let attempt = 1; attempt <= MAX_STEPS; attempt++) {
-    if (!overlapsAny(placed, fixed, offset)) break;
+    if (!overlapsAny(placed, fixed, offset)) {
+      break;
+    }
     const side = attempt % 2 ? 1 : -1;
     offset[axis] = center[axis] + side * Math.ceil(attempt / 2) * STEP;
   }
@@ -144,7 +148,9 @@ function nearestFreeOffset(placed, { moving, fixed, direction }) {
 
 function place(canvasData, { near, width, height }) {
   const nearNode = canvasData.nodes.find((node) => node.id === near);
-  if (!nearNode) throw new Error('no node ' + near);
+  if (!nearNode) {
+    throw new Error('no node ' + near);
+  }
   function overlaps(left, top) {
     return canvasData.nodes.some(
       (node) =>
@@ -159,12 +165,16 @@ function place(canvasData, { near, width, height }) {
       x: nearNode.x + nearNode.width + 40,
       y: nearNode.y + step * (height + 40),
     };
-    if (!overlaps(right.x, right.y)) return right;
+    if (!overlaps(right.x, right.y)) {
+      return right;
+    }
     const below = {
       x: nearNode.x + step * (width + 40),
       y: nearNode.y + nearNode.height + 40,
     };
-    if (!overlaps(below.x, below.y)) return below;
+    if (!overlaps(below.x, below.y)) {
+      return below;
+    }
   }
   return { x: nearNode.x + nearNode.width + 40, y: nearNode.y };
 }
@@ -184,7 +194,9 @@ function withGroupMembers(canvasData, ids) {
     );
   }
   for (const node of canvasData.nodes) {
-    if (groups.some((group) => isInside(node, group))) pick.add(node.id);
+    if (groups.some((group) => isInside(node, group))) {
+      pick.add(node.id);
+    }
   }
   return pick;
 }
@@ -229,7 +241,9 @@ function layoutOps(canvasData, options) {
   const pick = new Set(ids && ids.length ? ids : cards.map((node) => node.id));
   const moving = cards.filter((node) => pick.has(node.id));
   const fixed = cards.filter((node) => !pick.has(node.id));
-  if (!moving.length) return [];
+  if (!moving.length) {
+    return [];
+  }
   const inner = canvasData.edges.filter(
     (edge) => pick.has(edge.fromNode) && pick.has(edge.toNode),
   );

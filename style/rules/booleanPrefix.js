@@ -10,7 +10,9 @@ module.exports = {
     const prefixes = context.options[0]?.prefixes ?? ['is', 'has'];
     const prefixPattern = new RegExp(`^(${prefixes.join('|')})[A-Z]`);
     function reportBareName(identifier) {
-      if (prefixPattern.test(identifier.name)) return;
+      if (prefixPattern.test(identifier.name)) {
+        return;
+      }
       context.report({
         node: identifier,
         message:
@@ -20,12 +22,20 @@ module.exports = {
     }
     return {
       VariableDeclarator(declarator) {
-        if (declarator.id.type !== 'Identifier') return;
-        if (isBooleanExpression(declarator.init)) reportBareName(declarator.id);
+        if (declarator.id.type !== 'Identifier') {
+          return;
+        }
+        if (isBooleanExpression(declarator.init)) {
+          reportBareName(declarator.id);
+        }
       },
       AssignmentPattern(pattern) {
-        if (pattern.left.type !== 'Identifier') return;
-        if (isBooleanExpression(pattern.right)) reportBareName(pattern.left);
+        if (pattern.left.type !== 'Identifier') {
+          return;
+        }
+        if (isBooleanExpression(pattern.right)) {
+          reportBareName(pattern.left);
+        }
       },
     };
   },

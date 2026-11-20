@@ -56,7 +56,9 @@ class CanvasBoardPlugin extends Plugin {
     this.panes = new Map(); // canvas → FilterPane, one per open canvas
     this.finds = new Map(); // canvas → FindBar
     this.actions = [];
-    for (const register of COMMAND_GROUPS) register(this);
+    for (const register of COMMAND_GROUPS) {
+      register(this);
+    }
     this.startStatusBar();
     this.registerEvent(
       this.app.workspace.on('active-leaf-change', () => this.tick()),
@@ -78,8 +80,12 @@ class CanvasBoardPlugin extends Plugin {
       name,
       checkCallback: (checking) => {
         const canvas = this.activeCanvas();
-        if (!canvas || !test(canvas, [...canvas.selection])) return false;
-        if (!checking) this.runAction(run, canvas, [...canvas.selection]);
+        if (!canvas || !test(canvas, [...canvas.selection])) {
+          return false;
+        }
+        if (!checking) {
+          this.runAction(run, canvas, [...canvas.selection]);
+        }
         return true;
       },
     });
@@ -117,7 +123,9 @@ class CanvasBoardPlugin extends Plugin {
     );
     canvas.updateSelection(() => {
       canvas.selection.clear();
-      for (const node of [...selection, ...added]) canvas.selection.add(node);
+      for (const node of [...selection, ...added]) {
+        canvas.selection.add(node);
+      }
     });
     return added.length;
   }
@@ -131,7 +139,9 @@ class CanvasBoardPlugin extends Plugin {
     this.viewEl.addClass('mod-clickable');
     this.viewEl.onClickEvent(() => {
       const canvas = this.activeCanvas();
-      if (canvas) this.pane(canvas).toggle(true);
+      if (canvas) {
+        this.pane(canvas).toggle(true);
+      }
     });
   }
 
@@ -142,7 +152,9 @@ class CanvasBoardPlugin extends Plugin {
     const open = new Set();
     for (const leaf of this.app.workspace.getLeavesOfType('canvas')) {
       const canvas = leaf.view.canvas;
-      if (!canvas || !canvas.wrapperEl) continue;
+      if (!canvas || !canvas.wrapperEl) {
+        continue;
+      }
       open.add(canvas);
       this.decorate(leaf.view);
       this.refreshView(canvas); // folds come with the file: every canvas
@@ -167,7 +179,9 @@ class CanvasBoardPlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType('canvas')) {
       const canvas = leaf.view.canvas;
       this.undecorate(leaf.view);
-      if (!this.views.has(canvas)) continue;
+      if (!this.views.has(canvas)) {
+        continue;
+      }
       delete canvas.updateSelection;
       delete canvas.applyHistory;
       this.paint(canvas, new Set(), new Map());
@@ -197,8 +211,11 @@ class CanvasBoardPlugin extends Plugin {
     const labels = (this.settings.colorLabels = {
       ...this.settings.colorLabels,
     });
-    if (label) labels[name] = label;
-    else delete labels[name];
+    if (label) {
+      labels[name] = label;
+    } else {
+      delete labels[name];
+    }
     await this.saveData(this.settings);
     const row = COLORS.find((colorRow) => colorRow[0] === name);
     const colorCommand =
@@ -208,7 +225,9 @@ class CanvasBoardPlugin extends Plugin {
     if (colorCommand) {
       colorCommand.name = `${this.manifest.name}: ${commandName}`;
     }
-    for (const canvas of this.panes.keys()) this.refreshView(canvas);
+    for (const canvas of this.panes.keys()) {
+      this.refreshView(canvas);
+    }
   }
 
   // Hotkey of a plugin command as Obsidian prints it ("Alt + ↑"), or ''.
@@ -236,7 +255,9 @@ class CanvasBoardPlugin extends Plugin {
   // Menu item title with its key, muted, after the label.
   keyedTitle(label, id) {
     const hotkey = this.hotkey(id);
-    if (!hotkey) return label;
+    if (!hotkey) {
+      return label;
+    }
     return createFragment((fragment) => {
       fragment.appendText(label);
       fragment.createSpan({ cls: 'kanvas-board-key', text: hotkey });
@@ -264,7 +285,9 @@ class CanvasBoardPlugin extends Plugin {
         canvas.undo();
         for (const filePath of files) {
           const file = this.app.vault.getAbstractFileByPath(filePath);
-          if (file) await this.app.fileManager.trashFile(file);
+          if (file) {
+            await this.app.fileManager.trashFile(file);
+          }
         }
         if (restore && !this.app.vault.getAbstractFileByPath(restore.path)) {
           await this.app.vault.create(restore.path, restore.content);
@@ -342,7 +365,9 @@ class CanvasBoardPlugin extends Plugin {
     const controls =
       view.canvas.wrapperEl &&
       view.canvas.wrapperEl.querySelector('.canvas-controls');
-    if (controls) this.decorateControls(view, controls);
+    if (controls) {
+      this.decorateControls(view, controls);
+    }
     this.decorateSelectionToolbar(view.canvas);
   }
 
@@ -353,7 +378,9 @@ class CanvasBoardPlugin extends Plugin {
         this.runPass(),
       );
     }
-    if (!view.canvasBoardAction) return;
+    if (!view.canvasBoardAction) {
+      return;
+    }
     view.canvasBoardAction.setAttr(
       'aria-label',
       this.keyedLabel('Run pass', 'run-pass'),
@@ -372,7 +399,9 @@ class CanvasBoardPlugin extends Plugin {
       );
     }
     const tidy = group.querySelector('[data-command="tidy-layout"]');
-    if (tidy) this.decorateTidyButton(tidy);
+    if (tidy) {
+      this.decorateTidyButton(tidy);
+    }
   }
 
   addControlGroup(view, controls) {
@@ -392,8 +421,11 @@ class CanvasBoardPlugin extends Plugin {
       setIcon(button, icon);
       button.addEventListener('click', (event) => {
         const isNextDirection = id === 'tidy-layout' && event.shiftKey;
-        if (isNextDirection) this.cycleLayoutDirection();
-        else this.runOn(view, id);
+        if (isNextDirection) {
+          this.cycleLayoutDirection();
+        } else {
+          this.runOn(view, id);
+        }
       });
     }
     return group;
@@ -420,7 +452,9 @@ class CanvasBoardPlugin extends Plugin {
   // when they apply.
   decorateSelectionToolbar(canvas) {
     const menu = canvas.menu;
-    if (!menu || !menu.render || menu.canvasBoardRender) return;
+    if (!menu || !menu.render || menu.canvasBoardRender) {
+      return;
+    }
     const original = (menu.canvasBoardRender = menu.render);
     const plugin = this;
     menu.render = function (...values) {
@@ -450,7 +484,9 @@ class CanvasBoardPlugin extends Plugin {
       const color =
         (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || '';
       const row = COLORS.find((colorRow) => colorRow[1] === color);
-      if (!row) continue;
+      if (!row) {
+        continue;
+      }
       item.setAttrs({
         'aria-label': this.keyedLabel(
           this.colorLabel(row[0]),
@@ -473,7 +509,9 @@ class CanvasBoardPlugin extends Plugin {
     }
     for (const id of ['fold', 'unfold', 'archive']) {
       const action = this.actions.find((candidate) => candidate.id === id);
-      if (!action || !action.test(canvas, selection)) continue;
+      if (!action || !action.test(canvas, selection)) {
+        continue;
+      }
       const button = element.createEl('button', {
         cls: 'clickable-icon kanvas-board-menu-btn',
         attr: {
@@ -536,7 +574,9 @@ class CanvasBoardPlugin extends Plugin {
       .filter(Boolean);
     canvas.updateSelection(() => {
       canvas.selection.clear();
-      for (const node of added) canvas.selection.add(node);
+      for (const node of added) {
+        canvas.selection.add(node);
+      }
     });
   }
 
@@ -577,7 +617,9 @@ class CanvasBoardPlugin extends Plugin {
       text: `${cards.length} cards`,
       cls: isOverLimit ? 'kanvas-board-over' : '',
     }); // warning color, see styles.css
-    if (selectedCount) this.countEl.appendText(` · ${selectedCount} selected`);
+    if (selectedCount) {
+      this.countEl.appendText(` · ${selectedCount} selected`);
+    }
     this.countEl.setAttr(
       'aria-label',
       (isOverLimit ? `over ${max} · ` : '') +
@@ -591,7 +633,9 @@ class CanvasBoardPlugin extends Plugin {
 
   // Before "Agent command", the setting only held the Claude Code binary.
   migrateClaudePath() {
-    if (!('claudePath' in this.settings)) return;
+    if (!('claudePath' in this.settings)) {
+      return;
+    }
     if (this.settings.claudePath && !this.settings.agentCommand) {
       this.settings.agentCommand = `"${this.settings.claudePath}"`;
     }
@@ -620,9 +664,13 @@ class CanvasBoardPlugin extends Plugin {
 
   installSkill(pluginDir) {
     try {
-      if (fileSystem.existsSync(this.skillPath())) return;
+      if (fileSystem.existsSync(this.skillPath())) {
+        return;
+      }
       const legacy = this.legacySkillPath();
-      if (legacy) return fileSystem.copyFileSync(legacy, this.skillPath());
+      if (legacy) {
+        return fileSystem.copyFileSync(legacy, this.skillPath());
+      }
       this.copySkill(pluginDir);
     } catch (error) {
       console.error('kanvas-board: skill sync failed', error);
@@ -688,7 +736,9 @@ class CanvasBoardPlugin extends Plugin {
     for (let attempt = 1; ; attempt++) {
       const suffix = attempt > 1 ? ` ${attempt}` : '';
       const candidate = `${folder}${name}${suffix}${extension}`;
-      if (!this.app.vault.getAbstractFileByPath(candidate)) return candidate;
+      if (!this.app.vault.getAbstractFileByPath(candidate)) {
+        return candidate;
+      }
     }
   }
 
@@ -717,7 +767,9 @@ class CanvasBoardPlugin extends Plugin {
       nodeData.type === 'file'
         ? nodeData.file
         : ((nodeData.text || '').match(/\[\[([^\]|#]+\.canvas)/) || [])[1];
-    if (!target || !target.endsWith('.canvas')) return null;
+    if (!target || !target.endsWith('.canvas')) {
+      return null;
+    }
     return (
       this.app.vault.getAbstractFileByPath(target) ||
       this.app.metadataCache.getFirstLinkpathDest(target.trim(), '')
@@ -761,7 +813,9 @@ class CanvasBoardPlugin extends Plugin {
     const file =
       this.app.vault.getAbstractFileByPath(board) ||
       this.app.metadataCache.getFirstLinkpathDest(board, note.path);
-    if (!file) throw new Error(`board ${board} not found`);
+    if (!file) {
+      throw new Error(`board ${board} not found`);
+    }
     const canvas = this.openCanvas(file.path);
     if (canvas) {
       this.edit(
@@ -811,7 +865,9 @@ class CanvasBoardPlugin extends Plugin {
     }
     const open = this.openCanvas(board);
     const nodes = open ? open.getData().nodes : await read(board);
-    if (nodes.some(isGo)) return true;
+    if (nodes.some(isGo)) {
+      return true;
+    }
     const linkedCanvases = nodes.flatMap((node) => [
       ...(node.text || '').matchAll(/\[\[([^\]|#]+\.canvas)/g),
     ]);
@@ -820,7 +876,9 @@ class CanvasBoardPlugin extends Plugin {
         match[1].trim(),
         board,
       );
-      if (linkedFile && (await read(linkedFile.path)).some(isGo)) return true;
+      if (linkedFile && (await read(linkedFile.path)).some(isGo)) {
+        return true;
+      }
     }
     return false;
   }
@@ -834,7 +892,9 @@ class CanvasBoardPlugin extends Plugin {
         ? view.file.path
         : this.settings.defaultBoard;
     const goColorSet = parseColors(this.settings.passColors);
-    if (!goColorSet.size) return this.noticeNoGoColor();
+    if (!goColorSet.size) {
+      return this.noticeNoGoColor();
+    }
     if (!(await this.hasGoCards(board, goColorSet))) {
       const names = Object.keys(COLOR_NUM).filter((colorName) =>
         goColorSet.has(COLOR_NUM[colorName]),
