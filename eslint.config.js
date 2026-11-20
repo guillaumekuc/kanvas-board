@@ -59,6 +59,8 @@ module.exports = [
       'style/named-regex': 'error',
       // Import modules whole, never cherry-picked names
       'style/namespace-import': 'error',
+      // Functions as blocks: guards, setup, core logic, return
+      'style/function-blocks': 'error',
     },
   },
   // src/ is ES modules: imports at the top of the file, no require

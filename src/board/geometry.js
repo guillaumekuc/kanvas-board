@@ -6,6 +6,7 @@ const DEPENDS_ON_LABEL = /depends on/i;
 function bounds(nodes) {
   const left = Math.min(...nodes.map((node) => node.x)),
     top = Math.min(...nodes.map((node) => node.y));
+
   return {
     x: left,
     y: top,
@@ -24,6 +25,7 @@ function centerDistance(first, second) {
   }
   const [firstX, firstY] = center(first);
   const [secondX, secondY] = center(second);
+
   return Math.hypot(firstX - secondX, firstY - secondY);
 }
 
@@ -40,6 +42,7 @@ function overlapsAny(moving, others, offset) {
       card.y + offset.y + card.height + GAP > other.y
     );
   }
+
   return moving.some((card) => others.some((other) => isNear(card, other)));
 }
 
@@ -59,6 +62,7 @@ function centeredFreeOffset(nodes, card, others) {
     }
     offset.x += STEP;
   }
+
   return offset;
 }
 
@@ -84,6 +88,7 @@ function fitHeight(text, width) {
         ),
       0,
     );
+
   return Math.max(60, lines * 26 + 34);
 }
 
@@ -94,6 +99,7 @@ function groupAround(nodes, label) {
   const top = Math.min(...nodes.map((node) => node.y)) - PADDING;
   const right = Math.max(...nodes.map((node) => node.x + node.width));
   const bottom = Math.max(...nodes.map((node) => node.y + node.height));
+
   return {
     id: store.newId(),
     type: 'group',
@@ -143,6 +149,7 @@ function nearestFreeOffset(placed, { moving, fixed, direction }) {
     const side = attempt % 2 ? 1 : -1;
     offset[axis] = center[axis] + side * Math.ceil(attempt / 2) * STEP;
   }
+
   return offset;
 }
 
@@ -176,6 +183,7 @@ function place(canvasData, { near, width, height }) {
       return below;
     }
   }
+
   return { x: nearNode.x + nearNode.width + 40, y: nearNode.y };
 }
 
@@ -198,6 +206,7 @@ function withGroupMembers(canvasData, ids) {
       pick.add(node.id);
     }
   }
+
   return pick;
 }
 
@@ -221,8 +230,10 @@ function dagrePlacement(moving, inner, layout) {
     graph.setEdge(source, target);
   }
   dagre.layout(graph);
+
   return moving.map((node) => {
     const position = graph.node(node.id);
+
     return {
       id: node.id,
       x: Math.round(position.x - position.width / 2),
@@ -256,6 +267,7 @@ function layoutOps(canvasData, options) {
       ? { fromSide: toSide, toSide: fromSide }
       : { fromSide, toSide };
   }
+
   return [
     ...placed.map((card) => ({
       op: 'set',

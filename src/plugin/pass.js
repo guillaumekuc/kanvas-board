@@ -18,12 +18,14 @@ function claudeBin(setting) {
   if (setting) {
     return setting;
   }
+
   const local = path.join(
     operatingSystem.homedir(),
     '.local',
     'bin',
     process.platform === 'win32' ? 'claude.exe' : 'claude',
   );
+
   return fileSystem.existsSync(local) ? local : 'claude';
 }
 
@@ -40,6 +42,7 @@ function agentWords(setting, prompt) {
   );
   const hasPrompt = words.some((word) => word.includes('{prompt}'));
   const filled = words.map((word) => word.replace(PROMPT_PLACEHOLDER, prompt));
+
   return hasPrompt ? filled : [...filled, prompt];
 }
 
@@ -91,7 +94,9 @@ function defaultLaunch({ vault, board, agent }) {
     const script = MAC_SCRIPT.flatMap((line) => ['-e', line]);
     return ['osascript', [...script, vault, ...agent]];
   }
+
   const found = shared.LINUX_TERMINALS.find(({ binary }) => onPath(binary));
+
   return found ? [found.binary, found.args(vault, agent)] : null;
 }
 
@@ -103,17 +108,20 @@ function terminalLaunch(template, { vault, board, agent }) {
   if (!template) {
     return defaultLaunch({ vault, board, agent });
   }
+
   const values = { vault, board };
   const words = (template.match(COMMAND_WORDS) || []).flatMap((word) => {
     const bare = word.replace(OUTER_QUOTES, '');
     if (bare === '{agent}' || bare === '{claude}') {
       return agent;
     }
+
     return [
       bare.replace(VAULT_OR_BOARD_PLACEHOLDER, (match, name) => values[name]),
     ];
   });
   const [command, ...commandArguments] = words;
+
   return [command, commandArguments];
 }
 

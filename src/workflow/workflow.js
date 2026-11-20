@@ -63,6 +63,7 @@ function activeNode(boardTree, total, active) {
   const edges = boardTree.edges.filter(
     (edge) => kept.has(edge.from) || kept.has(edge.to),
   );
+
   return { board: boardTree.board, cards, context, edges };
 }
 
@@ -90,6 +91,7 @@ function settings() {
 
 function goColors() {
   const value = settings().passColors;
+
   return parseColors(value === undefined ? DEFAULT_PASS_COLORS : value);
 }
 
@@ -100,6 +102,7 @@ function activeTree(boardTree) {
   const active = new Set([...goColors(), WORKING]);
   const total = { waiting: 0 };
   const filtered = activeNode(boardTree, total, active);
+
   return {
     board: filtered.board,
     waiting: total.waiting,
@@ -119,6 +122,7 @@ function ageSuffixOperation(card, days) {
   const base = card.text.replace(STALE_SUFFIX, '');
   const isStale = days > 0 && card.note.ageDays >= days;
   const text = isStale ? `${base} · ${card.note.ageDays}d` : base;
+
   return text === card.text ? null : { op: 'set', id: card.id, text };
 }
 
@@ -129,6 +133,7 @@ function cardLinkTargets(node) {
   if (node.type === 'file') {
     return [node.file];
   }
+
   return [...(node.text || '').matchAll(WIKILINK)].map((match) =>
     match[1].trim(),
   );
@@ -143,6 +148,7 @@ function cardTextOk(raw) {
   if (!text.includes('[[')) {
     return text.split('\n').length <= 3;
   }
+
   return NOTE_CARD_TEXT.test(text) || DONE_CARD_TEXT.test(text);
 }
 
@@ -160,6 +166,7 @@ function cardIssues(node, depth) {
   if (isTopText && !cardTextOk(node.text || '')) {
     issues.push(TEXT_SHAPES);
   }
+
   return issues;
 }
 
@@ -168,7 +175,9 @@ function isStaleOrange(node, note) {
   if (node.color !== WORKING) {
     return false;
   }
+
   const age = Date.now() - fileSystem.statSync(store.vaultPath(note)).mtimeMs;
+
   return age > ORANGE_STALE_MS;
 }
 
@@ -183,6 +192,7 @@ function noteIssues(source, color) {
     : [];
   function hasHeading(heading) {
     const headingLine = new RegExp(`^${heading}\\s*$`, 'm');
+
     return headingLine.test(source);
   }
   const issues = [];
@@ -204,6 +214,7 @@ function noteIssues(source, color) {
   if (color === '4' && !hasHeading('## Output')) {
     issues.push('green card, note has no ## Output');
   }
+
   return issues;
 }
 
@@ -254,6 +265,7 @@ function check(board, ids) {
     }
   }
   walk(board, 0);
+
   return { issues };
 }
 
@@ -265,6 +277,7 @@ function colorCounts(colors) {
   function count(color) {
     return colors.filter((each) => each === color).length;
   }
+
   return {
     red: count(RED),
     yellow: count(YELLOW),
@@ -276,6 +289,7 @@ function desiredColor(card, inner, goColors) {
   if (goColors.has(card.color)) {
     return card.color;
   }
+
   const rolled = card.text !== undefined && INSIDE_SUFFIX.test(card.text);
   const own = rolled ? null : card.color;
   if (inner.red || own === '1') {
@@ -287,6 +301,7 @@ function desiredColor(card, inner, goColors) {
   if (rolled && (card.color === '1' || card.color === '3')) {
     return inner.allGreen ? '4' : null;
   }
+
   return card.color || null;
 }
 
@@ -312,6 +327,7 @@ function nestedCardUpdate(card, inner, goColorSet) {
   if (isTextChanged) {
     operation.text = text;
   }
+
   return { color, operation };
 }
 
@@ -325,6 +341,7 @@ function noteState(relativePath) {
   const questions = [
     ...text.split(DECISIONS_RECORD_HEADING)[0].matchAll(OPEN_QUESTION),
   ].length; // answered rounds don't count
+
   return {
     level: parts.length ? 'plan' : 'brief',
     parts: { done, total: parts.length },
@@ -334,6 +351,7 @@ function noteState(relativePath) {
 
 function staleDays() {
   const days = Number(settings().staleDays);
+
   return Number.isFinite(days) && settings().staleDays !== undefined ? days : 7;
 } // plugin setting "Stale after"
 
@@ -356,10 +374,12 @@ function rollup(board) {
       if (!card.inside) {
         return card.color;
       }
+
       const update = nestedCardUpdate(card, walk(card.inside), goColorSet);
       if (update.operation) {
         operations.push(update.operation);
       }
+
       return update.color;
     });
     const ages = node.cards.map((card) => ageSuffixOperation(card, days));
@@ -368,9 +388,11 @@ function rollup(board) {
       const via = store.writeOps(node.board, operations);
       changes.push({ board: node.board, via, operations });
     }
+
     return colorCounts(colors);
   }
   walk(tree(board));
+
   return changes;
 }
 

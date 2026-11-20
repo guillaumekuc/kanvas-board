@@ -13,9 +13,11 @@ function parseArguments(args) {
   const [commandName, boardArg, ...rest] = positional;
   function option(name) {
     const index = args.indexOf(name);
+
     return index >= 0 ? args[index + 1] : undefined;
   }
   const defaultBoard = String(store.settings().defaultBoard || '').trim();
+
   return {
     commandName,
     board: boardArg || defaultBoard || store.DEFAULT_BOARD,

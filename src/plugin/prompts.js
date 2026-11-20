@@ -11,6 +11,7 @@ class NameSuggest extends obsidian.AbstractInputSuggest {
 
   getSuggestions(query) {
     query = query.trim().toLowerCase();
+
     return this.names
       .filter((node) => node.toLowerCase().includes(query))
       .sort((first, second) => first.localeCompare(second));
@@ -98,6 +99,7 @@ class NamePrompt extends obsidian.Modal {
     const isSuggestion =
       suggestions &&
       suggestions.some((suggestion) => suggestion.toLowerCase() === typed);
+
     return isSuggestion ? value.trim() : value.trim().replace(FORBIDDEN, '');
   }
 
@@ -105,6 +107,7 @@ class NamePrompt extends obsidian.Modal {
     if (!this.button) {
       return;
     }
+
     const { overwrite } = this.options;
     const isOverwrite = Boolean(
       overwrite && this.value.trim() && overwrite(this.nameOf(this.value)),

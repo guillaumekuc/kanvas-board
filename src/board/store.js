@@ -88,6 +88,7 @@ class VaultFileIndex {
       this.skipped = new Set([...SKIP_DIRS, ...(settings().skipFolders || [])]);
       this.walk('');
     }
+
     return this.files;
   }
 
@@ -146,6 +147,7 @@ function readFileBoard(board) {
   );
   canvasData.nodes ||= [];
   canvasData.edges ||= [];
+
   return canvasData;
 }
 
@@ -179,6 +181,7 @@ function obsidianEval(code) {
       return result;
     }
   }
+
   return null;
 }
 
@@ -189,6 +192,7 @@ const PLUGIN = "app.plugins.plugins['kanvas-board']";
 function api(method, ...values) {
   const json = values.map((value) => JSON.stringify(value)).join(',');
   const call = `p.api.${method}(${json})`;
+
   return obsidianEval(
     `(async()=>{const p=${PLUGIN};if(!p||!p.api)return 'no plugin';` +
       `const r=await ${call};return r===null?'closed':r})()`,
@@ -201,6 +205,7 @@ function readBoard(board) {
     const canvasData = JSON.parse(out);
     return { nodes: canvasData.nodes || [], edges: canvasData.edges || [] };
   }
+
   return readFileBoard(board);
 }
 
@@ -210,6 +215,7 @@ function serialize(canvasData) {
   function lines(items) {
     return items.map((item) => '\t\t' + JSON.stringify(item)).join(',\n');
   }
+
   return (
     `{\n\t"nodes":[\n${lines(canvasData.nodes)}\n\t],\n` +
     `\t"edges":[\n${lines(canvasData.edges)}\n\t]\n}\n`
@@ -234,6 +240,7 @@ function retype(node, type, value) {
   node.type = type;
   node[type] = value;
   delete node[OTHER_TYPE[type]];
+
   return isRetyped;
 }
 
@@ -269,6 +276,7 @@ function setNode(canvasData, operation) {
       node[field] = operation[field];
     }
   }
+
   return retyped;
 }
 
@@ -320,6 +328,7 @@ function applyOps(canvasData, operations) {
       retyped.push(...retypedIds);
     }
   }
+
   return retyped;
 }
 
@@ -334,6 +343,7 @@ function writeOps(board, operations) {
   const canvasData = readFileBoard(board);
   applyOps(canvasData, operations);
   fileSystem.writeFileSync(vaultPath(board), serialize(canvasData));
+
   return 'file';
 }
 

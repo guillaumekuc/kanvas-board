@@ -297,6 +297,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
       attr: { spellcheck: 'false', rows },
     });
     field.value = value;
+
     return field;
   }
 

@@ -23,6 +23,7 @@ function runCommand(vaultRoot, commandArguments) {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => ERROR_LINE.test(line));
+
   return {
     args: commandArguments.join(' '),
     status: result.status,

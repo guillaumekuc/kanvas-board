@@ -31,6 +31,7 @@ function cardLinks(node) {
           store.findFile(match[1].trim()),
         );
   const found = targets.filter(Boolean);
+
   return {
     note: found.find((file) => file.endsWith('.md')) || null,
     canvas: found.find((file) => file.endsWith('.canvas')) || null,
@@ -57,7 +58,9 @@ function linksTo(relativePath, board, skipId) {
     if (file.endsWith('.md')) {
       return isLinking(source) ? [file] : [];
     }
+
     const nodes = (store.parseOrNull(source) || {}).nodes || [];
+
     return nodes
       .filter((node) => !(file === board && node.id === skipId))
       .filter(isLinkingCard)
@@ -74,6 +77,7 @@ function linksTo(relativePath, board, skipId) {
       found.push(...linksIn(file, source));
     }
   }
+
   return found;
 }
 
@@ -83,6 +87,7 @@ function noteContexts(frontmatter) {
   if (!frontmatter) {
     return [];
   }
+
   function unquote(value) {
     return value.trim().replace(QUOTED_VALUE, '$2');
   }
@@ -90,6 +95,7 @@ function noteContexts(frontmatter) {
   if (!match) {
     return [];
   }
+
   return (
     match[1].trim()
       ? match[1].replace(OUTER_BRACKETS, '').split(',')
@@ -112,6 +118,7 @@ function cardContexts(node) {
       .readFileSync(store.vaultPath(note), 'utf8')
       .match(FRONTMATTER) || [])[1];
   const contexts = noteContexts(frontmatter);
+
   return contexts.length ? contexts : undefined;
 }
 
@@ -141,6 +148,7 @@ function yamlStr(value) {
 function tree(board, { noteInfo, depth = 0, seen = new Set() } = {}) {
   seen.add(board);
   const canvasData = store.readBoard(board);
+
   return {
     board,
     cards: canvasData.nodes
@@ -167,6 +175,7 @@ function tree(board, { noteInfo, depth = 0, seen = new Set() } = {}) {
         if (canvas && !seen.has(canvas) && depth < 2) {
           card.inside = tree(canvas, { noteInfo, depth: depth + 1, seen });
         }
+
         return card;
       }),
     edges: canvasData.edges.map((edge) => ({
@@ -196,8 +205,10 @@ function archiveDir(board, options = {}) {
         .replace(TRAILING_SLASHES, '') || store.ARCHIVE_DIR
     );
   }
+
   const boardPath = String(board).replace(BACKSLASH, '/'),
     folder = path.posix.dirname(boardPath);
+
   return (
     (folder === '.' ? '' : folder + '/') +
     path.posix.basename(boardPath, '.canvas') +
@@ -257,6 +268,7 @@ function archiveNote(canvasData, { id, board, date, contexts = [] }) {
         : node.type === 'link'
           ? node.url
           : node.label || '';
+
   return {
     name: noteName(
       node.type === 'text' ? node.text : node.file || node.url || node.label,
@@ -280,6 +292,7 @@ function restoreOps(canvasData, source) {
       return undefined;
     }
     const value = match[1].trim();
+
     return value.startsWith('"') ? JSON.parse(value) : value;
   }
   const board = get('archived-from').replace(OUTER_WIKILINK_BRACKETS, '');
@@ -314,6 +327,7 @@ function restoreOps(canvasData, source) {
     archivedId: get('card-id'),
     restoredId: id,
   });
+
   return { board, operations: [{ op: 'add', node }, ...edges] };
 }
 
@@ -348,6 +362,7 @@ function restoredEdgeOps(canvasData, frontmatter, { archivedId, restoredId }) {
     );
     operations.push({ op: 'edge', edge });
   }
+
   return operations;
 }
 

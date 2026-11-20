@@ -13,6 +13,7 @@ module.exports = {
       if (prefixPattern.test(identifier.name)) {
         return;
       }
+
       context.report({
         node: identifier,
         message:
@@ -20,11 +21,13 @@ module.exports = {
           `${prefixes.join(' / ')}.`,
       });
     }
+
     return {
       VariableDeclarator(declarator) {
         if (declarator.id.type !== 'Identifier') {
           return;
         }
+
         if (isBooleanExpression(declarator.init)) {
           reportBareName(declarator.id);
         }
@@ -33,6 +36,7 @@ module.exports = {
         if (pattern.left.type !== 'Identifier') {
           return;
         }
+
         if (isBooleanExpression(pattern.right)) {
           reportBareName(pattern.left);
         }
