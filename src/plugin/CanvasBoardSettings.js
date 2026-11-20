@@ -5,6 +5,11 @@ import * as pass from './pass.js';
 import * as agentInstructions from './agentInstructions.js';
 import path from 'path';
 
+function fitToText(field) {
+  field.style.height = 'auto';
+  field.style.height = `${field.scrollHeight + 2}px`;
+}
+
 class CanvasBoardSettings extends obsidian.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -13,6 +18,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
 
   display() {
     this.containerEl.empty();
+    this.skillFields = { general: null, colors: {} };
     this.displayHotkeys();
     this.displayBoard();
     this.displayWorkflow();
@@ -140,12 +146,14 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     const { containerEl } = this;
     this.addHeading('Workflow').setDesc(
       'What each color does and its label, shown in tooltips, the ' +
-        'filter pane and the color commands. Toggle on: the color ' +
+        'filter pane and the color commands; under each, its part of ' +
+        'the agent instructions. Toggle on: the color ' +
         'triggers the agent, so "Run pass" starts if the board has ' +
         'such a card and the agent takes those cards. All off: the ' +
         'agent never starts.',
     );
     const goColors = pass.parseColors(this.plugin.settings.passColors);
+    const instructions = this.readSkillParts();
     for (const { name, meaning } of shared.WORKFLOW) {
       const colorNumber = shared.COLOR_NUM[name];
       const row = new obsidian.Setting(containerEl)
@@ -165,37 +173,44 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
           .setValue((this.plugin.settings.colorLabels || {})[name] || '')
           .onChange((value) => this.plugin.setColorLabel(name, value.trim())),
       );
-      if (!colorNumber) {
-        row.addToggle((component) =>
-          // uncolored never triggers the agent: same pill for the layout,
-          // locked
-          component
-            .setTooltip('Never triggers the agent')
-            .setValue(false)
-            .setDisabled(true),
-        );
-      } else {
-        row.addToggle((component) =>
-          component
-            .setTooltip('Triggers the agent')
-            .setValue(goColors.has(colorNumber))
-            .onChange(async (isOn) => {
-              if (isOn) {
-                goColors.add(colorNumber);
-              } else {
-                goColors.delete(colorNumber);
-              }
-              this.plugin.settings.passColors = shared.WORKFLOW.map(
-                ({ name: colorName }) => colorName,
-              )
-                .filter((colorName) =>
-                  goColors.has(shared.COLOR_NUM[colorName]),
-                )
-                .join(' ');
-              await this.plugin.saveData(this.plugin.settings);
-            }),
-        );
-      }
+      this.addWorkflowToggle(row, colorNumber, goColors);
+      this.skillFields.colors[name] = this.addSkillField(
+        instructions.colors[name],
+        `Agent instructions: ${agentInstructions.sectionTitle(name)}`,
+      );
+    }
+  }
+
+  // On: cards of this color trigger the agent (setting passColors).
+  addWorkflowToggle(row, colorNumber, goColors) {
+    if (!colorNumber) {
+      row.addToggle((component) =>
+        // uncolored never triggers the agent: same pill for the layout,
+        // locked
+        component
+          .setTooltip('Never triggers the agent')
+          .setValue(false)
+          .setDisabled(true),
+      );
+    } else {
+      row.addToggle((component) =>
+        component
+          .setTooltip('Triggers the agent')
+          .setValue(goColors.has(colorNumber))
+          .onChange(async (isOn) => {
+            if (isOn) {
+              goColors.add(colorNumber);
+            } else {
+              goColors.delete(colorNumber);
+            }
+            this.plugin.settings.passColors = shared.WORKFLOW.map(
+              ({ name: colorName }) => colorName,
+            )
+              .filter((colorName) => goColors.has(shared.COLOR_NUM[colorName]))
+              .join(' ');
+            await this.plugin.saveData(this.plugin.settings);
+          }),
+      );
     }
   }
 
@@ -226,9 +241,10 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     new obsidian.Setting(containerEl)
       .setName('Agent instructions')
       .setDesc(
-        'What the agent does on a pass: a general part, then one ' +
-          'part per color (the agent reads them all; the Workflow ' +
-          'toggles decide which cards it works). Saved when a field ' +
+        'What the agent does on a pass: the general part below, then ' +
+          'one part per color, under each color in Workflow (the agent ' +
+          'reads them all; the toggles decide which cards it works). ' +
+          'Saved when a field ' +
           `loses focus, to ${this.plugin.skillRelativePath()} (the ` +
           'pass prompt points any agent at it). Written once from the ' +
           'plugin, then yours: plugin updates never overwrite it. ' +
@@ -251,22 +267,33 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     this.addSkillEditors(skillFile);
   }
 
-  // One field for the general part and one per color; any of them saves the
-  // whole file (see agentInstructions.js).
+  // The skill file split into its general part and one part per color
+  // (see agentInstructions.js); read once per display.
+  readSkillParts() {
+    const colorNames = shared.WORKFLOW.map(({ name: colorName }) => colorName);
+    this.skillText = this.readSkill(this.plugin.skillPath());
+    this.skillParts = agentInstructions.splitInstructions(
+      this.skillText,
+      colorNames,
+    );
+
+    return this.skillParts;
+  }
+
+  // The general field goes under Pass; the color fields were added under
+  // each color in Workflow. Any of them saves the whole file.
   addSkillEditors(skillFile) {
     const colorNames = shared.WORKFLOW.map(({ name: colorName }) => colorName);
-    const text = this.readSkill(skillFile);
-    const parts = agentInstructions.splitInstructions(text, colorNames);
-    const general = this.addSkillField(parts.general, '16');
-    if (text === null) {
+    const general = this.addSkillField(
+      this.skillParts.general,
+      'Agent instructions',
+    );
+    if (this.skillText === null) {
       general.placeholder =
         "No instructions file yet: Reset writes the plugin's version.";
     }
-    const colorFields = {};
-    for (const colorName of colorNames) {
-      this.addColorSkillHeading(colorName);
-      colorFields[colorName] = this.addSkillField(parts.colors[colorName], '6');
-    }
+    this.skillFields.general = general;
+    const colorFields = this.skillFields.colors;
     const fields = [general, ...Object.values(colorFields)];
     for (const field of fields) {
       field.addEventListener('change', () => {
@@ -291,34 +318,18 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     }
   }
 
-  addSkillField(value, rows) {
+  // A textarea as tall as its text: it grows and shrinks while typing.
+  addSkillField(value, label) {
     const field = this.containerEl.createEl('textarea', {
       cls: 'kanvas-board-skill-editor',
-      attr: { spellcheck: 'false', rows },
+      attr: { spellcheck: 'false', rows: '1', 'aria-label': label },
     });
     field.value = value;
+    field.addEventListener('input', () => fitToText(field));
+    // scrollHeight is 0 until the tab is laid out
+    window.setTimeout(() => fitToText(field), 0);
 
     return field;
-  }
-
-  addColorSkillHeading(colorName) {
-    const colorNumber = shared.COLOR_NUM[colorName];
-    const goColors = pass.parseColors(this.plugin.settings.passColors);
-    const isWorked = Boolean(colorNumber) && goColors.has(colorNumber);
-    const row = new obsidian.Setting(this.containerEl)
-      .setName(agentInstructions.sectionTitle(colorName))
-      .setDesc(
-        isWorked
-          ? 'A pass works these cards (Workflow toggle on).'
-          : 'Context: what these cards are to the agent (Workflow ' +
-              'toggle off).',
-      );
-    row.nameEl.prepend(
-      createSpan({
-        cls: 'kanvas-board-dot kanvas-board-workflow-dot',
-        attr: { style: this.plugin.dotStyle(colorNumber) },
-      }),
-    );
   }
 
   saveSkill(skillFile, text) {

@@ -286,10 +286,13 @@
 	.status-bar-item.apm-counter.apm-low { animation: none; }
 }
 
-/* Settings: the agent instructions (skill file), edited in place */
+/* Settings: the agent instructions (skill file), edited in place; each
+   field is sized to its text (CanvasBoardSettings.addSkillField). The color
+   parts sit under their color in Workflow. */
 .kanvas-board-skill-editor {
 	width: 100%;
-	min-height: 24em;
+	min-height: 3em;
+	overflow-y: hidden;
 	font-family: var(--font-monospace);
 	font-size: var(--font-ui-smaller);
 	resize: vertical;
