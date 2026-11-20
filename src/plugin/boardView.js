@@ -1,5 +1,6 @@
 import * as obsidian from 'obsidian';
 import * as view from './view.js';
+import * as config from '../workflow/config.js';
 
 const INLINE_TAG = /(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g;
 const DIGITS_ONLY = /^\d+$/;
@@ -360,15 +361,17 @@ class BoardView {
     badge.setAttr('aria-label', this.keyedLabel('Unfold 1 level', 'unfold'));
   }
 
-  // Yellow (needs me) cards whose note was not touched for "Stale after" days:
+  // Review cards (yellow by default, Settings > Workflow roles) whose note was
+  // not touched for "Stale after" days:
   // a warning badge (the icon of `- [!]`) with the time since the note last
   // changed. Cards without a note have no date: no badge.
   paintStale(canvas) {
     const days = Number(this.settings.staleDays) || 0;
+    const { review } = config.resolve(this.settings);
     const board = canvas.view && canvas.view.file ? canvas.view.file.path : '';
     for (const node of canvas.nodes.values()) {
       const nodeData = node.getData();
-      const isWaiting = days > 0 && nodeData.color === '3';
+      const isWaiting = days > 0 && review.includes(nodeData.color);
       const age = isWaiting ? this.noteAgeDays(nodeData, board) : -1;
       this.paintStaleBadge(node, { age, days });
     }
