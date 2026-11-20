@@ -141,19 +141,19 @@ function cardLinkTargets(node) {
 
 // Structure only, never content: the invariants the skill states. A check that
 // never fires in a month gets deleted; a new one only after the same defect
-// shows up twice. A card the agent wrote: a wish (≤ 3 lines), `[[Note]] ·
-// reason`, or a recap `<words> · done · [[Output]]`.
+// shows up twice. A card the agent wrote: a wish (User's free text, any
+// length), `[[Note]] · reason`, or a recap `<words> · done · [[Output]]`.
 function cardTextOk(raw) {
   const text = raw.trim();
   if (!text.includes('[[')) {
-    return text.split('\n').length <= 3;
+    return true;
   }
 
   return NOTE_CARD_TEXT.test(text) || DONE_CARD_TEXT.test(text);
 }
 
 const TEXT_SHAPES =
-  'card text is neither a wish (≤ 3 lines), `[[Note]] · reason` ' +
+  'card text is neither a wish (no link),`[[Note]] · reason` ' +
   'nor `<recap> · done · [[Output]]`';
 
 // Broken links, and card text off the ladder's shapes on the top board

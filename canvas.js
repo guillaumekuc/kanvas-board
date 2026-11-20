@@ -4313,11 +4313,11 @@ function cardLinkTargets(node) {
 function cardTextOk(raw) {
   const text = raw.trim();
   if (!text.includes("[[")) {
-    return text.split("\n").length <= 3;
+    return true;
   }
   return NOTE_CARD_TEXT.test(text) || DONE_CARD_TEXT.test(text);
 }
-var TEXT_SHAPES = "card text is neither a wish (\u2264 3 lines), `[[Note]] \xB7 reason` nor `<recap> \xB7 done \xB7 [[Output]]`";
+var TEXT_SHAPES = "card text is neither a wish (no link),`[[Note]] \xB7 reason` nor `<recap> \xB7 done \xB7 [[Output]]`";
 function cardIssues(node, depth) {
   const issues = cardLinkTargets(node).filter((link) => !findFile(link)).map((link) => `broken link [[${link}]]`);
   const isTopText = node.type === "text" && depth === 0;
