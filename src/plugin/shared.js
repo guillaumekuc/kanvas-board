@@ -150,10 +150,12 @@ function createApi(plugin) {
   return {
     read: (board) => {
       const canvas = plugin.openCanvas(board);
+
       return canvas ? JSON.stringify(canvas.getData()) : null;
     },
     apply: async (board, operations) => {
       const canvas = plugin.openCanvas(board);
+
       return canvas ? unpack.applyToOpenCanvas(canvas, operations) : null;
     },
   };
@@ -164,7 +166,9 @@ function isArchiveNote(app, file) {
   if (!file || file.extension !== 'md') {
     return false;
   }
+
   const { frontmatter } = app.metadataCache.getFileCache(file) || {};
+
   return Boolean(frontmatter && frontmatter['archived-from']);
 }
 
@@ -202,6 +206,7 @@ function startApmCounter(plugin, pluginDir) {
   );
   counter.load();
   plugin.register(() => counter.unload());
+
   return counter;
 }
 

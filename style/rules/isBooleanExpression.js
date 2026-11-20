@@ -27,5 +27,6 @@ module.exports = function isBooleanExpression(node) {
   if (node.type !== 'LogicalExpression') {
     return false;
   }
+
   return isBooleanExpression(node.left) && isBooleanExpression(node.right);
 };

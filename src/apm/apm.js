@@ -22,6 +22,7 @@ function band(pace, { personalBest, lowPercent, isWarmingUp = false }) {
   if (pace >= personalBest) {
     return 'best';
   }
+
   const ratio = (pace / personalBest) * 100;
   // a session's first window can't be full yet: no alert
   if (ratio < lowPercent) {
@@ -33,6 +34,7 @@ function band(pace, { personalBest, lowPercent, isWarmingUp = false }) {
   if (ratio < 75) {
     return 'yellow';
   }
+
   return 'green';
 }
 
@@ -44,6 +46,7 @@ function cardsOf(json) {
       JSON.stringify(CONTENT_KEYS.map((key) => node[key] ?? null)),
     );
   }
+
   return map;
 }
 
@@ -65,6 +68,7 @@ function touchedCards(before, after) {
       out.push(id);
     }
   }
+
   return out;
 }
 
@@ -158,6 +162,7 @@ class ApmCounter {
     if (file.extension !== 'canvas') {
       return;
     }
+
     const before = this.snapshots.get(file.path);
     const after = await this.snapshot(file);
     if (!before || !after) {
@@ -180,6 +185,7 @@ class ApmCounter {
     if (!keys.length) {
       return;
     }
+
     for (const cardId of keys) {
       this.touched.set(cardId, now);
     }
@@ -197,6 +203,7 @@ class ApmCounter {
         this.touched.delete(cardId);
       }
     }
+
     return this.touched.size;
   }
 
@@ -204,12 +211,14 @@ class ApmCounter {
     if (now - this.lastAction > this.settings.idleMinutes * MINUTE_MS) {
       return true;
     }
+
     const windows = [
       window,
       ...[...(this.app.workspace.floatingSplit?.children ?? [])].map(
         (container) => container.win,
       ),
     ];
+
     return !windows.some(
       (candidateWindow) =>
         candidateWindow && candidateWindow.document.hasFocus(),
@@ -296,6 +305,7 @@ function loadSettings(stored, legacy) {
       unit: unitOf(settings.windowMinutes),
     });
   }
+
   return settings;
 }
 

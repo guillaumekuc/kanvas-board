@@ -12,6 +12,7 @@ childProcess.execFileSync = () => {
 const generator = { seed: 42 };
 Math.random = () => {
   generator.seed = (generator.seed * 1103515245 + 12345) % 2147483648;
+
   return generator.seed / 2147483648;
 };
 

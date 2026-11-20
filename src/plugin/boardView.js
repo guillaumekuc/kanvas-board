@@ -43,6 +43,7 @@ class BoardView {
         }
       });
       plugin.updateCount(); // selected count in the status bar follows at once
+
       return result;
     };
     // Undo / redo may bring folds back or take them away: redraw at once.
@@ -51,9 +52,11 @@ class BoardView {
       canvas.applyHistory = function (...values) {
         const result = history.apply(this, values);
         plugin.refreshView(this);
+
         return result;
       };
     }
+
     return state;
   }
 
@@ -79,6 +82,7 @@ class BoardView {
   // ignore it and show every card. Obsidian keeps it (node.unknownData).
   foldOf(node) {
     const boardData = node.getData().canvasBoard;
+
     return (boardData && boardData.folded) || null;
   }
 
@@ -90,6 +94,7 @@ class BoardView {
         folds.set(node.id, direction);
       }
     }
+
     return folds;
   }
 
@@ -99,6 +104,7 @@ class BoardView {
     if (!changes.size) {
       return;
     }
+
     const canvasData = canvas.getData();
     for (const node of canvasData.nodes) {
       if (!changes.has(node.id)) {
@@ -127,6 +133,7 @@ class BoardView {
       pane = new view.FilterPane(this, canvas);
       this.panes.set(canvas, pane);
     }
+
     return pane;
   }
 
@@ -143,6 +150,7 @@ class BoardView {
         links.set(source, (links.get(source) || []).concat(target));
       }
     }
+
     return links;
   }
 
@@ -165,6 +173,7 @@ class BoardView {
     const links = this.branchLinks(canvas, this.settings.foldDirection);
     const isFolded = (each) => {
       const eachNode = canvas.nodes.get(each);
+
       return Boolean(eachNode && this.foldOf(eachNode));
     };
     const seen = new Set([id]);
@@ -178,6 +187,7 @@ class BoardView {
       found.push(...next.filter(isFolded));
       level = next.filter((each) => !isFolded(each));
     }
+
     return found;
   }
 
@@ -214,6 +224,7 @@ class BoardView {
         tags.add(match[1]);
       }
     }
+
     return tags;
   }
 
@@ -226,7 +237,9 @@ class BoardView {
     if (!state.xtags.size) {
       return true;
     }
+
     const tags = this.cardTagSet(node);
+
     return ![...state.xtags].some((tag) => tags.has(tag));
   }
 
@@ -269,6 +282,7 @@ class BoardView {
     if (!this.filtering(state)) {
       return [];
     }
+
     return [...canvas.nodes.values()]
       .filter((node) => node.getData().type !== 'group')
       .filter((node) => !this.matches(node, state))
@@ -279,6 +293,7 @@ class BoardView {
     if (!state.xtags.size || !this.settings.hideTagBranches) {
       return [];
     }
+
     function isCard(id) {
       return (
         canvas.nodes.get(id) && canvas.nodes.get(id).getData().type !== 'group'
@@ -286,8 +301,10 @@ class BoardView {
     }
     const tagged = [...canvas.nodes.values()].filter((node) => {
       const tags = this.cardTagSet(node);
+
       return [...state.xtags].some((tag) => tags.has(tag));
     });
+
     return tagged.flatMap((node) =>
       this.branchLevels(canvas, node.id, this.settings.foldDirection)
         .flat()
@@ -371,6 +388,7 @@ class BoardView {
     if (!file || !file.stat) {
       return -1;
     }
+
     return Math.floor((Date.now() - file.stat.mtime) / 86400000);
   }
 
@@ -411,6 +429,7 @@ class BoardView {
   // folds); the pane says by what.
   viewLabel(canvas) {
     const hiddenCount = this.peekViewState(canvas).hidden.size;
+
     return hiddenCount
       ? `${hiddenCount} card${hiddenCount > 1 ? 's' : ''} hidden`
       : '';
@@ -424,6 +443,7 @@ class BoardView {
 
   cardText(node) {
     const nodeData = node.getData();
+
     return String(
       (nodeData.type === 'text'
         ? nodeData.text

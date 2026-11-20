@@ -20,6 +20,7 @@ function readTree(root, directory = '') {
       );
     }
   }
+
   return snapshot;
 }
 

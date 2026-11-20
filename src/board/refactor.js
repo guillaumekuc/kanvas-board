@@ -66,6 +66,7 @@ function collapseOps(canvasData, { ids, file, label }) {
   for (const node of moving) {
     operations.push({ op: 'remove', id: node.id });
   }
+
   return { operations, subcanvas, id: card.id };
 }
 
@@ -127,6 +128,7 @@ function expandOps(canvasData, { id, subcanvas, group }) {
     ...retargetOps(canvasData.edges, id, target.id),
     { op: 'remove', id },
   ];
+
   return frame ? Object.assign(operations, { group: frame.id }) : operations;
 }
 
@@ -174,6 +176,7 @@ function extractOps(canvasData, { id, part, from }) {
   if (card.color) {
     node.color = card.color;
   }
+
   return [
     { op: 'set', id, text: left, height: geometry.fitHeight(left, card.width) },
     { op: 'add', node },
@@ -211,6 +214,7 @@ function keptEdgeOps(links, { keep, gone }) {
       toEnd: 'arrow',
     });
   }
+
   return operations;
 }
 
@@ -249,6 +253,7 @@ function mergeEdgeOps(canvasData, { keep, gone }) {
   for (const links of linksByOther.values()) {
     operations.push(...keptEdgeOps(links, { keep, gone }));
   }
+
   return operations;
 }
 
@@ -270,6 +275,7 @@ function mergeOps(canvasData, ids) {
   const width = Math.max(...cards.map((node) => node.width));
   const color = store.mostUrgent(cards.map((node) => node.color || ''));
   const height = geometry.fitHeight(text, width);
+
   return [
     { op: 'set', id: keep.id, text, color, width, height },
     ...mergeEdgeOps(canvasData, { keep, gone }),
@@ -285,6 +291,7 @@ function pieceStart(separator) {
     const headingOfLevel = new RegExp(`^#{${headingMatch[1]}} `);
     return headingOfLevel;
   }
+
   return separator === 'bullet' ? TOP_LEVEL_BULLET : null;
 }
 
@@ -300,10 +307,12 @@ function splitText(text, separator) {
             pieces.push([]);
           }
           pieces[pieces.length - 1].push(line);
+
           return pieces;
         }, [])
         .map((pieceLines) => pieceLines.join('\n'))
     : text.split(BLANK_LINE);
+
   return pieces.map((piece) => piece.trim()).filter(Boolean);
 }
 
@@ -319,6 +328,7 @@ function splitOps(canvasData, id, separator = 'paragraph') {
     throw new Error(`nothing to split by ${separator}`);
   }
   let top = card.y;
+
   return pieces.map((text, index) => {
     const height = geometry.fitHeight(text, card.width);
     const node = {
@@ -329,6 +339,7 @@ function splitOps(canvasData, id, separator = 'paragraph') {
       height,
     };
     top += height + 20;
+
     return index ? { op: 'add', node } : { op: 'set', id, text, height };
   });
 }
@@ -341,6 +352,7 @@ function plainLines(text) {
   function name(linkTarget) {
     return linkTarget.replace(NOTE_OR_CANVAS_FILE, '').split('/').pop();
   }
+
   return String(text || '')
     .split('\n')
     .map((line) =>
@@ -369,6 +381,7 @@ function relinkText(text, hits, replace) {
       return link;
     }
     const name = path.posix.basename(target.trim()).replace(CANVAS_FILE, '');
+
     return replace(alias || name);
   });
 }
@@ -405,6 +418,7 @@ function templateOps(template, origin) {
       });
     }
   }
+
   return operations;
 }
 

@@ -21,6 +21,7 @@ function runScenario(commands) {
   );
   const files = readTree(vaultRoot);
   fileSystem.rmSync(vaultRoot, { recursive: true, force: true });
+
   return { outputs: anonymized, files };
 }
 

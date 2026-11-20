@@ -14,6 +14,7 @@ function groupLinkOperations(plugin, canvas, unpacked) {
     .filter((link) => link.path === here)
     .map((link) => nodes.find((node) => node.id === link.id))
     .filter(Boolean);
+
   return linking.flatMap((node) => [
     {
       op: 'set',
@@ -79,8 +80,10 @@ async function redirectOutsideLinks(plugin, unpacked) {
       if (!filePath.endsWith('.canvas')) {
         return library.relinkText(content, hits, toLink);
       }
+
       const canvasData = JSON.parse(content || '{}');
       relinkCanvasData(canvasData, redirect);
+
       return JSON.stringify(canvasData, null, '\t');
     });
   }
@@ -93,6 +96,7 @@ function unpackMessage(mode, { cardCount, linkCount, path }) {
   const cards = `${cardCount} card${plural(cardCount)}`;
   const links = `${linkCount} link${plural(linkCount)}`;
   const broken = linkCount ? ` (${links} now broken)` : '';
+
   return {
     dissolve: `unpacked ${cards}, ${path} trashed${broken}`,
     copy: `unpacked ${cards}, ${path} kept`,
@@ -122,6 +126,7 @@ async function unpackSubcanvas(plugin, canvas, request) {
         target,
         from,
       );
+
       return Boolean(destination) && destination.path === file.path;
     };
   }
@@ -157,6 +162,7 @@ async function subcanvasLinks(plugin, file, { canvas, skipId }) {
   function hits(from) {
     return (target) => {
       const destination = metadataCache.getFirstLinkpathDest(target, from);
+
       return Boolean(destination) && destination.path === file.path;
     };
   }
@@ -198,6 +204,7 @@ async function subcanvasLinks(plugin, file, { canvas, skipId }) {
       !source.endsWith('.canvas') &&
       resolved[source][file.path],
   );
+
   return [
     ...found,
     ...notes.map((source) => ({ path: source, label: source })),
@@ -220,6 +227,7 @@ async function applyToOpenCanvas(canvas, operations) {
   canvas.setData(canvasData);
   canvas.requestSave();
   await new Promise((resolve) => setTimeout(resolve, SAVE_DELAY_MS));
+
   return 'obsidian';
 }
 

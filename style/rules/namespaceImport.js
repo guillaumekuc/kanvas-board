@@ -15,6 +15,7 @@ function moduleName(source) {
   }
 
   const base = source.split('/').pop().replace(FILE_EXTENSION, '');
+
   return base.replace(NAME_SEPARATOR, (_match, letter) => letter.toUpperCase());
 }
 
@@ -39,6 +40,7 @@ function declaredNames(scope, names) {
   for (const child of scope.childScopes) {
     declaredNames(child, names);
   }
+
   return names;
 }
 
@@ -47,6 +49,7 @@ function declaredNames(scope, names) {
 function freeName(sourceCode, source) {
   const name = moduleName(source);
   const names = declaredNames(sourceCode.scopeManager.globalScope, new Set());
+
   return names.has(name) ? `${name}Module` : name;
 }
 
@@ -62,6 +65,7 @@ function referenceFix(fixer, identifier, qualified) {
     parent.type === 'Property' &&
     parent.shorthand &&
     parent.value === identifier;
+
   return fixer.replaceText(
     identifier,
     isShorthand ? `${identifier.name}: ${qualified}` : qualified,
@@ -78,6 +82,7 @@ function referenceFixes(fixer, variables, namespace) {
         referenceFix(fixer, reference.identifier, `${namespace}.${imported}`),
       ),
   );
+
   return fixes.includes(null) ? null : fixes;
 }
 
@@ -87,6 +92,7 @@ function importVariables(sourceCode, node) {
     const [variable] = sourceCode.getDeclaredVariables(specifier);
     variables.set(specifier.imported.name, variable);
   }
+
   return variables;
 }
 
@@ -107,6 +113,7 @@ function requireVariables(sourceCode, declarator) {
     );
     variables.set(property.key.name, variable);
   }
+
   return variables;
 }
 
