@@ -26,9 +26,9 @@ import path from 'path';
 import { mixBoardView } from './boardView.js';
 
 const CONTROL_BUTTONS = [
-  ['find', 'Search current canvas', 'search'],
-  ['filter', 'Filter cards', 'filter'],
-  ['tidy-layout', 'Tidy layout', 'network'],
+  { id: 'find', label: 'Search current canvas', icon: 'search' },
+  { id: 'filter', label: 'Filter cards', icon: 'filter' },
+  { id: 'tidy-layout', label: 'Tidy layout', icon: 'network' },
 ];
 
 class CanvasBoardPlugin extends Plugin {
@@ -72,7 +72,7 @@ class CanvasBoardPlugin extends Plugin {
   // palette, a hotkey, a right-click item or a toolbar button.
   // Refactor and archive commands: one undo step each (Ctrl+Z), same code as
   // canvas.js for agents. Each is also a right-click item on the cards it
-  // applies to: `menu` is [title, Lucide icon], or null for none.
+  // applies to: `menu` is { title, icon } (Lucide), or null for none.
   addCanvasCommand(id, name, { menu, test, run }) {
     this.actions.push({ id, menu, test, run });
     this.addCommand({
@@ -104,8 +104,8 @@ class CanvasBoardPlugin extends Plugin {
     for (const action of shown) {
       menu.addItem((item) =>
         item
-          .setTitle(this.keyedTitle(action.menu[0], action.id))
-          .setIcon(action.menu[1])
+          .setTitle(this.keyedTitle(action.menu.title, action.id))
+          .setIcon(action.menu.icon)
           .setSection('kanvas-board')
           .onClick(() => this.runAction(action.run, canvas, selection)),
       );
@@ -197,7 +197,7 @@ class CanvasBoardPlugin extends Plugin {
   colorLabel(name) {
     return (
       (this.settings.colorLabels || {})[name] ||
-      COLORS.find((colorRow) => colorRow[0] === name)[3]
+      COLORS.find((colorRow) => colorRow.name === name).label
     );
   }
 
@@ -217,10 +217,10 @@ class CanvasBoardPlugin extends Plugin {
       delete labels[name];
     }
     await this.saveData(this.settings);
-    const row = COLORS.find((colorRow) => colorRow[0] === name);
+    const row = COLORS.find((colorRow) => colorRow.name === name);
     const colorCommand =
       this.app.commands &&
-      this.app.commands.commands[`${this.manifest.id}:color-${row[2]}`];
+      this.app.commands.commands[`${this.manifest.id}:color-${row.commandKey}`];
     const commandName = this.colorCommandName(name);
     if (colorCommand) {
       colorCommand.name = `${this.manifest.name}: ${commandName}`;
@@ -409,7 +409,7 @@ class CanvasBoardPlugin extends Plugin {
       cls: 'canvas-control-group mod-raised kanvas-board-controls',
     });
     controls.insertBefore(group, controls.lastElementChild);
-    for (const [id, label, icon] of CONTROL_BUTTONS) {
+    for (const { id, label, icon } of CONTROL_BUTTONS) {
       const button = group.createDiv({
         cls: 'canvas-control-item',
         attr: {
@@ -483,14 +483,14 @@ class CanvasBoardPlugin extends Plugin {
     for (const item of swatches) {
       const color =
         (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || '';
-      const row = COLORS.find((colorRow) => colorRow[1] === color);
+      const row = COLORS.find((colorRow) => colorRow.canvasColor === color);
       if (!row) {
         continue;
       }
       item.setAttrs({
         'aria-label': this.keyedLabel(
-          this.colorLabel(row[0]),
-          `color-${row[2]}`,
+          this.colorLabel(row.name),
+          `color-${row.commandKey}`,
         ),
         'data-tooltip-position': 'top',
       });
@@ -515,11 +515,11 @@ class CanvasBoardPlugin extends Plugin {
       const button = element.createEl('button', {
         cls: 'clickable-icon kanvas-board-menu-btn',
         attr: {
-          'aria-label': this.keyedLabel(action.menu[0], id),
+          'aria-label': this.keyedLabel(action.menu.title, id),
           'data-tooltip-position': 'top',
         },
       });
-      setIcon(button, action.menu[1]);
+      setIcon(button, action.menu.icon);
       button.addEventListener('click', () =>
         this.runAction(action.run, canvas, [...canvas.selection]),
       );
