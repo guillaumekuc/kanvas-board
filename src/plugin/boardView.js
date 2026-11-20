@@ -1,5 +1,5 @@
-const { setIcon } = require('obsidian');
-const { branchLevelsFrom, emptyViewState, FilterPane } = require('./view.js');
+import { setIcon } from 'obsidian';
+import { branchLevelsFrom, emptyViewState, FilterPane } from './view.js';
 
 // Mixin: the view state of each open canvas (filter, folds, tag branches,
 // stale badges), how it is painted, and the fold and unfold helpers the
@@ -405,4 +405,4 @@ function mixBoardView(targetClass) {
   }
 }
 
-module.exports = { mixBoardView };
+export { mixBoardView };

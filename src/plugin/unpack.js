@@ -1,4 +1,4 @@
-const { newId, parseOrNull, applyOps } = require('../board/store.js');
+import { newId, parseOrNull, applyOps } from '../board/store.js';
 
 // Cards on this canvas that linked the subcanvas keep their text without the
 // link (a file card shows the label) and get an edge to the new group.
@@ -214,7 +214,7 @@ async function applyToOpenCanvas(canvas, operations) {
   return 'obsidian';
 }
 
-module.exports = {
+export {
   groupLinkOperations,
   relinkCanvasData,
   redirectOutsideLinks,

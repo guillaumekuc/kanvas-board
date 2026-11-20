@@ -1,16 +1,16 @@
-const { Notice } = require('obsidian');
-const dagre = require('../../dagre.min.js');
-const { layoutOps } = require('../board/geometry.js');
-const { TEMPLATE_DIR } = require('../board/store.js');
-const { NamePrompt, Picker, UnpackChoice } = require('./prompts.js');
-const {
+import { Notice } from 'obsidian';
+import dagre from '../../dagre.min.js';
+import { layoutOps } from '../board/geometry.js';
+import { TEMPLATE_DIR } from '../board/store.js';
+import { NamePrompt, Picker, UnpackChoice } from './prompts.js';
+import {
   COLORS,
   isArchiveNote,
   templateFiles,
   templateName,
   LAYOUT_DIRS,
-} = require('./shared.js');
-const { isTextNode, selectedCards, FindBar } = require('./view.js');
+} from './shared.js';
+import { isTextNode, selectedCards, FindBar } from './view.js';
 
 function registerColorCommands(plugin) {
   for (const [name, color, key] of COLORS) {
@@ -649,7 +649,7 @@ const commands = [
   registerContextMenus,
 ];
 
-module.exports = {
+export {
   registerColorCommands,
   registerTidyCommands,
   registerPackCommands,

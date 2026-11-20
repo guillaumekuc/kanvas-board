@@ -1,5 +1,5 @@
-const path = require('path');
-const {
+import path from 'path';
+import {
   bounds,
   withGroupMembers,
   groupAround,
@@ -9,8 +9,8 @@ const {
   byReading,
   centerDistance,
   isTwoWay,
-} = require('./geometry.js');
-const { newId, mostUrgent } = require('./store.js');
+} from './geometry.js';
+import { newId, mostUrgent } from './store.js';
 
 // Selected cards move to `file` (a new .canvas) at their relative places, with
 // the edges between them; one card `[[file|label]]` takes their place, centered
@@ -372,7 +372,7 @@ function templateOps(template, origin) {
   return operations;
 }
 
-module.exports = {
+export {
   collapseOps,
   retargetOps,
   expandOps,

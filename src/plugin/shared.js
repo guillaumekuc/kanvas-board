@@ -1,8 +1,20 @@
-const fileSystem = require('fs');
-const path = require('path');
-const { ApmCounter, loadSettings } = require('../apm/apm.js');
-const { SIDES, TEMPLATE_DIR } = require('../board/store.js');
-const { applyToOpenCanvas } = require('./unpack.js');
+import fileSystem from 'fs';
+import path from 'path';
+import { ApmCounter, loadSettings } from '../apm/apm.js';
+import { applyOps, SIDES, TEMPLATE_DIR } from '../board/store.js';
+import { archiveDir, archiveNote, restoreOps } from '../board/notes.js';
+import { layoutOps } from '../board/geometry.js';
+import {
+  collapseOps,
+  expandOps,
+  extractOps,
+  mergeOps,
+  plainLines,
+  relinkText,
+  splitOps,
+  templateOps,
+} from '../board/refactor.js';
+import { applyToOpenCanvas } from './unpack.js';
 
 // [color name, canvas color, command key, default label]. Labels can be edited
 // in Settings > Workflow.
@@ -103,19 +115,19 @@ const LINUX_TERMINALS = [
 const boardLibrary = {
   SIDES,
   TEMPLATE_DIR,
-  applyOps: require('../board/store.js').applyOps,
-  archiveDir: require('../board/notes.js').archiveDir,
-  archiveNote: require('../board/notes.js').archiveNote,
-  collapseOps: require('../board/refactor.js').collapseOps,
-  expandOps: require('../board/refactor.js').expandOps,
-  extractOps: require('../board/refactor.js').extractOps,
-  layoutOps: require('../board/geometry.js').layoutOps,
-  mergeOps: require('../board/refactor.js').mergeOps,
-  plainLines: require('../board/refactor.js').plainLines,
-  relinkText: require('../board/refactor.js').relinkText,
-  restoreOps: require('../board/notes.js').restoreOps,
-  splitOps: require('../board/refactor.js').splitOps,
-  templateOps: require('../board/refactor.js').templateOps,
+  applyOps,
+  archiveDir,
+  archiveNote,
+  collapseOps,
+  expandOps,
+  extractOps,
+  layoutOps,
+  mergeOps,
+  plainLines,
+  relinkText,
+  restoreOps,
+  splitOps,
+  templateOps,
 };
 
 // What canvas.js calls through `obsidian eval` while a board is open, so
@@ -177,7 +189,7 @@ function startApmCounter(plugin, pluginDir) {
   return apm;
 }
 
-module.exports = {
+export {
   COLORS,
   DEFAULTS,
   COLOR_NUM,

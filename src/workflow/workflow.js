@@ -1,18 +1,15 @@
-const fileSystem = require('fs');
-const path = require('path');
-const {
-  cardLinks,
-  noteContexts,
-  tree: baseTree,
-} = require('../board/notes.js');
-const {
+import fileSystem from 'fs';
+import path from 'path';
+import { cardLinks, noteContexts, tree as baseTree } from '../board/notes.js';
+import {
   findFile,
   readOrNull,
   readBoard,
   vaultPath,
   COLORS,
+  PLUGIN_DIR,
   writeOps,
-} = require('../board/store.js');
+} from '../board/store.js';
 
 const ORANGE_STALE_MS = 3600000;
 const DEFAULT_PASS_COLORS = 'cyan purple';
@@ -72,7 +69,7 @@ function parseColors(value) {
 function settings() {
   try {
     return JSON.parse(
-      fileSystem.readFileSync(path.join(__dirname, 'data.json'), 'utf8'),
+      fileSystem.readFileSync(path.join(PLUGIN_DIR, 'data.json'), 'utf8'),
     );
   } catch (error) {
     return {};
@@ -343,7 +340,7 @@ function rollup(board) {
   return changes;
 }
 
-module.exports = {
+export {
   ORANGE_STALE_MS,
   DEFAULT_PASS_COLORS,
   DEFAULT_NOTES_FOLDER,

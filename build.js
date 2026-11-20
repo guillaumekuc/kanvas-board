@@ -12,6 +12,8 @@ const SHARED = {
   target: 'es2022',
   banner: { js: BANNER },
   logLevel: 'warning',
+  // store.js reads import.meta only when unbundled (no __dirname).
+  logOverride: { 'empty-import-meta': 'silent' },
 };
 
 esbuild.buildSync({

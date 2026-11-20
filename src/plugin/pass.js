@@ -1,9 +1,9 @@
-const { Notice } = require('obsidian');
-const { spawn } = require('child_process');
-const fileSystem = require('fs');
-const operatingSystem = require('os');
-const path = require('path');
-const { LINUX_TERMINALS, COLOR_NUM } = require('./shared.js');
+import { Notice } from 'obsidian';
+import { spawn } from 'child_process';
+import fileSystem from 'fs';
+import operatingSystem from 'os';
+import path from 'path';
+import { LINUX_TERMINALS, COLOR_NUM } from './shared.js';
 
 // Claude Code: the setting, else the native installer's
 // ~/.local/bin/claude(.exe), else `claude` on PATH.
@@ -143,7 +143,7 @@ function startPass([command, commandArguments], { vault, board }) {
   }
 }
 
-module.exports = {
+export {
   claudeBin,
   agentWords,
   onPath,

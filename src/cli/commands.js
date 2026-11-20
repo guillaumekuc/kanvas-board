@@ -1,13 +1,8 @@
-const fileSystem = require('fs');
-const dagre = require('../../dagre.min.js');
-const path = require('path');
-const {
-  fitHeight,
-  place,
-  defaultDir,
-  layoutOps,
-} = require('../board/geometry.js');
-const {
+import fileSystem from 'fs';
+import dagre from '../../dagre.min.js';
+import path from 'path';
+import { fitHeight, place, defaultDir, layoutOps } from '../board/geometry.js';
+import {
   colorArg,
   archiveDir,
   archiveNote,
@@ -15,15 +10,15 @@ const {
   restoreOps,
   cardLinks,
   linksTo,
-} = require('../board/notes.js');
-const {
+} from '../board/notes.js';
+import {
   extractOps,
   mergeOps,
   collapseOps,
   splitOps,
   expandOps,
-} = require('../board/refactor.js');
-const {
+} from '../board/refactor.js';
+import {
   newId,
   readBoard,
   writeOps,
@@ -34,13 +29,13 @@ const {
   SIDES,
   serialize,
   toTrash,
-} = require('../board/store.js');
-const {
+} from '../board/store.js';
+import {
   check,
   rollup,
   activeTree,
-  tree: workflowTree,
-} = require('../workflow/workflow.js');
+  tree as workflowTree,
+} from '../workflow/workflow.js';
 
 const DEFAULT_WIDTH = 320;
 
@@ -247,7 +242,7 @@ const commands = {
   expand: unpackCommand,
 };
 
-module.exports = {
+export {
   addCommand,
   archiveCommand,
   checkCommand,
