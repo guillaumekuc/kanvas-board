@@ -1,9 +1,9 @@
-import { Notice } from 'obsidian';
-import { spawn } from 'child_process';
+import * as obsidian from 'obsidian';
+import * as childProcess from 'child_process';
 import fileSystem from 'fs';
 import operatingSystem from 'os';
 import path from 'path';
-import { LINUX_TERMINALS, COLOR_NUM } from './shared.js';
+import * as shared from './shared.js';
 
 const COMMAND_WORDS = /"[^"]*"|\S+/g;
 const OUTER_QUOTES = /^"|"$/g;
@@ -91,7 +91,7 @@ function defaultLaunch({ vault, board, agent }) {
     const script = MAC_SCRIPT.flatMap((line) => ['-e', line]);
     return ['osascript', [...script, vault, ...agent]];
   }
-  const found = LINUX_TERMINALS.find(({ binary }) => onPath(binary));
+  const found = shared.LINUX_TERMINALS.find(({ binary }) => onPath(binary));
   return found ? [found.binary, found.args(vault, agent)] : null;
 }
 
@@ -134,7 +134,7 @@ function parseColors(value) {
     String(value || '')
       .split(LIST_SEPARATOR)
       .filter(Boolean)
-      .map((color) => COLOR_NUM[color.toLowerCase()] || color)
+      .map((color) => shared.COLOR_NUM[color.toLowerCase()] || color)
       .filter((color) => CANVAS_COLOR_NUMBER.test(color)),
   );
 }
@@ -142,19 +142,19 @@ function parseColors(value) {
 // The terminal runs on its own: closing Obsidian does not stop the pass.
 function startPass([command, commandArguments], { vault, board }) {
   function failed(error) {
-    return new Notice(
+    return new obsidian.Notice(
       `Kanvas board: could not start the pass (${error.message})`,
     );
   }
   try {
-    const child = spawn(command, commandArguments, {
+    const child = childProcess.spawn(command, commandArguments, {
       cwd: vault,
       detached: true,
       stdio: 'ignore',
     });
     child.on('error', failed);
     child.unref();
-    new Notice(`Kanvas board: pass started on ${board}`);
+    new obsidian.Notice(`Kanvas board: pass started on ${board}`);
   } catch (error) {
     failed(error);
   }

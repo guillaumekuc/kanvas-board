@@ -57,6 +57,8 @@ module.exports = [
       semi: ['error', 'always'],
       // Name your regexes
       'style/named-regex': 'error',
+      // Import modules whole, never cherry-picked names
+      'style/namespace-import': 'error',
     },
   },
   // src/ is ES modules: imports at the top of the file, no require

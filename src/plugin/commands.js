@@ -1,19 +1,13 @@
-import { Notice } from 'obsidian';
+import * as obsidian from 'obsidian';
 import dagre from '../../dagre.min.js';
-import { layoutOps } from '../board/geometry.js';
-import { TEMPLATE_DIR } from '../board/store.js';
-import { NamePrompt, Picker, UnpackChoice } from './prompts.js';
-import {
-  COLORS,
-  isArchiveNote,
-  templateFiles,
-  templateName,
-  LAYOUT_DIRS,
-} from './shared.js';
-import { isTextNode, selectedCards, FindBar } from './view.js';
+import * as geometry from '../board/geometry.js';
+import * as store from '../board/store.js';
+import * as prompts from './prompts.js';
+import * as shared from './shared.js';
+import * as view from './view.js';
 
 function registerColorCommands(plugin) {
-  for (const { name, canvasColor: color, commandKey: key } of COLORS) {
+  for (const { name, canvasColor: color, commandKey: key } of shared.COLORS) {
     plugin.addCommand({
       id: `color-${key}`,
       name: plugin.colorCommandName(name),
@@ -47,7 +41,7 @@ function registerTidyCommands(plugin) {
       }
       if (!checking) {
         if (canvas.selection.size < 2) {
-          new Notice(
+          new obsidian.Notice(
             'Tidy layout: select the cards to tidy first (2 or more; ' +
               'Ctrl+A for the whole canvas).',
           );
@@ -57,7 +51,7 @@ function registerTidyCommands(plugin) {
         const canvasData = canvas.getData();
         plugin.edit(
           canvas,
-          layoutOps(canvasData, {
+          geometry.layoutOps(canvasData, {
             ids,
             direction: plugin.settings.layoutDirection,
             dagre,
@@ -74,7 +68,7 @@ function registerTidyCommands(plugin) {
     name: 'Tidy layout direction: next',
     callback: () => plugin.cycleLayoutDirection(),
   });
-  for (const [direction, { name }] of Object.entries(LAYOUT_DIRS)) {
+  for (const [direction, { name }] of Object.entries(shared.LAYOUT_DIRS)) {
     plugin.addCommand({
       id: `tidy-direction-${direction.toLowerCase()}`,
       name: `Tidy layout direction: ${name}`,
@@ -98,7 +92,7 @@ function registerPackCommands(plugin) {
     menu: { title: 'Pack into subcanvas', icon: 'package' },
     test: (canvas, selection) => selection.length > 0,
     run: (canvas, selection) =>
-      new NamePrompt(plugin.app, {
+      new prompts.NamePrompt(plugin.app, {
         title: 'Subcanvas name',
         onSubmit: async (name) => {
           const board = plugin.activeFile();
@@ -147,12 +141,14 @@ function registerUnpackCommands(plugin) {
       if (!links.length) {
         return plugin.unpack(canvas, node, { file, mode: 'dissolve' });
       }
-      new UnpackChoice(plugin.app, file, {
+      new prompts.UnpackChoice(plugin.app, file, {
         links,
         onPick: (mode) =>
           plugin
             .unpack(canvas, node, { file, mode, links })
-            .catch((error) => new Notice(`Kanvas board: ${error.message}`)),
+            .catch(
+              (error) => new obsidian.Notice(`Kanvas board: ${error.message}`),
+            ),
       }).open();
     },
   });
@@ -171,7 +167,7 @@ function registerMergeSplitCommands(plugin) {
   plugin.addCanvasCommand('merge', 'Merge selected cards', {
     menu: { title: 'Merge cards', icon: 'merge' },
     test: (canvas, selection) =>
-      selection.length > 1 && selection.every(isTextNode),
+      selection.length > 1 && selection.every(view.isTextNode),
     run: (canvas, selection) =>
       plugin.edit(
         canvas,
@@ -197,7 +193,7 @@ function registerMergeSplitCommands(plugin) {
           : null,
       test: (canvas, selection) =>
         selection.length === 1 &&
-        isTextNode(selection[0]) &&
+        view.isTextNode(selection[0]) &&
         !selection[0].isEditing,
       run: (canvas, [node]) =>
         plugin.edit(
@@ -373,7 +369,7 @@ function registerFoldDirectionCommands(plugin) {
         if (!checking) {
           plugin.settings.foldDirection = direction;
           plugin.saveData(plugin.settings);
-          new Notice(`Kanvas board: fold direction ${label}`);
+          new obsidian.Notice(`Kanvas board: fold direction ${label}`);
         }
         return true;
       },
@@ -394,12 +390,11 @@ function registerTemplateSaveCommand(plugin) {
       test: (canvas, selection) => selection.length > 0,
       run: (canvas) => {
         const existing = new Map(
-          templateFiles(plugin).map((file) => [
-            templateName(file).toLowerCase(),
-            file,
-          ]),
+          shared
+            .templateFiles(plugin)
+            .map((file) => [shared.templateName(file).toLowerCase(), file]),
         );
-        new NamePrompt(plugin.app, {
+        new prompts.NamePrompt(plugin.app, {
           title: 'Template name',
           onSubmit: async (name) => {
             const content = JSON.stringify(
@@ -412,17 +407,25 @@ function registerTemplateSaveCommand(plugin) {
             const old = existing.get(name.toLowerCase());
             if (old) {
               await plugin.app.vault.modify(old, content);
-              new Notice(`Kanvas board: template ${old.path} overwritten`);
+              new obsidian.Notice(
+                `Kanvas board: template ${old.path} overwritten`,
+              );
               return;
             }
-            if (!plugin.app.vault.getAbstractFileByPath(TEMPLATE_DIR)) {
-              await plugin.app.vault.createFolder(TEMPLATE_DIR);
+            if (!plugin.app.vault.getAbstractFileByPath(store.TEMPLATE_DIR)) {
+              await plugin.app.vault.createFolder(store.TEMPLATE_DIR);
             }
-            const file = plugin.freePath(TEMPLATE_DIR + '/', name, '.canvas');
+            const file = plugin.freePath(
+              store.TEMPLATE_DIR + '/',
+              name,
+              '.canvas',
+            );
             await plugin.app.vault.create(file, content);
-            new Notice(`Kanvas board: template saved to ${file}`);
+            new obsidian.Notice(`Kanvas board: template saved to ${file}`);
           },
-          suggestions: [...existing.values()].map((file) => templateName(file)),
+          suggestions: [...existing.values()].map((file) =>
+            shared.templateName(file),
+          ),
           overwrite: (name) => existing.has(name.toLowerCase()),
         }).open();
       },
@@ -435,11 +438,13 @@ function registerTemplateSaveCommand(plugin) {
 function registerSelectChildrenCommand(plugin) {
   function childIds(canvas, selection) {
     return new Set(
-      selectedCards(selection).flatMap((node) =>
-        plugin
-          .branchLevels(canvas, node.id, plugin.settings.foldDirection)
-          .flat(),
-      ),
+      view
+        .selectedCards(selection)
+        .flatMap((node) =>
+          plugin
+            .branchLevels(canvas, node.id, plugin.settings.foldDirection)
+            .flat(),
+        ),
     );
   }
   plugin.addCanvasCommand(
@@ -465,7 +470,9 @@ function registerSelectChildrenCommand(plugin) {
 function registerSelectSameTagCommand(plugin) {
   function tagsOf(selection) {
     return new Set(
-      selectedCards(selection).flatMap((node) => [...plugin.cardTagSet(node)]),
+      view
+        .selectedCards(selection)
+        .flatMap((node) => [...plugin.cardTagSet(node)]),
     );
   }
   plugin.addCanvasCommand('select-same-tag', 'Select cards with the same tag', {
@@ -486,10 +493,12 @@ function registerSelectSameColorCommand(plugin) {
     'Select cards with the same color',
     {
       menu: { title: 'Select same color', icon: 'palette' },
-      test: (canvas, selection) => selectedCards(selection).length > 0,
+      test: (canvas, selection) => view.selectedCards(selection).length > 0,
       run: (canvas, selection) => {
         const colors = new Set(
-          selectedCards(selection).map((node) => node.getData().color || ''),
+          view
+            .selectedCards(selection)
+            .map((node) => node.getData().color || ''),
         );
         plugin.selectMore(canvas, selection, (node) =>
           colors.has(node.getData().color || ''),
@@ -509,14 +518,14 @@ function registerTemplateInsertCommand(plugin) {
         return false;
       }
       if (!checking) {
-        const files = templateFiles(plugin);
+        const files = shared.templateFiles(plugin);
         if (!files.length) {
-          new Notice(
-            `Kanvas board: no template in ${TEMPLATE_DIR} (Save selected ` +
-              `cards as a template)`,
+          new obsidian.Notice(
+            `Kanvas board: no template in ${store.TEMPLATE_DIR} ` +
+              `(Save selected cards as a template)`,
           );
         } else {
-          new Picker(plugin.app, {
+          new prompts.Picker(plugin.app, {
             placeholder: 'Template',
             items: files,
             label: (file) => file.basename,
@@ -541,7 +550,7 @@ function registerViewCommands(plugin) {
       if (!checking) {
         let findBar = plugin.finds.get(canvas);
         if (!findBar) {
-          findBar = new FindBar(plugin, canvas);
+          findBar = new view.FindBar(plugin, canvas);
           plugin.finds.set(canvas, findBar);
         }
         findBar.open();
@@ -585,13 +594,15 @@ function registerRestoreCommands(plugin) {
     name: 'Restore archived card (from its archive note)',
     checkCallback: (checking) => {
       const file = plugin.app.workspace.getActiveFile();
-      if (!isArchiveNote(plugin.app, file)) {
+      if (!shared.isArchiveNote(plugin.app, file)) {
         return false;
       }
       if (!checking) {
         plugin
           .restore(file)
-          .catch((error) => new Notice(`Kanvas board: ${error.message}`));
+          .catch(
+            (error) => new obsidian.Notice(`Kanvas board: ${error.message}`),
+          );
       }
       return true;
     },
@@ -599,7 +610,7 @@ function registerRestoreCommands(plugin) {
   // Right-click on an archive note: a link to it, the file explorer, its tab.
   plugin.registerEvent(
     plugin.app.workspace.on('file-menu', (menu, file) => {
-      if (isArchiveNote(plugin.app, file)) {
+      if (shared.isArchiveNote(plugin.app, file)) {
         menu.addItem((item) =>
           item
             .setTitle('Restore archived card')
@@ -608,7 +619,10 @@ function registerRestoreCommands(plugin) {
             .onClick(() =>
               plugin
                 .restore(file)
-                .catch((error) => new Notice(`Kanvas board: ${error.message}`)),
+                .catch(
+                  (error) =>
+                    new obsidian.Notice(`Kanvas board: ${error.message}`),
+                ),
             ),
         );
       }
@@ -669,7 +683,7 @@ function registerContextMenus(plugin) {
 }
 
 // The command groups, in the order their right-click items appear.
-const commands = [
+const groups = [
   registerColorCommands,
   registerTidyCommands,
   registerPackCommands,
@@ -711,5 +725,5 @@ export {
   registerRestoreCommands,
   registerBoardCommands,
   registerContextMenus,
-  commands,
+  groups,
 };

@@ -1,41 +1,11 @@
 import fileSystem from 'fs';
 import dagre from '../../dagre.min.js';
 import path from 'path';
-import { fitHeight, place, defaultDir, layoutOps } from '../board/geometry.js';
-import {
-  colorArg,
-  archiveDir,
-  archiveNote,
-  cardContexts,
-  restoreOps,
-  cardLinks,
-  linksTo,
-} from '../board/notes.js';
-import {
-  extractOps,
-  mergeOps,
-  collapseOps,
-  splitOps,
-  expandOps,
-} from '../board/refactor.js';
-import {
-  newId,
-  readBoard,
-  writeOps,
-  freePath,
-  settings,
-  today,
-  vaultPath,
-  SIDES,
-  serialize,
-  toTrash,
-} from '../board/store.js';
-import {
-  check,
-  rollup,
-  activeTree,
-  tree as workflowTree,
-} from '../workflow/workflow.js';
+import * as geometry from '../board/geometry.js';
+import * as notes from '../board/notes.js';
+import * as refactor from '../board/refactor.js';
+import * as store from '../board/store.js';
+import * as workflow from '../workflow/workflow.js';
 
 const DEPENDS_ON_LABEL = /depends on/i;
 
@@ -45,16 +15,16 @@ function addCommand(cli) {
   const text = cli.option('--text') || '';
   const width = Number(cli.option('--width') || DEFAULT_WIDTH);
   const height = Number(
-    cli.option('--height') || fitHeight(cli.option('--text'), width),
+    cli.option('--height') || geometry.fitHeight(cli.option('--text'), width),
   );
   const near = cli.option('--near');
-  const { x: left, y: top } = place(readBoard(cli.board), {
+  const { x: left, y: top } = geometry.place(store.readBoard(cli.board), {
     near,
     width,
     height,
   });
   const node = {
-    id: newId(),
+    id: store.newId(),
     type: 'text',
     text,
     x: left,
@@ -62,30 +32,36 @@ function addCommand(cli) {
     width,
     height,
   };
-  const color = colorArg(cli.option('--color'));
+  const color = notes.colorArg(cli.option('--color'));
   if (color) {
     node.color = color;
   }
-  writeOps(cli.board, [{ op: 'add', node }]);
+  store.writeOps(cli.board, [{ op: 'add', node }]);
   console.log(node.id);
 }
 
 function archiveCommand(cli) {
   const { board } = cli;
-  const canvasData = readBoard(board);
+  const canvasData = store.readBoard(board);
   const ids = cli.rest[0].split(',');
   for (const id of ids) {
     const node = canvasData.nodes.find((each) => each.id === id);
-    const contexts = (node && cardContexts(node)) || settings().archiveContexts;
-    const date = today();
-    const archived = archiveNote(canvasData, { id, board, date, contexts });
-    const folder = archiveDir(board, settings());
-    const file = freePath(folder, archived.name, '.md');
-    fileSystem.mkdirSync(vaultPath(folder), { recursive: true });
-    fileSystem.writeFileSync(vaultPath(file), archived.content);
+    const contexts =
+      (node && notes.cardContexts(node)) || store.settings().archiveContexts;
+    const date = store.today();
+    const archived = notes.archiveNote(canvasData, {
+      id,
+      board,
+      date,
+      contexts,
+    });
+    const folder = notes.archiveDir(board, store.settings());
+    const file = store.freePath(folder, archived.name, '.md');
+    fileSystem.mkdirSync(store.vaultPath(folder), { recursive: true });
+    fileSystem.writeFileSync(store.vaultPath(file), archived.content);
     console.log(file);
   }
-  writeOps(
+  store.writeOps(
     board,
     ids.map((id) => ({ op: 'remove', id })),
   );
@@ -93,47 +69,49 @@ function archiveCommand(cli) {
 
 function checkCommand(cli) {
   const ids = cli.option('--ids') ? new Set(cli.list('--ids')) : undefined;
-  cli.print(check(cli.board, ids));
+  cli.print(workflow.check(cli.board, ids));
 }
 
 // A "depends on" edge points at the prerequisite, against the flow.
 function edgeCommand(cli) {
   const label = cli.option('--label');
-  const [flowFrom, flowTo] = SIDES[defaultDir()];
+  const [flowFrom, flowTo] = store.SIDES[geometry.defaultDir()];
   const isAgainstFlow = DEPENDS_ON_LABEL.test(label || '');
   const [fromSide, toSide] = isAgainstFlow
     ? [flowTo, flowFrom]
     : [flowFrom, flowTo];
   const [fromNode, toNode] = cli.rest;
-  const edge = { id: newId(), fromNode, fromSide, toNode, toSide };
+  const edge = { id: store.newId(), fromNode, fromSide, toNode, toSide };
   if (label) {
     edge.label = label;
   }
-  console.log(writeOps(cli.board, [{ op: 'edge', edge }]));
+  console.log(store.writeOps(cli.board, [{ op: 'edge', edge }]));
 }
 
 function extractCommand(cli) {
-  const operations = extractOps(readBoard(cli.board), {
+  const operations = refactor.extractOps(store.readBoard(cli.board), {
     id: cli.rest[0],
     part: cli.option('--text') || '',
   });
-  console.log(writeOps(cli.board, operations));
+  console.log(store.writeOps(cli.board, operations));
 }
 
 function readCommand(cli) {
-  cli.print(readBoard(cli.board));
+  cli.print(store.readBoard(cli.board));
 }
 
 function treeCommand(cli) {
-  const boardTree = workflowTree(cli.board);
-  cli.print(cli.hasFlag('--active') ? activeTree(boardTree) : boardTree);
+  const boardTree = workflow.tree(cli.board);
+  cli.print(
+    cli.hasFlag('--active') ? workflow.activeTree(boardTree) : boardTree,
+  );
 }
 
 function setCommand(cli) {
   const operation = {
     op: 'set',
     id: cli.rest[0],
-    color: colorArg(cli.option('--color')),
+    color: notes.colorArg(cli.option('--color')),
   };
   if (cli.option('--text') !== undefined) {
     operation.text = cli.option('--text');
@@ -141,28 +119,30 @@ function setCommand(cli) {
   if (cli.option('--file') !== undefined) {
     operation.file = cli.option('--file');
   }
-  console.log(writeOps(cli.board, [operation]));
+  console.log(store.writeOps(cli.board, [operation]));
 }
 
 function removeCommand(cli) {
-  console.log(writeOps(cli.board, [{ op: 'remove', id: cli.rest[0] }]));
+  console.log(store.writeOps(cli.board, [{ op: 'remove', id: cli.rest[0] }]));
 }
 
 function layoutCommand(cli) {
-  const direction = (cli.option('--dir') || defaultDir()).toUpperCase();
-  if (!SIDES[direction]) {
+  const direction = (
+    cli.option('--dir') || geometry.defaultDir()
+  ).toUpperCase();
+  if (!store.SIDES[direction]) {
     console.error(`layout: --dir must be TB, LR, BT or RL, not ${direction}`);
     process.exit(1);
   }
-  const operations = layoutOps(readBoard(cli.board), {
+  const operations = geometry.layoutOps(store.readBoard(cli.board), {
     ids: cli.list('--ids'),
     direction,
     isFitToText: cli.hasFlag('--fit'),
     dagre,
-    flow: settings().foldDirection,
+    flow: store.settings().foldDirection,
   });
   const moved = operations.filter((operation) => operation.op === 'set');
-  console.log(writeOps(cli.board, operations), moved.length, 'cards');
+  console.log(store.writeOps(cli.board, operations), moved.length, 'cards');
 }
 
 function packCommand(cli) {
@@ -170,14 +150,17 @@ function packCommand(cli) {
   if (!name) {
     throw new Error('collapse needs --name');
   }
-  const file = freePath(path.posix.dirname(cli.board), name, '.canvas');
-  const { operations, subcanvas, id } = collapseOps(readBoard(cli.board), {
-    ids: cli.list('--ids'),
-    file,
-    label: name,
-  });
-  fileSystem.writeFileSync(vaultPath(file), serialize(subcanvas));
-  writeOps(cli.board, operations);
+  const file = store.freePath(path.posix.dirname(cli.board), name, '.canvas');
+  const { operations, subcanvas, id } = refactor.collapseOps(
+    store.readBoard(cli.board),
+    {
+      ids: cli.list('--ids'),
+      file,
+      label: name,
+    },
+  );
+  fileSystem.writeFileSync(store.vaultPath(file), store.serialize(subcanvas));
+  store.writeOps(cli.board, operations);
   console.log(file, id);
 }
 
@@ -185,18 +168,18 @@ function packCommand(cli) {
 // notes still link it.
 function unpackCommand(cli) {
   const [id] = cli.rest;
-  const card = readBoard(cli.board).nodes.find((node) => node.id === id);
-  const subcanvas = card && cardLinks(card).canvas;
+  const card = store.readBoard(cli.board).nodes.find((node) => node.id === id);
+  const subcanvas = card && notes.cardLinks(card).canvas;
   if (!subcanvas) {
     throw new Error('card links no canvas');
   }
   const isKept = cli.hasFlag('--keep');
-  const others = isKept ? [] : linksTo(subcanvas, cli.board, id);
-  const operations = expandOps(readBoard(cli.board), {
+  const others = isKept ? [] : notes.linksTo(subcanvas, cli.board, id);
+  const operations = refactor.expandOps(store.readBoard(cli.board), {
     id,
-    subcanvas: readBoard(subcanvas),
+    subcanvas: store.readBoard(subcanvas),
   });
-  writeOps(cli.board, operations);
+  store.writeOps(cli.board, operations);
   if (isKept) {
     return console.log('unpacked (copy), kept', subcanvas);
   }
@@ -205,39 +188,50 @@ function unpackCommand(cli) {
     console.log('unpacked, kept', subcanvas, '- still linked from:', linking);
     return;
   }
-  toTrash(subcanvas);
+  store.toTrash(subcanvas);
   console.log('unpacked (dissolve), trashed', subcanvas);
 }
 
 function mergeCommand(cli) {
-  const operations = mergeOps(readBoard(cli.board), cli.list('--ids'));
-  console.log(writeOps(cli.board, operations));
+  const operations = refactor.mergeOps(
+    store.readBoard(cli.board),
+    cli.list('--ids'),
+  );
+  console.log(store.writeOps(cli.board, operations));
 }
 
 function splitCommand(cli) {
   const separator = cli.option('--by') || 'paragraph';
-  const operations = splitOps(readBoard(cli.board), cli.rest[0], separator);
-  console.log(writeOps(cli.board, operations));
+  const operations = refactor.splitOps(
+    store.readBoard(cli.board),
+    cli.rest[0],
+    separator,
+  );
+  console.log(store.writeOps(cli.board, operations));
 }
 
 // The first argument is the archive note, not a board: the note says which
 // board the card goes back to.
 function restoreCommand(cli) {
   const note = cli.boardArg;
-  const source = fileSystem.readFileSync(vaultPath(note), 'utf8');
-  const target = restoreOps({ nodes: [], edges: [] }, source).board;
-  const { operations } = restoreOps(readBoard(target), source);
-  console.log(writeOps(target, operations), target, operations[0].node.id);
-  toTrash(note);
+  const source = fileSystem.readFileSync(store.vaultPath(note), 'utf8');
+  const target = notes.restoreOps({ nodes: [], edges: [] }, source).board;
+  const { operations } = notes.restoreOps(store.readBoard(target), source);
+  console.log(
+    store.writeOps(target, operations),
+    target,
+    operations[0].node.id,
+  );
+  store.toTrash(note);
 }
 
 function rollupCommand(cli) {
-  cli.print(rollup(cli.board));
+  cli.print(workflow.rollup(cli.board));
 }
 
 // Command pattern: each canvas.js command name (and its alias) maps to the
 // function that runs it.
-const commands = {
+const byName = {
   read: readCommand,
   tree: treeCommand,
   set: setCommand,
@@ -275,5 +269,5 @@ export {
   splitCommand,
   restoreCommand,
   rollupCommand,
-  commands,
+  byName,
 };
