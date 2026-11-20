@@ -3,11 +3,22 @@ import * as obsidian from 'obsidian';
 import fileSystem from 'fs';
 import * as pass from './pass.js';
 import * as agentInstructions from './agentInstructions.js';
+import * as config from '../workflow/config.js';
 import path from 'path';
 
 function fitToText(field) {
   field.style.height = 'auto';
   field.style.height = `${field.scrollHeight + 2}px`;
+}
+
+// A color's description in Settings > Workflow: its role's meaning; an idle
+// color keeps its own (go colors explain what the agent does with them).
+function roleMeaning(name, role, meaning) {
+  const isOwnMeaning =
+    !role ||
+    (role === 'idle' && config.DEFAULT_WORKFLOW.roles[name] === 'idle');
+
+  return isOwnMeaning ? meaning : config.ROLE_MEANINGS[role];
 }
 
 class CanvasBoardSettings extends obsidian.PluginSettingTab {
@@ -156,11 +167,12 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     const instructions = this.readSkillParts();
     this.addGeneralSkillField();
     const goColors = pass.parseColors(this.plugin.settings.passColors);
+    const workflow = config.resolve(this.plugin.settings);
     for (const { name, meaning } of shared.WORKFLOW) {
       const colorNumber = shared.COLOR_NUM[name];
       const row = new obsidian.Setting(containerEl)
         .setName(colorNumber ? name : 'uncolored')
-        .setDesc(meaning);
+        .setDesc(roleMeaning(name, workflow.roles[name], meaning));
       row.nameEl.prepend(
         createSpan({
           cls: 'kanvas-board-dot kanvas-board-workflow-dot',
@@ -175,6 +187,9 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
           .setValue((this.plugin.settings.colorLabels || {})[name] || '')
           .onChange((value) => this.plugin.setColorLabel(name, value.trim())),
       );
+      if (colorNumber) {
+        this.addRoleDropdown(row, name, workflow.roles[name]);
+      }
       this.addWorkflowToggle(row, colorNumber, goColors);
       this.skillFields.colors[name] = this.addSkillField(
         instructions.colors[name],
@@ -182,6 +197,125 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
       );
     }
     this.watchSkillFields(this.plugin.skillPath());
+    this.displayWorkflowRules(workflow);
+  }
+
+  // A color's role (config.ROLES): exactly one color is working, so choosing
+  // working moves it here, and the working color cannot be left without one.
+  addRoleDropdown(row, name, role) {
+    row.addDropdown((dropdown) => {
+      for (const each of config.ROLES) {
+        dropdown.addOption(each, each);
+      }
+      dropdown.setValue(role).onChange(async (value) => {
+        if (role === 'working') {
+          new obsidian.Notice(
+            'Kanvas board: one color must mean working. Set another ' +
+              'color to working instead.',
+          );
+          dropdown.setValue(role);
+
+          return;
+        }
+
+        const roles = config.resolve(this.plugin.settings).roles;
+        if (value === 'working') {
+          for (const other of Object.keys(roles)) {
+            roles[other] = roles[other] === 'working' ? 'idle' : roles[other];
+          }
+        }
+        roles[name] = value;
+        await this.saveWorkflow({ roles });
+        this.display();
+      });
+    });
+  }
+
+  async saveWorkflow(change) {
+    const settings = this.plugin.settings;
+    settings.workflow = { ...(settings.workflow || {}), ...change };
+    await this.plugin.saveData(settings);
+  }
+
+  // Markers and templates: what check and the level read in the notes, and
+  // the notes that set the shapes of agent-written cards and plan notes.
+  displayWorkflowRules(workflow) {
+    const { containerEl } = this;
+    const markerFields = [
+      ['question', 'Question marker', 'An open question: - [?] by default.'],
+      ['answer', 'Answer marker', "User's answer: - [i] by default."],
+      [
+        'decisionsRecord',
+        'Decisions Record heading',
+        'Questions below it are answered and no longer count.',
+      ],
+    ];
+    for (const [key, name, description] of markerFields) {
+      new obsidian.Setting(containerEl)
+        .setName(name)
+        .setDesc(description)
+        .addText((component) =>
+          component
+            .setPlaceholder(config.DEFAULT_WORKFLOW.markers[key])
+            .setValue(workflow.markers[key])
+            .onChange(async (value) => {
+              const markers = { ...workflow.markers };
+              markers[key] =
+                value.trim() || config.DEFAULT_WORKFLOW.markers[key];
+              await this.saveWorkflow({ markers });
+            }),
+        );
+    }
+    this.addTemplateSetting(workflow, {
+      key: 'cardTemplate',
+      name: 'Card template',
+      description:
+        'A note listing the shapes of the card text agents write, one per ' +
+        'line ({word}: any text). Check holds agent-written cards to it.',
+    });
+    this.addTemplateSetting(workflow, {
+      key: 'noteTemplate',
+      name: 'Plan note template',
+      description:
+        'A note with the frontmatter keys and headings of the notes ' +
+        'agents write. Check holds those notes to it.',
+    });
+    new obsidian.Setting(containerEl)
+      .setName('Reset workflow')
+      .setDesc(
+        'Roles, markers and template paths back to the defaults. The ' +
+          'template notes and the agent instructions are kept.',
+      )
+      .addButton((button) =>
+        button
+          .setButtonText('Reset')
+          .setWarning()
+          .onClick(async () => {
+            delete this.plugin.settings.workflow;
+            await this.plugin.saveData(this.plugin.settings);
+            this.display();
+          }),
+      );
+  }
+
+  addTemplateSetting(workflow, { key, name, description }) {
+    new obsidian.Setting(this.containerEl)
+      .setName(name)
+      .setDesc(
+        `${description} Written from the plugin's default when missing; ` +
+          'the agent instructions name it as {' +
+          key +
+          '}.',
+      )
+      .addText((component) =>
+        component
+          .setPlaceholder(workflow[key])
+          .setValue((this.plugin.settings.workflow || {})[key] || '')
+          .onChange(async (value) => {
+            await this.saveWorkflow({ [key]: value.trim() });
+            this.plugin.installTemplates();
+          }),
+      );
   }
 
   // The general instructions and Reset, at the top of Workflow.
