@@ -3410,14 +3410,14 @@ function loadSettings(stored, legacy) {
 }
 
 // src/board/store.js
-var import_child_process = require("child_process");
+var childProcess = __toESM(require("child_process"), 1);
 var import_path = __toESM(require("path"), 1);
 var import_fs = __toESM(require("fs"), 1);
-var import_url = require("url");
+var url = __toESM(require("url"), 1);
 var import_meta = {};
 var MARKDOWN_FILE = /\.md$/;
 var EVAL_RESULT = /=>\s?([\s\S]*)$/;
-var PLUGIN_DIR = typeof __dirname === "string" ? __dirname : import_path.default.resolve((0, import_url.fileURLToPath)(import_meta.url), "..", "..", "..");
+var PLUGIN_DIR = typeof __dirname === "string" ? __dirname : import_path.default.resolve(url.fileURLToPath(import_meta.url), "..", "..", "..");
 var ROOT = import_path.default.resolve(PLUGIN_DIR, "..", "..", "..");
 var SKIP_DIRS = /* @__PURE__ */ new Set([".git", ".obsidian", ".trash", "node_modules"]);
 var URGENCY = ["1", "3", "2", "5", "6", "4"];
@@ -3496,7 +3496,7 @@ function parseOrNull(json) {
 var NOT_INSTALLED = "ENOENT";
 function tryEval(binary, code) {
   try {
-    const out = (0, import_child_process.execFileSync)(binary, ["eval", `code=${code}`], {
+    const out = childProcess.execFileSync(binary, ["eval", `code=${code}`], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -3713,14 +3713,14 @@ function nearestFreeOffset(placed, { moving, fixed, direction }) {
 }
 function withGroupMembers(canvasData, ids) {
   const pick = new Set(ids);
-  const groups = canvasData.nodes.filter(
+  const groups2 = canvasData.nodes.filter(
     (node) => node.type === "group" && pick.has(node.id)
   );
   function isInside(node, group) {
     return node.x >= group.x && node.y >= group.y && node.x + node.width <= group.x + group.width && node.y + node.height <= group.y + group.height;
   }
   for (const node of canvasData.nodes) {
-    if (groups.some((group) => isInside(node, group))) {
+    if (groups2.some((group) => isInside(node, group))) {
       pick.add(node.id);
     }
   }
@@ -3975,7 +3975,10 @@ function mergeEdgeOps(canvasData, { keep, gone }) {
       continue;
     }
     const [mine, other] = isOutgoing ? [edge.fromNode, edge.toNode] : [edge.toNode, edge.fromNode];
-    const length = centerDistance(nodeById(mine), nodeById(other) || keep);
+    const length = centerDistance(
+      nodeById(mine),
+      nodeById(other) || keep
+    );
     if (!linksByOther.has(other)) {
       linksByOther.set(other, []);
     }
@@ -4060,8 +4063,8 @@ function plainLines(text) {
   ).filter(Boolean);
 }
 function relinkText(text, hits, replace) {
-  return (text || "").replace(WIKILINK_PARTS, (link, ...groups) => {
-    const [target, , alias] = groups;
+  return (text || "").replace(WIKILINK_PARTS, (link, ...groups2) => {
+    const [target, , alias] = groups2;
     if (!hits(target.trim())) {
       return link;
     }
@@ -4596,26 +4599,26 @@ function startApmCounter(plugin, pluginDir) {
   const { settings: settings2 } = plugin;
   const legacy = settings2.apm ? void 0 : legacyApmSettings(pluginDir);
   settings2.apm = loadSettings(settings2.apm, legacy);
-  const apm = new ApmCounter(
+  const counter = new ApmCounter(
     plugin,
     settings2.apm,
     () => plugin.saveData(settings2)
   );
-  apm.load();
-  plugin.register(() => apm.unload());
-  return apm;
+  counter.load();
+  plugin.register(() => counter.unload());
+  return counter;
 }
 
 // src/plugin/CanvasBoardPlugin.js
-var import_obsidian8 = require("obsidian");
+var obsidian8 = __toESM(require("obsidian"), 1);
 
 // src/plugin/commands.js
-var import_obsidian3 = require("obsidian");
+var obsidian3 = __toESM(require("obsidian"), 1);
 var import_dagre_min = __toESM(require_dagre_min(), 1);
 
 // src/plugin/prompts.js
-var import_obsidian = require("obsidian");
-var NameSuggest = class extends import_obsidian.AbstractInputSuggest {
+var obsidian = __toESM(require("obsidian"), 1);
+var NameSuggest = class extends obsidian.AbstractInputSuggest {
   constructor(app, inputEl, { names, onPick }) {
     super(app, inputEl);
     this.names = names;
@@ -4635,7 +4638,7 @@ var NameSuggest = class extends import_obsidian.AbstractInputSuggest {
   }
 };
 var FORBIDDEN = /[\\/:#^|[\]]/g;
-var NamePrompt = class extends import_obsidian.Modal {
+var NamePrompt = class extends obsidian.Modal {
   // options: { title, onSubmit, suggestions, overwrite }
   constructor(app, options) {
     super(app);
@@ -4649,7 +4652,7 @@ var NamePrompt = class extends import_obsidian.Modal {
     this.button = null;
     this.suggest = null;
     this.isPicked = false;
-    new import_obsidian.Setting(this.contentEl).addText((text) => this.addNameField(text)).addButton((button) => {
+    new obsidian.Setting(this.contentEl).addText((text) => this.addNameField(text)).addButton((button) => {
       this.button = button;
       button.setButtonText("Create").setCta().onClick(() => this.submit());
     });
@@ -4714,14 +4717,14 @@ var NamePrompt = class extends import_obsidian.Modal {
     }
     this.close();
     Promise.resolve(this.onSubmit(name)).catch(
-      (error) => new import_obsidian.Notice(`Kanvas board: ${error.message}`)
+      (error) => new obsidian.Notice(`Kanvas board: ${error.message}`)
     );
   }
   onClose() {
     this.contentEl.empty();
   }
 };
-var Picker = class extends import_obsidian.FuzzySuggestModal {
+var Picker = class extends obsidian.FuzzySuggestModal {
   constructor(app, { placeholder, items, label, onChoose }) {
     super(app);
     this.setPlaceholder(placeholder);
@@ -4737,11 +4740,11 @@ var Picker = class extends import_obsidian.FuzzySuggestModal {
   }
   onChooseItem(item) {
     Promise.resolve(this.onChoose(item)).catch(
-      (error) => new import_obsidian.Notice(`Kanvas board: ${error.message}`)
+      (error) => new obsidian.Notice(`Kanvas board: ${error.message}`)
     );
   }
 };
-var UnpackChoice = class extends import_obsidian.Modal {
+var UnpackChoice = class extends obsidian.Modal {
   constructor(app, file, { links, onPick }) {
     super(app);
     this.file = file;
@@ -4762,7 +4765,7 @@ var UnpackChoice = class extends import_obsidian.Modal {
     if (count > 8) {
       list.createEl("li", { text: `and ${count - 8} more` });
     }
-    const setting = new import_obsidian.Setting(this.contentEl);
+    const setting = new obsidian.Setting(this.contentEl);
     const pick = (mode) => {
       this.close();
       this.onPick(mode);
@@ -4786,7 +4789,7 @@ var UnpackChoice = class extends import_obsidian.Modal {
 };
 
 // src/plugin/view.js
-var import_obsidian2 = require("obsidian");
+var obsidian2 = __toESM(require("obsidian"), 1);
 var REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
 var EVENTS = ["pointerdown", "mousedown", "wheel", "dblclick", "contextmenu"];
 function stopCanvasEvents(element) {
@@ -4866,7 +4869,7 @@ var FindBar = class {
         cls: "document-search-button clickable-icon",
         attr: { "aria-label": label }
       });
-      (0, import_obsidian2.setIcon)(buttonEl, icon);
+      obsidian2.setIcon(buttonEl, icon);
       buttonEl.addEventListener("click", onClick);
     }
     button("arrow-up", "Previous (Shift+Enter)", () => this.step(-1));
@@ -4881,11 +4884,11 @@ var FindBar = class {
       cls: "document-search-close-button clickable-icon",
       attr: { "aria-label": "Close (Escape)" }
     });
-    (0, import_obsidian2.setIcon)(close, "x");
+    obsidian2.setIcon(close, "x");
     close.addEventListener("click", () => this.close());
   }
   bindKeys() {
-    this.scope = new import_obsidian2.Scope(this.plugin.app.scope);
+    this.scope = new obsidian2.Scope(this.plugin.app.scope);
     this.input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && event.altKey) {
         event.preventDefault();
@@ -4945,7 +4948,9 @@ var FindBar = class {
     }
     if (matches.some((node) => plugin.isHidden(canvas, node))) {
       plugin.showAll(canvas);
-      new import_obsidian2.Notice("Kanvas board: filter and folds cleared to show the cards");
+      new obsidian2.Notice(
+        "Kanvas board: filter and folds cleared to show the cards"
+      );
     }
     for (const node of matches) {
       node.nodeEl.addClass("is-current");
@@ -5022,7 +5027,9 @@ var FindBar = class {
     }
     if (plugin.isHidden(canvas, node)) {
       plugin.showAll(canvas);
-      new import_obsidian2.Notice("Kanvas board: filter and folds cleared to show the card");
+      new obsidian2.Notice(
+        "Kanvas board: filter and folds cleared to show the card"
+      );
     }
     canvas.selectOnly(node);
     canvas.zoomToSelection();
@@ -5060,7 +5067,7 @@ var FilterPane = class {
         "data-tooltip-position": "right"
       }
     });
-    (0, import_obsidian2.setIcon)(button, "filter");
+    obsidian2.setIcon(button, "filter");
     button.addEventListener("click", () => this.toggle());
     this.badge = head.createSpan({ cls: "kanvas-board-pane-badge" });
   }
@@ -5091,7 +5098,7 @@ var FilterPane = class {
       cls: "clickable-icon kanvas-board-pane-reset",
       attr: { "aria-label": "Reset" }
     });
-    (0, import_obsidian2.setIcon)(resetEl, "rotate-ccw");
+    obsidian2.setIcon(resetEl, "rotate-ccw");
     resetEl.addEventListener("click", () => {
       reset();
       this.plugin.refreshView(this.canvas);
@@ -5104,7 +5111,7 @@ var FilterPane = class {
       cls: "clickable-icon",
       attr: { "aria-label": "Unhide all (clear filter and folds)" }
     });
-    (0, import_obsidian2.setIcon)(all, "eye");
+    obsidian2.setIcon(all, "eye");
     all.addEventListener("click", () => this.plugin.showAll(this.canvas));
   }
   tags() {
@@ -5176,7 +5183,7 @@ var FilterPane = class {
   selectWhere(keep) {
     const { plugin, canvas } = this;
     if (!plugin.selectMore(canvas, [...canvas.selection], keep)) {
-      new import_obsidian2.Notice("Kanvas board: no visible card to select");
+      new obsidian2.Notice("Kanvas board: no visible card to select");
     }
   }
   // Dots only, on one line; the name and card count are in the tooltip.
@@ -5336,7 +5343,7 @@ function registerTidyCommands(plugin) {
       }
       if (!checking) {
         if (canvas.selection.size < 2) {
-          new import_obsidian3.Notice(
+          new obsidian3.Notice(
             "Tidy layout: select the cards to tidy first (2 or more; Ctrl+A for the whole canvas)."
           );
           return true;
@@ -5425,7 +5432,9 @@ function registerUnpackCommands(plugin) {
       }
       new UnpackChoice(plugin.app, file, {
         links,
-        onPick: (mode) => plugin.unpack(canvas, node, { file, mode, links }).catch((error) => new import_obsidian3.Notice(`Kanvas board: ${error.message}`))
+        onPick: (mode) => plugin.unpack(canvas, node, { file, mode, links }).catch(
+          (error) => new obsidian3.Notice(`Kanvas board: ${error.message}`)
+        )
       }).open();
     }
   });
@@ -5608,7 +5617,7 @@ function registerFoldDirectionCommands(plugin) {
         if (!checking) {
           plugin.settings.foldDirection = direction;
           plugin.saveData(plugin.settings);
-          new import_obsidian3.Notice(`Kanvas board: fold direction ${label}`);
+          new obsidian3.Notice(`Kanvas board: fold direction ${label}`);
         }
         return true;
       }
@@ -5624,10 +5633,7 @@ function registerTemplateSaveCommand(plugin) {
       test: (canvas, selection) => selection.length > 0,
       run: (canvas) => {
         const existing = new Map(
-          templateFiles(plugin).map((file) => [
-            templateName(file).toLowerCase(),
-            file
-          ])
+          templateFiles(plugin).map((file) => [templateName(file).toLowerCase(), file])
         );
         new NamePrompt(plugin.app, {
           title: "Template name",
@@ -5642,17 +5648,25 @@ function registerTemplateSaveCommand(plugin) {
             const old = existing.get(name.toLowerCase());
             if (old) {
               await plugin.app.vault.modify(old, content);
-              new import_obsidian3.Notice(`Kanvas board: template ${old.path} overwritten`);
+              new obsidian3.Notice(
+                `Kanvas board: template ${old.path} overwritten`
+              );
               return;
             }
             if (!plugin.app.vault.getAbstractFileByPath(TEMPLATE_DIR)) {
               await plugin.app.vault.createFolder(TEMPLATE_DIR);
             }
-            const file = plugin.freePath(TEMPLATE_DIR + "/", name, ".canvas");
+            const file = plugin.freePath(
+              TEMPLATE_DIR + "/",
+              name,
+              ".canvas"
+            );
             await plugin.app.vault.create(file, content);
-            new import_obsidian3.Notice(`Kanvas board: template saved to ${file}`);
+            new obsidian3.Notice(`Kanvas board: template saved to ${file}`);
           },
-          suggestions: [...existing.values()].map((file) => templateName(file)),
+          suggestions: [...existing.values()].map(
+            (file) => templateName(file)
+          ),
           overwrite: (name) => existing.has(name.toLowerCase())
         }).open();
       }
@@ -5733,7 +5747,7 @@ function registerTemplateInsertCommand(plugin) {
       if (!checking) {
         const files = templateFiles(plugin);
         if (!files.length) {
-          new import_obsidian3.Notice(
+          new obsidian3.Notice(
             `Kanvas board: no template in ${TEMPLATE_DIR} (Save selected cards as a template)`
           );
         } else {
@@ -5808,7 +5822,9 @@ function registerRestoreCommands(plugin) {
         return false;
       }
       if (!checking) {
-        plugin.restore(file).catch((error) => new import_obsidian3.Notice(`Kanvas board: ${error.message}`));
+        plugin.restore(file).catch(
+          (error) => new obsidian3.Notice(`Kanvas board: ${error.message}`)
+        );
       }
       return true;
     }
@@ -5818,7 +5834,9 @@ function registerRestoreCommands(plugin) {
       if (isArchiveNote(plugin.app, file)) {
         menu.addItem(
           (item) => item.setTitle("Restore archived card").setIcon("archive-restore").setSection("kanvas-board").onClick(
-            () => plugin.restore(file).catch((error) => new import_obsidian3.Notice(`Kanvas board: ${error.message}`))
+            () => plugin.restore(file).catch(
+              (error) => new obsidian3.Notice(`Kanvas board: ${error.message}`)
+            )
           )
         );
       }
@@ -5874,7 +5892,7 @@ function registerContextMenus(plugin) {
     })
   );
 }
-var commands = [
+var groups = [
   registerColorCommands,
   registerTidyCommands,
   registerPackCommands,
@@ -5897,7 +5915,7 @@ var commands = [
 ];
 
 // src/plugin/starterBoard.js
-var import_obsidian4 = require("obsidian");
+var obsidian4 = __toESM(require("obsidian"), 1);
 var import_path5 = __toESM(require("path"), 1);
 var COLUMN_WIDTH = 400;
 var STEPS_X = COLUMN_WIDTH + 160;
@@ -6017,17 +6035,17 @@ async function createStarterBoard(plugin) {
     }
     const file = await vault.create(board, content);
     await plugin.app.workspace.getLeaf(false).openFile(file);
-    new import_obsidian4.Notice(`Kanvas board: starter board created (${board})`);
+    new obsidian4.Notice(`Kanvas board: starter board created (${board})`);
   } catch (error) {
-    new import_obsidian4.Notice(
+    new obsidian4.Notice(
       `Kanvas board: could not create the starter board (${error.message})`
     );
   }
 }
 
 // src/plugin/pass.js
-var import_obsidian5 = require("obsidian");
-var import_child_process2 = require("child_process");
+var obsidian5 = __toESM(require("obsidian"), 1);
+var childProcess2 = __toESM(require("child_process"), 1);
 var import_fs3 = __toESM(require("fs"), 1);
 var import_os = __toESM(require("os"), 1);
 var import_path6 = __toESM(require("path"), 1);
@@ -6131,26 +6149,26 @@ function parseColors(value) {
 }
 function startPass([command, commandArguments], { vault, board }) {
   function failed(error) {
-    return new import_obsidian5.Notice(
+    return new obsidian5.Notice(
       `Kanvas board: could not start the pass (${error.message})`
     );
   }
   try {
-    const child = (0, import_child_process2.spawn)(command, commandArguments, {
+    const child = childProcess2.spawn(command, commandArguments, {
       cwd: vault,
       detached: true,
       stdio: "ignore"
     });
     child.on("error", failed);
     child.unref();
-    new import_obsidian5.Notice(`Kanvas board: pass started on ${board}`);
+    new obsidian5.Notice(`Kanvas board: pass started on ${board}`);
   } catch (error) {
     failed(error);
   }
 }
 
 // src/plugin/CanvasBoardSettings.js
-var import_obsidian6 = require("obsidian");
+var obsidian6 = __toESM(require("obsidian"), 1);
 var import_fs4 = __toESM(require("fs"), 1);
 
 // src/plugin/agentInstructions.js
@@ -6199,7 +6217,7 @@ ${body}`);
 
 // src/plugin/CanvasBoardSettings.js
 var import_path7 = __toESM(require("path"), 1);
-var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
+var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -6215,7 +6233,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
     this.displayLayoutAndView();
   }
   addTextSetting(name, description, key) {
-    return new import_obsidian6.Setting(this.containerEl).setName(name).setDesc(description).addText(
+    return new obsidian6.Setting(this.containerEl).setName(name).setDesc(description).addText(
       (component) => component.setPlaceholder(DEFAULTS2[key]).setValue(this.plugin.settings[key]).onChange(async (value) => {
         this.plugin.settings[key] = value.trim() || DEFAULTS2[key];
         await this.plugin.saveData(this.plugin.settings);
@@ -6223,11 +6241,11 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
     );
   }
   addHeading(name) {
-    return new import_obsidian6.Setting(this.containerEl).setName(name).setHeading();
+    return new obsidian6.Setting(this.containerEl).setName(name).setHeading();
   }
   displayHotkeys() {
     const { containerEl } = this;
-    new import_obsidian6.Setting(containerEl).setName("Hotkeys").setDesc(
+    new obsidian6.Setting(containerEl).setName("Hotkeys").setDesc(
       "Every canvas board command can have a key; buttons and menu items show it."
     ).addButton(
       (button) => button.setButtonText("Open hotkeys").onClick(() => {
@@ -6245,7 +6263,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
   displayBoard() {
     const { containerEl } = this;
     this.addHeading("Board");
-    new import_obsidian6.Setting(containerEl).setName("Starter board").setDesc(
+    new obsidian6.Setting(containerEl).setName("Starter board").setDesc(
       'A board with the color legend and first steps: the default board if it does not exist yet, else "Starter board.canvas".'
     ).addButton(
       (button) => button.setButtonText("Create").onClick(() => this.plugin.createStarterBoard())
@@ -6274,7 +6292,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
   }
   displayArchive() {
     const { containerEl } = this;
-    new import_obsidian6.Setting(containerEl).setName("Archive").setDesc(
+    new obsidian6.Setting(containerEl).setName("Archive").setDesc(
       'Where "Archive selected cards" puts the notes: a "<board> archive" folder next to each board, or one folder for all boards. Changing it does not move notes already archived; restore works from any folder.'
     ).addDropdown(
       (dropdown) => dropdown.addOption("board", "Next to each board").addOption("global", "One folder for all boards").setValue(this.plugin.settings.archiveMode).onChange(async (value) => {
@@ -6299,7 +6317,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
     const goColors = parseColors(this.plugin.settings.passColors);
     for (const { name, meaning } of WORKFLOW) {
       const colorNumber = COLOR_NUM[name];
-      const row = new import_obsidian6.Setting(containerEl).setName(colorNumber ? name : "uncolored").setDesc(meaning);
+      const row = new obsidian6.Setting(containerEl).setName(colorNumber ? name : "uncolored").setDesc(meaning);
       row.nameEl.prepend(
         createSpan({
           cls: "kanvas-board-dot kanvas-board-workflow-dot",
@@ -6307,7 +6325,9 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
         })
       );
       row.addText(
-        (component) => component.setPlaceholder(COLORS2.find((color) => color.name === name).label).setValue((this.plugin.settings.colorLabels || {})[name] || "").onChange((value) => this.plugin.setColorLabel(name, value.trim()))
+        (component) => component.setPlaceholder(
+          COLORS2.find((color) => color.name === name).label
+        ).setValue((this.plugin.settings.colorLabels || {})[name] || "").onChange((value) => this.plugin.setColorLabel(name, value.trim()))
       );
       if (!colorNumber) {
         row.addToggle(
@@ -6327,7 +6347,9 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
             }
             this.plugin.settings.passColors = WORKFLOW.map(
               ({ name: colorName }) => colorName
-            ).filter((colorName) => goColors.has(COLOR_NUM[colorName])).join(" ");
+            ).filter(
+              (colorName) => goColors.has(COLOR_NUM[colorName])
+            ).join(" ");
             await this.plugin.saveData(this.plugin.settings);
           })
         );
@@ -6348,7 +6370,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
       "terminal"
     );
     const skillFile = this.plugin.skillPath();
-    new import_obsidian6.Setting(containerEl).setName("Agent instructions").setDesc(
+    new obsidian6.Setting(containerEl).setName("Agent instructions").setDesc(
       `What the agent does on a pass: a general part, then one part per color (the agent reads them all; the Workflow toggles decide which cards it works). Saved when a field loses focus, to ${this.plugin.skillRelativePath()} (the pass prompt points any agent at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin's version.`
     ).addButton(
       (button) => button.setButtonText("Reset").setWarning().onClick(() => {
@@ -6412,7 +6434,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
     const colorNumber = COLOR_NUM[colorName];
     const goColors = parseColors(this.plugin.settings.passColors);
     const isWorked = Boolean(colorNumber) && goColors.has(colorNumber);
-    const row = new import_obsidian6.Setting(this.containerEl).setName(sectionTitle(colorName)).setDesc(
+    const row = new obsidian6.Setting(this.containerEl).setName(sectionTitle(colorName)).setDesc(
       isWorked ? "A pass works these cards (Workflow toggle on)." : "Context: what these cards are to the agent (Workflow toggle off)."
     );
     row.nameEl.prepend(
@@ -6426,9 +6448,9 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
     try {
       import_fs4.default.mkdirSync(import_path7.default.dirname(skillFile), { recursive: true });
       import_fs4.default.writeFileSync(skillFile, text);
-      new import_obsidian6.Notice("Kanvas board: agent instructions saved");
+      new obsidian6.Notice("Kanvas board: agent instructions saved");
     } catch (error) {
-      new import_obsidian6.Notice(
+      new obsidian6.Notice(
         `Kanvas board: could not save the agent instructions (${error.message})`
       );
     }
@@ -6440,7 +6462,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
     );
     const apm = this.plugin.apm;
     const apmSettings = apm.settings;
-    new import_obsidian6.Setting(containerEl).setName("Personal best").setDesc(
+    new obsidian6.Setting(containerEl).setName("Personal best").setDesc(
       apmSettings.pb ? `${apmSettings.pb} cards in ${apmSettings.windowMinutes} min${apmSettings.pbDate ? `, set ${apmSettings.pbDate}` : ""}.` : "None yet."
     ).addButton(
       (button) => button.setButtonText("Reset").setWarning().onClick(async () => {
@@ -6448,7 +6470,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
         this.display();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("Window (minutes)").setDesc(
+    new obsidian6.Setting(containerEl).setName("Window (minutes)").setDesc(
       "Cards are counted over this rolling window. Changing it resets the personal best: the numbers are not comparable."
     ).addText((component) => {
       component.setValue(String(apmSettings.windowMinutes));
@@ -6466,7 +6488,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
     const { containerEl } = this;
     const apm = this.plugin.apm;
     const apmSettings = apm.settings;
-    new import_obsidian6.Setting(containerEl).setName("Alert below").setDesc(
+    new obsidian6.Setting(containerEl).setName("Alert below").setDesc(
       "Percent of the personal best under which the counter turns red and pulses. Not in the first window of a session."
     ).addSlider(
       (slider) => slider.setLimits(5, 50, 5).setValue(apmSettings.lowPercent).setDynamicTooltip().onChange(async (value) => {
@@ -6475,7 +6497,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
         apm.refresh();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("Idle after (minutes)").setDesc(
+    new obsidian6.Setting(containerEl).setName("Idle after (minutes)").setDesc(
       "Without an action for this long, the alert stops and the counter dims. It also dims while Obsidian is not focused."
     ).addText(
       (component) => component.setValue(String(apmSettings.idleMinutes)).onChange(async (value) => {
@@ -6492,7 +6514,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
   displayLayoutAndView() {
     const { containerEl } = this;
     this.addHeading("Layout");
-    new import_obsidian6.Setting(containerEl).setName("Layout direction").setDesc(
+    new obsidian6.Setting(containerEl).setName("Layout direction").setDesc(
       'Tidy layout and agent-made plan canvases: the card a branch starts from comes first, following arrows in the fold direction ("depends on" prerequisites too). Shift-click the Tidy layout button, or commands "Tidy layout direction: \u2026", switch it on the fly.'
     ).addDropdown(
       (dropdown) => dropdown.addOptions({
@@ -6503,7 +6525,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
       }).setValue(this.plugin.settings.layoutDirection).onChange((value) => this.plugin.setLayoutDirection(value))
     );
     this.addHeading("View");
-    new import_obsidian6.Setting(containerEl).setName("Fold direction").setDesc(
+    new obsidian6.Setting(containerEl).setName("Fold direction").setDesc(
       'Fold branch hides the cards the card points to (outgoing) or the cards pointing to it (incoming), and so on down the branch. Tidy layout reads branches the same way. Commands "Fold direction: \u2026" switch it on the fly.'
     ).addDropdown(
       (dropdown) => dropdown.addOptions({ out: "Outgoing", in: "Incoming" }).setValue(this.plugin.settings.foldDirection).onChange(async (value) => {
@@ -6511,7 +6533,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
         await this.plugin.saveData(this.plugin.settings);
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("Hide cards under hidden tags").setDesc(
+    new obsidian6.Setting(containerEl).setName("Hide cards under hidden tags").setDesc(
       "Hiding a tag in the filter pane also hides the branch of each card that has it, in the fold direction."
     ).addToggle(
       (component) => component.setValue(this.plugin.settings.hideTagBranches).onChange(async (value) => {
@@ -6531,7 +6553,7 @@ var import_fs5 = __toESM(require("fs"), 1);
 var import_path8 = __toESM(require("path"), 1);
 
 // src/plugin/boardView.js
-var import_obsidian7 = require("obsidian");
+var obsidian7 = __toESM(require("obsidian"), 1);
 var INLINE_TAG = /(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g;
 var DIGITS_ONLY = /^\d+$/;
 var FIRST_WIKILINK_TARGET = /\[\[([^\]|#]+)/;
@@ -6866,7 +6888,7 @@ var BoardView = class {
         cls: "kanvas-board-stale",
         attr: { "data-tooltip-position": "top" }
       });
-      (0, import_obsidian7.setIcon)(
+      obsidian7.setIcon(
         badge.createSpan({ cls: "kanvas-board-stale-icon" }),
         "triangle-alert"
       );
@@ -6930,7 +6952,7 @@ var CONTROL_BUTTONS = [
   { id: "filter", label: "Filter cards", icon: "filter" },
   { id: "tidy-layout", label: "Tidy layout", icon: "network" }
 ];
-var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
+var CanvasBoardPlugin = class extends obsidian8.Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULTS2, await this.loadData());
     this.migrateClaudePath();
@@ -6952,7 +6974,7 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
     this.panes = /* @__PURE__ */ new Map();
     this.finds = /* @__PURE__ */ new Map();
     this.actions = [];
-    for (const register of commands) {
+    for (const register of groups) {
       register(this);
     }
     this.startStatusBar();
@@ -6987,7 +7009,7 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
   }
   runAction(run, canvas, selection) {
     return Promise.resolve(run(canvas, selection)).catch(
-      (error) => new import_obsidian8.Notice(`Kanvas board: ${error.message}`)
+      (error) => new obsidian8.Notice(`Kanvas board: ${error.message}`)
     );
   }
   addActionItems(menu, canvas, selection) {
@@ -7144,7 +7166,9 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
       });
       button.addEventListener("click", async () => {
         if (!history || history.current !== historyIndex) {
-          new import_obsidian8.Notice("Kanvas board: the board changed since, use Ctrl+Z");
+          new obsidian8.Notice(
+            "Kanvas board: the board changed since, use Ctrl+Z"
+          );
           return;
         }
         canvas.undo();
@@ -7159,7 +7183,7 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
         }
       });
     });
-    new import_obsidian8.Notice(noticeContent, 8e3);
+    new obsidian8.Notice(noticeContent, 8e3);
   }
   async openBoard() {
     const board = this.settings.defaultBoard;
@@ -7170,7 +7194,7 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
     }
     const file = this.app.vault.getAbstractFileByPath(board);
     if (!file) {
-      new import_obsidian8.Notice(
+      new obsidian8.Notice(
         createFragment((fragment) => {
           fragment.appendText(
             `Kanvas board: ${board} not found (setting "Default board"). `
@@ -7196,7 +7220,9 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
       this.decorate(leaf.view);
     }
-    new import_obsidian8.Notice(`Kanvas board: tidy layout ${LAYOUT_DIRS[direction].name}`);
+    new obsidian8.Notice(
+      `Kanvas board: tidy layout ${LAYOUT_DIRS[direction].name}`
+    );
   }
   cycleLayoutDirection() {
     const dirs = Object.keys(LAYOUT_DIRS);
@@ -7268,7 +7294,7 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
           "data-tooltip-position": "left"
         }
       });
-      (0, import_obsidian8.setIcon)(button, icon);
+      obsidian8.setIcon(button, icon);
       button.addEventListener("click", (event) => {
         const isNextDirection = id === "tidy-layout" && event.shiftKey;
         if (isNextDirection) {
@@ -7284,7 +7310,10 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
   // how to change it.
   decorateTidyButton(tidy) {
     const direction = LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
-    this.tidyTurn = nextTurn(this.tidyTurn ?? direction.turn, direction.turn);
+    this.tidyTurn = nextTurn(
+      this.tidyTurn ?? direction.turn,
+      direction.turn
+    );
     tidy.style.setProperty("--kanvas-board-tidy-turn", `${this.tidyTurn}deg`);
     tidy.setAttr(
       "aria-label",
@@ -7328,7 +7357,9 @@ Shift-click: next direction`,
     );
     for (const item of swatches) {
       const color = (item.className.match(CANVAS_COLOR_CLASS) || [])[1] || "";
-      const row = COLORS2.find((colorRow) => colorRow.canvasColor === color);
+      const row = COLORS2.find(
+        (colorRow) => colorRow.canvasColor === color
+      );
       if (!row) {
         continue;
       }
@@ -7359,7 +7390,7 @@ Shift-click: next direction`,
           "data-tooltip-position": "top"
         }
       });
-      (0, import_obsidian8.setIcon)(button, action.menu.icon);
+      obsidian8.setIcon(button, action.menu.icon);
       button.addEventListener(
         "click",
         () => this.runAction(action.run, canvas, [...canvas.selection])
@@ -7494,10 +7525,14 @@ Shift-click: next direction`,
   resetSkill(pluginDir) {
     try {
       this.copySkill(pluginDir);
-      new import_obsidian8.Notice("Kanvas board: agent skill reset to the plugin's version");
+      new obsidian8.Notice(
+        "Kanvas board: agent skill reset to the plugin's version"
+      );
     } catch (error) {
       console.error("kanvas-board: skill sync failed", error);
-      new import_obsidian8.Notice(`Kanvas board: skill reset failed (${error.message})`);
+      new obsidian8.Notice(
+        `Kanvas board: skill reset failed (${error.message})`
+      );
     }
   }
   copySkill(pluginDir) {
@@ -7613,7 +7648,7 @@ Shift-click: next direction`,
       });
     }
     await this.app.fileManager.trashFile(note);
-    new import_obsidian8.Notice(`Kanvas board: card restored on ${file.path}`);
+    new obsidian8.Notice(`Kanvas board: card restored on ${file.path}`);
   }
   openCanvas(board) {
     const leaf = this.app.workspace.getLeavesOfType("canvas").find((leaf2) => leaf2.view.file && leaf2.view.file.path === board);
@@ -7665,7 +7700,7 @@ Shift-click: next direction`,
       const names = Object.keys(COLOR_NUM).filter(
         (colorName) => goColorSet.has(COLOR_NUM[colorName])
       );
-      new import_obsidian8.Notice(
+      new obsidian8.Notice(
         `Kanvas board: nothing to do on ${board} (no ${names.join(" or ")} card)`
       );
       return;
@@ -7675,7 +7710,7 @@ Shift-click: next direction`,
     const agent = agentWords(this.settings.agentCommand, prompt);
     const launch = terminalLaunch(template, { vault, board, agent });
     if (!launch) {
-      new import_obsidian8.Notice(
+      new obsidian8.Notice(
         'Kanvas board: no terminal found to start the pass. Set "Terminal command" in the plugin settings.',
         1e4
       );
@@ -7684,7 +7719,7 @@ Shift-click: next direction`,
     startPass(launch, { vault, board });
   }
   noticeNoGoColor() {
-    new import_obsidian8.Notice(
+    new obsidian8.Notice(
       createFragment((fragment) => {
         fragment.appendText(
           "Kanvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. "

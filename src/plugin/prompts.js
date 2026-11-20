@@ -1,14 +1,8 @@
-import {
-  AbstractInputSuggest,
-  FuzzySuggestModal,
-  Modal,
-  Notice,
-  Setting,
-} from 'obsidian';
+import * as obsidian from 'obsidian';
 
 // Names under a text field that contain what is typed (all of them when it is
 // empty); picking one calls `onPick`.
-class NameSuggest extends AbstractInputSuggest {
+class NameSuggest extends obsidian.AbstractInputSuggest {
   constructor(app, inputEl, { names, onPick }) {
     super(app, inputEl);
     this.names = names;
@@ -35,7 +29,7 @@ class NameSuggest extends AbstractInputSuggest {
 
 const FORBIDDEN = /[\\/:#^|[\]]/g;
 
-class NamePrompt extends Modal {
+class NamePrompt extends obsidian.Modal {
   // options: { title, onSubmit, suggestions, overwrite }
   constructor(app, options) {
     super(app);
@@ -50,7 +44,7 @@ class NamePrompt extends Modal {
     this.button = null;
     this.suggest = null;
     this.isPicked = false;
-    new Setting(this.contentEl)
+    new obsidian.Setting(this.contentEl)
       .addText((text) => this.addNameField(text))
       .addButton((button) => {
         this.button = button;
@@ -127,7 +121,7 @@ class NamePrompt extends Modal {
     }
     this.close();
     Promise.resolve(this.onSubmit(name)).catch(
-      (error) => new Notice(`Kanvas board: ${error.message}`),
+      (error) => new obsidian.Notice(`Kanvas board: ${error.message}`),
     );
   }
 
@@ -137,7 +131,7 @@ class NamePrompt extends Modal {
 }
 
 // Fuzzy pick from `items` (shown by `label`); Enter calls `onChoose`.
-class Picker extends FuzzySuggestModal {
+class Picker extends obsidian.FuzzySuggestModal {
   constructor(app, { placeholder, items, label, onChoose }) {
     super(app);
     this.setPlaceholder(placeholder);
@@ -154,7 +148,7 @@ class Picker extends FuzzySuggestModal {
   }
   onChooseItem(item) {
     Promise.resolve(this.onChoose(item)).catch(
-      (error) => new Notice(`Kanvas board: ${error.message}`),
+      (error) => new obsidian.Notice(`Kanvas board: ${error.message}`),
     );
   }
 }
@@ -164,7 +158,7 @@ class Picker extends FuzzySuggestModal {
 // `overwrite` (name → true when it would replace a file: the button then reads
 // "Overwrite", in the warning color). Unpack (dissolve) when other cards or
 // notes link the subcanvas: group and redirect, keep the file, or break them.
-class UnpackChoice extends Modal {
+class UnpackChoice extends obsidian.Modal {
   constructor(app, file, { links, onPick }) {
     super(app);
     this.file = file;
@@ -187,7 +181,7 @@ class UnpackChoice extends Modal {
     if (count > 8) {
       list.createEl('li', { text: `and ${count - 8} more` });
     }
-    const setting = new Setting(this.contentEl);
+    const setting = new obsidian.Setting(this.contentEl);
     const pick = (mode) => {
       this.close();
       this.onPick(mode);

@@ -1,17 +1,7 @@
 import path from 'path';
 import fileSystem from 'fs';
-import { relinkText } from './refactor.js';
-import {
-  findFile,
-  parseOrNull,
-  readOrNull,
-  vaultFileIndex,
-  vaultPath,
-  readBoard,
-  COLORS,
-  ARCHIVE_DIR,
-  newId,
-} from './store.js';
+import * as refactor from './refactor.js';
+import * as store from './store.js';
 
 const WIKILINK_TARGET = /\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g;
 const QUOTED_VALUE = /^(["'])(.*)\1$/;
@@ -38,7 +28,7 @@ function cardLinks(node) {
     node.type === 'file'
       ? [node.file]
       : [...(node.text || '').matchAll(WIKILINK_TARGET)].map((match) =>
-          findFile(match[1].trim()),
+          store.findFile(match[1].trim()),
         );
   const found = targets.filter(Boolean);
   return {
@@ -53,10 +43,10 @@ const LINKABLE = /\.(md|canvas)$/;
 // `skipId` on `board`: ['path (card id)' | 'path'].
 function linksTo(relativePath, board, skipId) {
   function hits(target) {
-    return findFile(target) === relativePath;
+    return store.findFile(target) === relativePath;
   }
   function isLinking(text) {
-    return relinkText(text, hits, () => '\u0000') !== (text || '');
+    return refactor.relinkText(text, hits, () => '\u0000') !== (text || '');
   }
   function isLinkingCard(node) {
     return node.type === 'file'
@@ -67,7 +57,7 @@ function linksTo(relativePath, board, skipId) {
     if (file.endsWith('.md')) {
       return isLinking(source) ? [file] : [];
     }
-    const nodes = (parseOrNull(source) || {}).nodes || [];
+    const nodes = (store.parseOrNull(source) || {}).nodes || [];
     return nodes
       .filter((node) => !(file === board && node.id === skipId))
       .filter(isLinkingCard)
@@ -75,11 +65,11 @@ function linksTo(relativePath, board, skipId) {
   }
   const name = path.posix.basename(relativePath);
   const found = [];
-  for (const file of vaultFileIndex.paths()) {
+  for (const file of store.vaultFileIndex.paths()) {
     if (file === relativePath || !LINKABLE.test(file)) {
       continue;
     }
-    const source = readOrNull(file);
+    const source = store.readOrNull(file);
     if (source && source.includes(name)) {
       found.push(...linksIn(file, source));
     }
@@ -118,8 +108,9 @@ function cardContexts(node) {
   const { note } = cardLinks(node);
   const frontmatter =
     note &&
-    (fileSystem.readFileSync(vaultPath(note), 'utf8').match(FRONTMATTER) ||
-      [])[1];
+    (fileSystem
+      .readFileSync(store.vaultPath(note), 'utf8')
+      .match(FRONTMATTER) || [])[1];
   const contexts = noteContexts(frontmatter);
   return contexts.length ? contexts : undefined;
 }
@@ -149,7 +140,7 @@ function yamlStr(value) {
 // passes the level) + nested canvases.
 function tree(board, { noteInfo, depth = 0, seen = new Set() } = {}) {
   seen.add(board);
-  const canvasData = readBoard(board);
+  const canvasData = store.readBoard(board);
   return {
     board,
     cards: canvasData.nodes
@@ -164,7 +155,7 @@ function tree(board, { noteInfo, depth = 0, seen = new Set() } = {}) {
         };
         if (note) {
           const ageDays = Math.floor(
-            (Date.now() - fileSystem.statSync(vaultPath(note)).mtimeMs) /
+            (Date.now() - fileSystem.statSync(store.vaultPath(note)).mtimeMs) /
               86400000,
           );
           card.note = {
@@ -191,7 +182,7 @@ function colorArg(color) {
     ? undefined
     : color === 'none'
       ? ''
-      : COLORS[color] || color;
+      : store.COLORS[color] || color;
 }
 
 // Where a board's archive notes go: "<board name> archive" next to the board,
@@ -200,9 +191,9 @@ function colorArg(color) {
 function archiveDir(board, options = {}) {
   if (options.archiveMode === 'global') {
     return (
-      String(options.archiveFolder || ARCHIVE_DIR)
+      String(options.archiveFolder || store.ARCHIVE_DIR)
         .trim()
-        .replace(TRAILING_SLASHES, '') || ARCHIVE_DIR
+        .replace(TRAILING_SLASHES, '') || store.ARCHIVE_DIR
     );
   }
   const boardPath = String(board).replace(BACKSLASH, '/'),
@@ -298,7 +289,7 @@ function restoreOps(canvasData, source) {
     .replace(TRAILING_WHITESPACE, '');
   const type = get('card-type') || 'text';
   const ids = new Set(canvasData.nodes.map((node) => node.id));
-  const id = ids.has(get('card-id')) ? newId() : get('card-id');
+  const id = ids.has(get('card-id')) ? store.newId() : get('card-id');
   const node = {
     id,
     type,

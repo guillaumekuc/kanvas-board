@@ -1,20 +1,11 @@
 import fileSystem from 'fs';
 import path from 'path';
-import { ApmCounter, loadSettings } from '../apm/apm.js';
-import { applyOps, SIDES, TEMPLATE_DIR } from '../board/store.js';
-import { archiveDir, archiveNote, restoreOps } from '../board/notes.js';
-import { layoutOps } from '../board/geometry.js';
-import {
-  collapseOps,
-  expandOps,
-  extractOps,
-  mergeOps,
-  plainLines,
-  relinkText,
-  splitOps,
-  templateOps,
-} from '../board/refactor.js';
-import { applyToOpenCanvas } from './unpack.js';
+import * as apm from '../apm/apm.js';
+import * as store from '../board/store.js';
+import * as notes from '../board/notes.js';
+import * as geometry from '../board/geometry.js';
+import * as refactor from '../board/refactor.js';
+import * as unpack from './unpack.js';
 
 // canvasColor: the canvas color number; commandKey: the color-<key> command
 // id. Labels can be edited in Settings > Workflow.
@@ -135,21 +126,21 @@ const LINUX_TERMINALS = [
 // content when there is one); the CLI and the plugin write them.
 
 const boardLibrary = {
-  SIDES,
-  TEMPLATE_DIR,
-  applyOps,
-  archiveDir,
-  archiveNote,
-  collapseOps,
-  expandOps,
-  extractOps,
-  layoutOps,
-  mergeOps,
-  plainLines,
-  relinkText,
-  restoreOps,
-  splitOps,
-  templateOps,
+  SIDES: store.SIDES,
+  TEMPLATE_DIR: store.TEMPLATE_DIR,
+  applyOps: store.applyOps,
+  archiveDir: notes.archiveDir,
+  archiveNote: notes.archiveNote,
+  collapseOps: refactor.collapseOps,
+  expandOps: refactor.expandOps,
+  extractOps: refactor.extractOps,
+  layoutOps: geometry.layoutOps,
+  mergeOps: refactor.mergeOps,
+  plainLines: refactor.plainLines,
+  relinkText: refactor.relinkText,
+  restoreOps: notes.restoreOps,
+  splitOps: refactor.splitOps,
+  templateOps: refactor.templateOps,
 };
 
 // What canvas.js calls through `obsidian eval` while a board is open, so
@@ -163,7 +154,7 @@ function createApi(plugin) {
     },
     apply: async (board, operations) => {
       const canvas = plugin.openCanvas(board);
-      return canvas ? applyToOpenCanvas(canvas, operations) : null;
+      return canvas ? unpack.applyToOpenCanvas(canvas, operations) : null;
     },
   };
 }
@@ -182,13 +173,14 @@ function templateFiles(plugin) {
     .getFiles()
     .filter(
       (file) =>
-        file.extension === 'canvas' && file.path.startsWith(TEMPLATE_DIR + '/'),
+        file.extension === 'canvas' &&
+        file.path.startsWith(store.TEMPLATE_DIR + '/'),
     );
 }
 
 // The path under the template folder, subfolders kept, without .canvas.
 function templateName(file) {
-  return file.path.slice(TEMPLATE_DIR.length + 1, -'.canvas'.length);
+  return file.path.slice(store.TEMPLATE_DIR.length + 1, -'.canvas'.length);
 }
 
 // The APM counter was once its own plugin: its settings, if it was installed.
@@ -204,13 +196,13 @@ function legacyApmSettings(pluginDir) {
 function startApmCounter(plugin, pluginDir) {
   const { settings } = plugin;
   const legacy = settings.apm ? undefined : legacyApmSettings(pluginDir);
-  settings.apm = loadSettings(settings.apm, legacy);
-  const apm = new ApmCounter(plugin, settings.apm, () =>
+  settings.apm = apm.loadSettings(settings.apm, legacy);
+  const counter = new apm.ApmCounter(plugin, settings.apm, () =>
     plugin.saveData(settings),
   );
-  apm.load();
-  plugin.register(() => apm.unload());
-  return apm;
+  counter.load();
+  plugin.register(() => counter.unload());
+  return counter;
 }
 
 export {

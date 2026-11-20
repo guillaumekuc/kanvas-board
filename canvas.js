@@ -3166,14 +3166,14 @@ var require_dagre_min = __commonJS({
 });
 
 // src/board/store.js
-var import_child_process = require("child_process");
+var childProcess = __toESM(require("child_process"), 1);
 var import_path = __toESM(require("path"), 1);
 var import_fs = __toESM(require("fs"), 1);
-var import_url = require("url");
+var url = __toESM(require("url"), 1);
 var import_meta = {};
 var MARKDOWN_FILE = /\.md$/;
 var EVAL_RESULT = /=>\s?([\s\S]*)$/;
-var PLUGIN_DIR = typeof __dirname === "string" ? __dirname : import_path.default.resolve((0, import_url.fileURLToPath)(import_meta.url), "..", "..", "..");
+var PLUGIN_DIR = typeof __dirname === "string" ? __dirname : import_path.default.resolve(url.fileURLToPath(import_meta.url), "..", "..", "..");
 var ROOT = import_path.default.resolve(PLUGIN_DIR, "..", "..", "..");
 var DEFAULT_BOARD = "Board.canvas";
 var SKIP_DIRS = /* @__PURE__ */ new Set([".git", ".obsidian", ".trash", "node_modules"]);
@@ -3283,7 +3283,7 @@ function readFileBoard(board) {
 var NOT_INSTALLED = "ENOENT";
 function tryEval(binary, code) {
   try {
-    const out = (0, import_child_process.execFileSync)(binary, ["eval", `code=${code}`], {
+    const out = childProcess.execFileSync(binary, ["eval", `code=${code}`], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -3861,7 +3861,10 @@ function mergeEdgeOps(canvasData, { keep, gone }) {
       continue;
     }
     const [mine, other] = isOutgoing ? [edge.fromNode, edge.toNode] : [edge.toNode, edge.fromNode];
-    const length = centerDistance(nodeById(mine), nodeById(other) || keep);
+    const length = centerDistance(
+      nodeById(mine),
+      nodeById(other) || keep
+    );
     if (!linksByOther.has(other)) {
       linksByOther.set(other, []);
     }
@@ -4373,9 +4376,7 @@ function check(board, ids) {
   const seen = /* @__PURE__ */ new Set();
   function walk(current, depth) {
     seen.add(current);
-    const colored = readBoard(current).nodes.filter(
-      (node) => node.type !== "group" && node.color
-    );
+    const colored = readBoard(current).nodes.filter((node) => node.type !== "group" && node.color);
     for (const node of colored) {
       const isScoped = !ids || ids.has(node.id);
       const { note, canvas } = cardLinks(node);
@@ -4532,7 +4533,12 @@ function archiveCommand(cli2) {
     const node = canvasData.nodes.find((each) => each.id === id);
     const contexts = node && cardContexts(node) || settings().archiveContexts;
     const date = today();
-    const archived = archiveNote(canvasData, { id, board, date, contexts });
+    const archived = archiveNote(canvasData, {
+      id,
+      board,
+      date,
+      contexts
+    });
     const folder = archiveDir(board, settings());
     const file = freePath(folder, archived.name, ".md");
     import_fs4.default.mkdirSync(vaultPath(folder), { recursive: true });
@@ -4572,7 +4578,9 @@ function readCommand(cli2) {
 }
 function treeCommand(cli2) {
   const boardTree = tree2(cli2.board);
-  cli2.print(cli2.hasFlag("--active") ? activeTree(boardTree) : boardTree);
+  cli2.print(
+    cli2.hasFlag("--active") ? activeTree(boardTree) : boardTree
+  );
 }
 function setCommand(cli2) {
   const operation = {
@@ -4613,11 +4621,14 @@ function packCommand(cli2) {
     throw new Error("collapse needs --name");
   }
   const file = freePath(import_path5.default.posix.dirname(cli2.board), name2, ".canvas");
-  const { operations, subcanvas, id } = collapseOps(readBoard(cli2.board), {
-    ids: cli2.list("--ids"),
-    file,
-    label: name2
-  });
+  const { operations, subcanvas, id } = collapseOps(
+    readBoard(cli2.board),
+    {
+      ids: cli2.list("--ids"),
+      file,
+      label: name2
+    }
+  );
   import_fs4.default.writeFileSync(vaultPath(file), serialize(subcanvas));
   writeOps(cli2.board, operations);
   console.log(file, id);
@@ -4648,12 +4659,19 @@ function unpackCommand(cli2) {
   console.log("unpacked (dissolve), trashed", subcanvas);
 }
 function mergeCommand(cli2) {
-  const operations = mergeOps(readBoard(cli2.board), cli2.list("--ids"));
+  const operations = mergeOps(
+    readBoard(cli2.board),
+    cli2.list("--ids")
+  );
   console.log(writeOps(cli2.board, operations));
 }
 function splitCommand(cli2) {
   const separator = cli2.option("--by") || "paragraph";
-  const operations = splitOps(readBoard(cli2.board), cli2.rest[0], separator);
+  const operations = splitOps(
+    readBoard(cli2.board),
+    cli2.rest[0],
+    separator
+  );
   console.log(writeOps(cli2.board, operations));
 }
 function restoreCommand(cli2) {
@@ -4661,13 +4679,17 @@ function restoreCommand(cli2) {
   const source = import_fs4.default.readFileSync(vaultPath(note), "utf8");
   const target = restoreOps({ nodes: [], edges: [] }, source).board;
   const { operations } = restoreOps(readBoard(target), source);
-  console.log(writeOps(target, operations), target, operations[0].node.id);
+  console.log(
+    writeOps(target, operations),
+    target,
+    operations[0].node.id
+  );
   toTrash(note);
 }
 function rollupCommand(cli2) {
   cli2.print(rollup(cli2.board));
 }
-var commands = {
+var byName = {
   read: readCommand,
   tree: treeCommand,
   set: setCommand,
@@ -4716,7 +4738,7 @@ function parseArguments(args) {
 var USAGE = "Usage: node .obsidian/plugins/kanvas-board/canvas.js read|tree|set|add|remove|edge|layout|pack|unpack|merge|split|extract|archive|restore|rollup|check <board> ... (see header)";
 var cli = parseArguments(process.argv.slice(2));
 var name = cli.commandName || "";
-var command = Object.hasOwn(commands, name) ? commands[name] : null;
+var command = Object.hasOwn(byName, name) ? byName[name] : null;
 if (!command) {
   console.error(USAGE);
   process.exit(1);

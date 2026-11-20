@@ -1,29 +1,14 @@
-import {
-  COLORS,
-  COLOR_NUM,
-  DEFAULTS,
-  LAYOUT_DIRS,
-  boardLibrary,
-  createApi,
-  startApmCounter,
-} from './shared.js';
-import { Notice, Plugin, setIcon } from 'obsidian';
-import { commands as COMMAND_GROUPS } from './commands.js';
-import { createStarterBoard } from './starterBoard.js';
-import {
-  startPass,
-  terminalLaunch,
-  agentWords,
-  passPrompt,
-  nextTurn,
-  parseColors,
-} from './pass.js';
-import { parseOrNull } from '../board/store.js';
-import { subcanvasLinks, unpackSubcanvas } from './unpack.js';
+import * as shared from './shared.js';
+import * as obsidian from 'obsidian';
+import * as commands from './commands.js';
+import * as starterBoard from './starterBoard.js';
+import * as pass from './pass.js';
+import * as store from '../board/store.js';
+import * as unpack from './unpack.js';
 import CanvasBoardSettings from './CanvasBoardSettings.js';
 import fileSystem from 'fs';
 import path from 'path';
-import { mixBoardView } from './boardView.js';
+import * as boardView from './boardView.js';
 
 const CANVAS_COLOR_CLASS = /mod-canvas-color-(\d)/;
 const CANVAS_WIKILINKS = /\[\[([^\]|#]+\.canvas)/g;
@@ -36,18 +21,18 @@ const CONTROL_BUTTONS = [
   { id: 'tidy-layout', label: 'Tidy layout', icon: 'network' },
 ];
 
-class CanvasBoardPlugin extends Plugin {
+class CanvasBoardPlugin extends obsidian.Plugin {
   async onload() {
-    this.settings = Object.assign({}, DEFAULTS, await this.loadData());
+    this.settings = Object.assign({}, shared.DEFAULTS, await this.loadData());
     this.migrateClaudePath();
     this.addSettingTab(new CanvasBoardSettings(this.app, this));
     const pluginDir = path.join(
       this.app.vault.adapter.basePath,
       this.manifest.dir,
     );
-    this.boardLibrary = boardLibrary;
-    this.apm = startApmCounter(this, pluginDir);
-    this.api = createApi(this);
+    this.boardLibrary = shared.boardLibrary;
+    this.apm = shared.startApmCounter(this, pluginDir);
+    this.api = shared.createApi(this);
     this.installSkill(pluginDir);
     this.addCommand({
       id: 'reset-skill',
@@ -61,7 +46,7 @@ class CanvasBoardPlugin extends Plugin {
     this.panes = new Map(); // canvas → FilterPane, one per open canvas
     this.finds = new Map(); // canvas → FindBar
     this.actions = [];
-    for (const register of COMMAND_GROUPS) {
+    for (const register of commands.groups) {
       register(this);
     }
     this.startStatusBar();
@@ -98,7 +83,7 @@ class CanvasBoardPlugin extends Plugin {
 
   runAction(run, canvas, selection) {
     return Promise.resolve(run(canvas, selection)).catch(
-      (error) => new Notice(`Kanvas board: ${error.message}`),
+      (error) => new obsidian.Notice(`Kanvas board: ${error.message}`),
     );
   }
 
@@ -202,7 +187,7 @@ class CanvasBoardPlugin extends Plugin {
   colorLabel(name) {
     return (
       (this.settings.colorLabels || {})[name] ||
-      COLORS.find((colorRow) => colorRow.name === name).label
+      shared.COLORS.find((colorRow) => colorRow.name === name).label
     );
   }
 
@@ -222,7 +207,7 @@ class CanvasBoardPlugin extends Plugin {
       delete labels[name];
     }
     await this.saveData(this.settings);
-    const row = COLORS.find((colorRow) => colorRow.name === name);
+    const row = shared.COLORS.find((colorRow) => colorRow.name === name);
     const colorCommand =
       this.app.commands &&
       this.app.commands.commands[`${this.manifest.id}:color-${row.commandKey}`];
@@ -284,7 +269,9 @@ class CanvasBoardPlugin extends Plugin {
       });
       button.addEventListener('click', async () => {
         if (!history || history.current !== historyIndex) {
-          new Notice('Kanvas board: the board changed since, use Ctrl+Z');
+          new obsidian.Notice(
+            'Kanvas board: the board changed since, use Ctrl+Z',
+          );
           return;
         }
         canvas.undo();
@@ -299,7 +286,7 @@ class CanvasBoardPlugin extends Plugin {
         }
       });
     });
-    new Notice(noticeContent, 8000);
+    new obsidian.Notice(noticeContent, 8000);
   }
 
   async openBoard() {
@@ -313,7 +300,7 @@ class CanvasBoardPlugin extends Plugin {
     }
     const file = this.app.vault.getAbstractFileByPath(board);
     if (!file) {
-      new Notice(
+      new obsidian.Notice(
         createFragment((fragment) => {
           fragment.appendText(
             `Kanvas board: ${board} not found (setting "Default board"). `,
@@ -332,7 +319,7 @@ class CanvasBoardPlugin extends Plugin {
   }
 
   createStarterBoard() {
-    return createStarterBoard(this);
+    return starterBoard.createStarterBoard(this);
   }
 
   async setLayoutDirection(direction) {
@@ -341,11 +328,13 @@ class CanvasBoardPlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType('canvas')) {
       this.decorate(leaf.view);
     }
-    new Notice(`Kanvas board: tidy layout ${LAYOUT_DIRS[direction].name}`);
+    new obsidian.Notice(
+      `Kanvas board: tidy layout ${shared.LAYOUT_DIRS[direction].name}`,
+    );
   }
 
   cycleLayoutDirection() {
-    const dirs = Object.keys(LAYOUT_DIRS);
+    const dirs = Object.keys(shared.LAYOUT_DIRS);
     return this.setLayoutDirection(
       dirs[(dirs.indexOf(this.settings.layoutDirection) + 1) % dirs.length],
     );
@@ -423,7 +412,7 @@ class CanvasBoardPlugin extends Plugin {
           'data-tooltip-position': 'left',
         },
       });
-      setIcon(button, icon);
+      obsidian.setIcon(button, icon);
       button.addEventListener('click', (event) => {
         const isNextDirection = id === 'tidy-layout' && event.shiftKey;
         if (isNextDirection) {
@@ -440,8 +429,12 @@ class CanvasBoardPlugin extends Plugin {
   // how to change it.
   decorateTidyButton(tidy) {
     const direction =
-      LAYOUT_DIRS[this.settings.layoutDirection] || LAYOUT_DIRS.TB;
-    this.tidyTurn = nextTurn(this.tidyTurn ?? direction.turn, direction.turn);
+      shared.LAYOUT_DIRS[this.settings.layoutDirection] ||
+      shared.LAYOUT_DIRS.TB;
+    this.tidyTurn = pass.nextTurn(
+      this.tidyTurn ?? direction.turn,
+      direction.turn,
+    );
     tidy.style.setProperty('--kanvas-board-tidy-turn', `${this.tidyTurn}deg`);
     tidy.setAttr(
       'aria-label',
@@ -487,7 +480,9 @@ class CanvasBoardPlugin extends Plugin {
     );
     for (const item of swatches) {
       const color = (item.className.match(CANVAS_COLOR_CLASS) || [])[1] || '';
-      const row = COLORS.find((colorRow) => colorRow.canvasColor === color);
+      const row = shared.COLORS.find(
+        (colorRow) => colorRow.canvasColor === color,
+      );
       if (!row) {
         continue;
       }
@@ -523,7 +518,7 @@ class CanvasBoardPlugin extends Plugin {
           'data-tooltip-position': 'top',
         },
       });
-      setIcon(button, action.menu.icon);
+      obsidian.setIcon(button, action.menu.icon);
       button.addEventListener('click', () =>
         this.runAction(action.run, canvas, [...canvas.selection]),
       );
@@ -684,10 +679,14 @@ class CanvasBoardPlugin extends Plugin {
   resetSkill(pluginDir) {
     try {
       this.copySkill(pluginDir);
-      new Notice("Kanvas board: agent skill reset to the plugin's version");
+      new obsidian.Notice(
+        "Kanvas board: agent skill reset to the plugin's version",
+      );
     } catch (error) {
       console.error('kanvas-board: skill sync failed', error);
-      new Notice(`Kanvas board: skill reset failed (${error.message})`);
+      new obsidian.Notice(
+        `Kanvas board: skill reset failed (${error.message})`,
+      );
     }
   }
 
@@ -747,7 +746,7 @@ class CanvasBoardPlugin extends Plugin {
   }
 
   subcanvasLinks(file, canvas, skipId) {
-    return subcanvasLinks(this, file, { canvas, skipId });
+    return unpack.subcanvasLinks(this, file, { canvas, skipId });
   }
 
   canvasFile(canvas) {
@@ -762,7 +761,7 @@ class CanvasBoardPlugin extends Plugin {
   // this board get an edge to the group, other cards and notes link this
   // board).
   unpack(canvas, node, { file, mode, links }) {
-    return unpackSubcanvas(this, canvas, { node, file, mode, links });
+    return unpack.unpackSubcanvas(this, canvas, { node, file, mode, links });
   }
 
   linkedCanvas(node) {
@@ -839,7 +838,7 @@ class CanvasBoardPlugin extends Plugin {
       });
     }
     await this.app.fileManager.trashFile(note);
-    new Notice(`Kanvas board: card restored on ${file.path}`);
+    new obsidian.Notice(`Kanvas board: card restored on ${file.path}`);
   }
 
   openCanvas(board) {
@@ -861,7 +860,7 @@ class CanvasBoardPlugin extends Plugin {
     const read = async (filePath) => {
       const file = this.app.vault.getAbstractFileByPath(filePath);
       const canvasData =
-        file && parseOrNull(await this.app.vault.cachedRead(file));
+        file && store.parseOrNull(await this.app.vault.cachedRead(file));
       return (canvasData && canvasData.nodes) || [];
     };
     function isGo(node) {
@@ -895,37 +894,37 @@ class CanvasBoardPlugin extends Plugin {
       view && view.getViewType() === 'canvas' && view.file
         ? view.file.path
         : this.settings.defaultBoard;
-    const goColorSet = parseColors(this.settings.passColors);
+    const goColorSet = pass.parseColors(this.settings.passColors);
     if (!goColorSet.size) {
       return this.noticeNoGoColor();
     }
     if (!(await this.hasGoCards(board, goColorSet))) {
-      const names = Object.keys(COLOR_NUM).filter((colorName) =>
-        goColorSet.has(COLOR_NUM[colorName]),
+      const names = Object.keys(shared.COLOR_NUM).filter((colorName) =>
+        goColorSet.has(shared.COLOR_NUM[colorName]),
       );
-      new Notice(
+      new obsidian.Notice(
         `Kanvas board: nothing to do on ${board} (no ` +
           `${names.join(' or ')} card)`,
       );
       return;
     }
     const template = String(this.settings.terminal || '').trim();
-    const prompt = passPrompt(this.skillRelativePath(), board);
-    const agent = agentWords(this.settings.agentCommand, prompt);
-    const launch = terminalLaunch(template, { vault, board, agent });
+    const prompt = pass.passPrompt(this.skillRelativePath(), board);
+    const agent = pass.agentWords(this.settings.agentCommand, prompt);
+    const launch = pass.terminalLaunch(template, { vault, board, agent });
     if (!launch) {
-      new Notice(
+      new obsidian.Notice(
         'Kanvas board: no terminal found to start the pass. Set ' +
           '"Terminal command" in the plugin settings.',
         10000,
       );
       return;
     }
-    startPass(launch, { vault, board });
+    pass.startPass(launch, { vault, board });
   }
 
   noticeNoGoColor() {
-    new Notice(
+    new obsidian.Notice(
       createFragment((fragment) => {
         fragment.appendText(
           'Kanvas board: the agent did not start, no color triggers it. ' +
@@ -945,6 +944,6 @@ class CanvasBoardPlugin extends Plugin {
   }
 }
 
-mixBoardView(CanvasBoardPlugin);
+boardView.mixBoardView(CanvasBoardPlugin);
 
 export default CanvasBoardPlugin;

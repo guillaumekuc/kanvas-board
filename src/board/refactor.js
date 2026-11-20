@@ -1,16 +1,6 @@
 import path from 'path';
-import {
-  bounds,
-  withGroupMembers,
-  groupAround,
-  centeredFreeOffset,
-  firstInReading,
-  fitHeight,
-  byReading,
-  centerDistance,
-  isTwoWay,
-} from './geometry.js';
-import { newId, mostUrgent } from './store.js';
+import * as geometry from './geometry.js';
+import * as store from './store.js';
 
 const EXTRA_BLANK_LINES = /\n{3,}/g;
 const HEADING_SEPARATOR = /^h([1-6])$/;
@@ -33,12 +23,12 @@ const CANVAS_FILE = /\.canvas$/;
 // the edges between them; one card `[[file|label]]` takes their place, centered
 // on where they were, and the edges that crossed the boundary now end on it.
 function collapseOps(canvasData, { ids, file, label }) {
-  const pick = withGroupMembers(canvasData, ids);
+  const pick = geometry.withGroupMembers(canvasData, ids);
   const moving = canvasData.nodes.filter((node) => pick.has(node.id));
   if (!moving.length) {
     throw new Error('nothing to collapse');
   }
-  const box = bounds(moving);
+  const box = geometry.bounds(moving);
   const subcanvas = {
     nodes: moving.map((node) => ({
       ...node,
@@ -52,7 +42,7 @@ function collapseOps(canvasData, { ids, file, label }) {
   const cardWidth = 320,
     cardHeight = 60;
   const card = {
-    id: newId(),
+    id: store.newId(),
     type: 'text',
     text: `[[${file}|${label}]]`,
     x: Math.round(box.x + (box.width - cardWidth) / 2),
@@ -108,13 +98,13 @@ function expandOps(canvasData, { id, subcanvas, group }) {
     [...canvasData.nodes, ...canvasData.edges].map((item) => item.id),
   );
   function freeId(itemId) {
-    return taken.has(itemId) ? newId() : itemId;
+    return taken.has(itemId) ? store.newId() : itemId;
   }
   const ids = new Map(
     subcanvas.nodes.map((node) => [node.id, freeId(node.id)]),
   );
   const others = canvasData.nodes.filter((node) => node.id !== id);
-  const offset = centeredFreeOffset(subcanvas.nodes, card, others);
+  const offset = geometry.centeredFreeOffset(subcanvas.nodes, card, others);
   const nodes = subcanvas.nodes.map((node) => ({
     ...node,
     id: ids.get(node.id),
@@ -122,8 +112,8 @@ function expandOps(canvasData, { id, subcanvas, group }) {
     y: node.y + offset.y,
   }));
   // The group is added first so it is drawn behind the cards.
-  const frame = group ? groupAround(nodes, group) : null;
-  const target = frame || firstInReading(nodes);
+  const frame = group ? geometry.groupAround(nodes, group) : null;
+  const target = frame || geometry.firstInReading(nodes);
   const edges = subcanvas.edges.map((edge) => ({
     ...edge,
     id: freeId(edge.id),
@@ -160,7 +150,7 @@ function extractOps(canvasData, { id, part, from }) {
     .replace(EXTRA_BLANK_LINES, '\n\n')
     .trim();
   const text = part.trim();
-  const height = fitHeight(text, card.width);
+  const height = geometry.fitHeight(text, card.width);
   // Right next to the card even if it overlaps another (seen beats tidy), on
   // top of the stack (added last); stepped down only so repeated extracts don't
   // hide each other exactly.
@@ -173,7 +163,7 @@ function extractOps(canvasData, { id, part, from }) {
     top += 40;
   }
   const node = {
-    id: newId(),
+    id: store.newId(),
     type: 'text',
     text,
     x: card.x + card.width + 40,
@@ -185,7 +175,7 @@ function extractOps(canvasData, { id, part, from }) {
     node.color = card.color;
   }
   return [
-    { op: 'set', id, text: left, height: fitHeight(left, card.width) },
+    { op: 'set', id, text: left, height: geometry.fitHeight(left, card.width) },
     { op: 'add', node },
   ];
 }
@@ -197,7 +187,7 @@ function keptEdgeOps(links, { keep, gone }) {
   const sorted = [...links].sort(
     (first, second) => first.length - second.length,
   );
-  const best = sorted.find((link) => isTwoWay(link.edge)) || sorted[0];
+  const best = sorted.find((link) => geometry.isTwoWay(link.edge)) || sorted[0];
   const hasBothWays =
     links.some((link) => link.isOutgoing) &&
     links.some((link) => !link.isOutgoing);
@@ -213,7 +203,7 @@ function keptEdgeOps(links, { keep, gone }) {
       toNode: gone.has(edge.toNode) ? keep.id : edge.toNode,
     });
   }
-  if (hasBothWays && !isTwoWay(edge)) {
+  if (hasBothWays && !geometry.isTwoWay(edge)) {
     operations.push({
       op: 'ends',
       id: edge.id,
@@ -247,7 +237,10 @@ function mergeEdgeOps(canvasData, { keep, gone }) {
     const [mine, other] = isOutgoing
       ? [edge.fromNode, edge.toNode]
       : [edge.toNode, edge.fromNode];
-    const length = centerDistance(nodeById(mine), nodeById(other) || keep);
+    const length = geometry.centerDistance(
+      nodeById(mine),
+      nodeById(other) || keep,
+    );
     if (!linksByOther.has(other)) {
       linksByOther.set(other, []);
     }
@@ -264,7 +257,7 @@ function mergeEdgeOps(canvasData, { keep, gone }) {
 function mergeOps(canvasData, ids) {
   const cards = canvasData.nodes
     .filter((node) => ids.includes(node.id))
-    .sort(byReading);
+    .sort(geometry.byReading);
   if (cards.length < 2) {
     throw new Error('merge needs 2+ cards');
   }
@@ -275,8 +268,8 @@ function mergeOps(canvasData, ids) {
   const gone = new Set(rest.map((node) => node.id));
   const text = cards.map((node) => node.text.trim()).join('\n\n');
   const width = Math.max(...cards.map((node) => node.width));
-  const color = mostUrgent(cards.map((node) => node.color || ''));
-  const height = fitHeight(text, width);
+  const color = store.mostUrgent(cards.map((node) => node.color || ''));
+  const height = geometry.fitHeight(text, width);
   return [
     { op: 'set', id: keep.id, text, color, width, height },
     ...mergeEdgeOps(canvasData, { keep, gone }),
@@ -327,10 +320,10 @@ function splitOps(canvasData, id, separator = 'paragraph') {
   }
   let top = card.y;
   return pieces.map((text, index) => {
-    const height = fitHeight(text, card.width);
+    const height = geometry.fitHeight(text, card.width);
     const node = {
       ...card,
-      id: index ? newId() : card.id,
+      id: index ? store.newId() : card.id,
       text,
       y: top,
       height,
@@ -389,7 +382,7 @@ function templateOps(template, origin) {
   }
   const minX = Math.min(...nodes.map((node) => node.x)),
     minY = Math.min(...nodes.map((node) => node.y));
-  const ids = new Map(nodes.map((node) => [node.id, newId()]));
+  const ids = new Map(nodes.map((node) => [node.id, store.newId()]));
   const operations = nodes.map((node) => ({
     op: 'add',
     node: {
@@ -405,7 +398,7 @@ function templateOps(template, origin) {
         op: 'edge',
         edge: {
           ...edge,
-          id: newId(),
+          id: store.newId(),
           fromNode: ids.get(edge.fromNode),
           toNode: ids.get(edge.toNode),
         },

@@ -1,7 +1,7 @@
-import { execFileSync } from 'child_process';
+import * as childProcess from 'child_process';
 import path from 'path';
 import fileSystem from 'fs';
-import { fileURLToPath } from 'url';
+import * as url from 'url';
 
 const MARKDOWN_FILE = /\.md$/;
 const EVAL_RESULT = /=>\s?([\s\S]*)$/;
@@ -11,7 +11,7 @@ const EVAL_RESULT = /=>\s?([\s\S]*)$/;
 const PLUGIN_DIR =
   typeof __dirname === 'string'
     ? __dirname
-    : path.resolve(fileURLToPath(import.meta.url), '..', '..', '..');
+    : path.resolve(url.fileURLToPath(import.meta.url), '..', '..', '..');
 // <vault>/.obsidian/plugins/kanvas-board
 const ROOT = path.resolve(PLUGIN_DIR, '..', '..', '..');
 const DEFAULT_BOARD = 'Board.canvas';
@@ -154,7 +154,7 @@ const NOT_INSTALLED = 'ENOENT';
 // Tries one install path of the CLI: NOT_INSTALLED when it is not there.
 function tryEval(binary, code) {
   try {
-    const out = execFileSync(binary, ['eval', `code=${code}`], {
+    const out = childProcess.execFileSync(binary, ['eval', `code=${code}`], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });

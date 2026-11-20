@@ -1,5 +1,5 @@
-import { DEFAULT_BOARD, settings } from '../board/store.js';
-import { commands as COMMANDS } from './commands.js';
+import * as store from '../board/store.js';
+import * as commands from './commands.js';
 
 // `canvas.js <command> <board> [values] [--option value] [--flag]`: what the
 // commands read from it.
@@ -15,10 +15,10 @@ function parseArguments(args) {
     const index = args.indexOf(name);
     return index >= 0 ? args[index + 1] : undefined;
   }
-  const defaultBoard = String(settings().defaultBoard || '').trim();
+  const defaultBoard = String(store.settings().defaultBoard || '').trim();
   return {
     commandName,
-    board: boardArg || defaultBoard || DEFAULT_BOARD,
+    board: boardArg || defaultBoard || store.DEFAULT_BOARD,
     boardArg,
     rest,
     option,
@@ -38,7 +38,9 @@ const USAGE =
 
 const cli = parseArguments(process.argv.slice(2));
 const name = cli.commandName || '';
-const command = Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : null;
+const command = Object.hasOwn(commands.byName, name)
+  ? commands.byName[name]
+  : null;
 if (!command) {
   console.error(USAGE);
   process.exit(1);
