@@ -2,28 +2,31 @@ import fileSystem from 'fs';
 import path from 'path';
 import * as notes from '../board/notes.js';
 import * as store from '../board/store.js';
+import * as config from './config.js';
+import * as templateRules from './templateRules.js';
 
 const LIST_SEPARATOR = /[\s,]+/;
 const CANVAS_COLOR_NUMBER = /^[1-6]$/;
 const ROLLUP_SUFFIXES = / · \d+ inside| · \d+d$/g;
 const STALE_SUFFIX = / · \d+d$/;
 const INSIDE_SUFFIX = / · \d+ inside/;
-const NOTE_CARD_TEXT = /^\[\[[^\]]+\]\]( · .+)?$/;
-const DONE_CARD_TEXT = /^[^\n]+ · done · \[\[[^\]]+\]\]$/;
 const FRONTMATTER = /^---\n([\s\S]*?)\n---/;
 const FRONTMATTER_KEY = /^(\w[\w-]*):/gm;
-const TRAILING_SLASHES = /[/]+$/;
 const PART_CHECKBOX = /^\s*- \[([ xX])\] /gm;
-const DECISIONS_RECORD_HEADING = /^## Decisions Record/m;
-const OPEN_QUESTION = /^\s*- \[\?\] /gm;
+const REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/g;
 
 const ORANGE_STALE_MS = 3600000;
 const DEFAULT_PASS_COLORS = 'cyan purple';
-const DEFAULT_NOTES_FOLDER = 'Board notes';
-const WORKING = '2'; // orange: a pass is on the card
-const WAITING = new Set(['1', '3']); // red, yellow: needs the human
+const DEFAULT_NOTES_FOLDER = config.DEFAULT_NOTES_FOLDER;
 
-function activeNode(boardTree, total, active) {
+function escapeRegex(text) {
+  return text.replace(REGEX_SPECIAL, '\\$&');
+}
+
+// active: the go and working colors; waiting: the colors counted as waiting
+// on User (Settings > Workflow roles).
+function activeNode(boardTree, total, colors) {
+  const { active, waiting } = colors;
   const ids = new Set(
     boardTree.cards
       .filter((card) => active.has(card.color))
@@ -41,10 +44,10 @@ function activeNode(boardTree, total, active) {
   const cards = [],
     context = [];
   for (const card of boardTree.cards) {
-    if (WAITING.has(card.color)) {
+    if (waiting.has(card.color)) {
       total.waiting++;
     }
-    const inside = card.inside && activeNode(card.inside, total, active);
+    const inside = card.inside && activeNode(card.inside, total, colors);
     if (ids.has(card.id) || (inside && inside.cards.length)) {
       cards.push({
         ...card,
@@ -89,6 +92,11 @@ function settings() {
   }
 }
 
+// The user's workflow (config.js), read from data.json on each call.
+function workflowNow() {
+  return config.resolve(settings());
+}
+
 function goColors() {
   const value = settings().passColors;
 
@@ -99,9 +107,13 @@ function goColors() {
 // the cards edged to them (once each, text only, as context), nested boards
 // only when they hold active cards, and the yellow/red count.
 function activeTree(boardTree) {
-  const active = new Set([...goColors(), WORKING]);
+  const workflow = workflowNow();
+  const active = new Set([...goColors(), workflow.working]);
   const total = { waiting: 0 };
-  const filtered = activeNode(boardTree, total, active);
+  const filtered = activeNode(boardTree, total, {
+    active,
+    waiting: workflow.waiting,
+  });
 
   return {
     board: filtered.board,
@@ -112,10 +124,14 @@ function activeTree(boardTree) {
   };
 }
 
-// Yellow cards whose note has not changed for `days` show its age: `· Nd`.
-function ageSuffixOperation(card, days) {
+// Review cards (yellow by default) whose note has not changed for `days` show
+// its age: `· Nd`.
+function ageSuffixOperation(card, days, review = workflowNow().review) {
   const isAging =
-    card.color === '3' && card.note && card.text !== undefined && !card.inside;
+    review.includes(card.color) &&
+    card.note &&
+    card.text !== undefined &&
+    !card.inside;
   if (!isAging) {
     return null;
   }
@@ -139,40 +155,49 @@ function cardLinkTargets(node) {
   );
 }
 
-// Structure only, never content: the invariants the skill states. A check that
-// never fires in a month gets deleted; a new one only after the same defect
-// shows up twice. A card the agent wrote: a wish (User's free text, any
-// length), `[[Note]] · reason`, or a recap `<words> · done · [[Output]]`.
-function cardTextOk(raw) {
+// Structure only, never content. A card the agent wrote: a wish (User's free
+// text, any length, no link) or one of the card template's shapes (by default
+// `[[Note]] · reason` or a recap `<words> · done · [[Output]]`).
+function cardTextOk(raw, shapes = defaultCardShapes()) {
   const text = raw.trim();
   if (!text.includes('[[')) {
     return true;
   }
 
-  return NOTE_CARD_TEXT.test(text) || DONE_CARD_TEXT.test(text);
+  return shapes.patterns.some((pattern) => pattern.test(text));
 }
 
-const TEXT_SHAPES =
-  'card text is neither a wish (no link),`[[Note]] · reason` ' +
-  'nor `<recap> · done · [[Output]]`';
+function defaultCardShapes() {
+  return templateRules.cardShapes(config.templateText('card', workflowNow()));
+}
 
-// Broken links, and card text off the ladder's shapes on the top board
+function textShapesIssue(shapes) {
+  const listed = shapes.lines.map((line) => `\`${line}\``).join(', ');
+
+  return (
+    'card text is neither a wish (no link) nor a card template shape ' +
+    `(${listed})`
+  );
+}
+
+// Broken links, and card text off the card template's shapes on the top board
 // (plan-canvas cards are parts: free text).
-function cardIssues(node, depth) {
+function cardIssues(node, depth, shapes = defaultCardShapes()) {
   const issues = cardLinkTargets(node)
     .filter((link) => !store.findFile(link))
     .map((link) => `broken link [[${link}]]`);
   const isTopText = node.type === 'text' && depth === 0;
-  if (isTopText && !cardTextOk(node.text || '')) {
-    issues.push(TEXT_SHAPES);
+  if (isTopText && !cardTextOk(node.text || '', shapes)) {
+    issues.push(textShapesIssue(shapes));
   }
 
   return issues;
 }
 
-// An orange card whose note nobody touched for a while: a pass that stopped.
-function isStaleOrange(node, note) {
-  if (node.color !== WORKING) {
+// A working card (orange by default) whose note nobody touched for a while: a
+// pass that stopped.
+function isStaleOrange(node, note, working = workflowNow().working) {
+  if (node.color !== working) {
     return false;
   }
 
@@ -181,11 +206,20 @@ function isStaleOrange(node, note) {
   return age > ORANGE_STALE_MS;
 }
 
-const REQUIRED_SECTIONS = ['Aim', 'Design'];
+function defaultNoteRules() {
+  const workflow = workflowNow();
 
-// A plan note's shape: `context` as the only property, one context, the
-// required sections, and ## Output once the card is green.
-function noteIssues(source, color) {
+  return {
+    shape: templateRules.noteShape(config.templateText('note', workflow)),
+    done: workflow.done,
+  };
+}
+
+// A plan note's shape, from the plan-note template: its frontmatter keys only
+// (one context when the template has `context`), its required headings, and
+// the "when done" ones once the card has the done color.
+function noteIssues(source, color, rules = defaultNoteRules()) {
+  const { shape, done } = rules;
   const frontmatter = (source.match(FRONTMATTER) || [])[1];
   const keys = frontmatter
     ? [...frontmatter.matchAll(FRONTMATTER_KEY)].map((match) => match[1])
@@ -196,39 +230,44 @@ function noteIssues(source, color) {
     return headingLine.test(source);
   }
   const issues = [];
-  if (keys.join() !== 'context') {
+  const expected = shape.keys.join(', ');
+  if (keys.join(', ') !== expected) {
     const listed = keys.join(', ') || 'none';
-    issues.push(`note frontmatter is not \`context\` only (${listed})`);
+    issues.push(`note frontmatter is not \`${expected}\` only (${listed})`);
   }
-  if (notes.noteContexts(frontmatter).length !== 1) {
+  const isOneContext = shape.keys.includes('context');
+  if (isOneContext && notes.noteContexts(frontmatter).length !== 1) {
     issues.push('note does not have exactly one context');
   }
-  for (const section of REQUIRED_SECTIONS) {
-    if (!hasHeading(`## ${section}`)) {
-      issues.push(`note has no ## ${section}`);
+  for (const heading of shape.required) {
+    if (!hasHeading(escapeRegex(heading.line))) {
+      const where = heading.parent ? ` (under ${heading.parent})` : '';
+      issues.push(`note has no ${heading.line}${where}`);
     }
   }
-  if (!hasHeading('### Done when')) {
-    issues.push('note has no ### Done when (under Aim)');
-  }
-  if (color === '4' && !hasHeading('## Output')) {
-    issues.push('green card, note has no ## Output');
+  const isDone = Boolean(done) && color === done;
+  for (const heading of isDone ? shape.whenDone : []) {
+    if (!hasHeading(escapeRegex(heading.line))) {
+      issues.push(
+        `${config.colorName(done)} card, note has no ${heading.line}`,
+      );
+    }
   }
 
   return issues;
 }
 
 function notesFolder() {
-  return (
-    String(settings().notesFolder || DEFAULT_NOTES_FOLDER).replace(
-      TRAILING_SLASHES,
-      '',
-    ) + '/'
-  );
+  return `${workflowNow().notesFolder}/`;
 }
 
 const MAX_DEPTH = 2;
-const STALE = 'orange card, note untouched for 1h+ (interrupted pass?)';
+
+function staleIssue(working) {
+  const name = config.colorName(working);
+
+  return `${name} card, note untouched for 1h+ (interrupted pass?)`;
+}
 
 // ids: the cards a pass worked on. The check constrains what agents write,
 // not what User does with the cards afterwards (merged cards, headings), so a
@@ -236,7 +275,15 @@ const STALE = 'orange card, note untouched for 1h+ (interrupted pass?)';
 // (stale orange) are always reported. Without ids: every colored card, as an
 // audit.
 function check(board, ids) {
-  const folder = notesFolder();
+  const workflow = workflowNow();
+  const folder = `${workflow.notesFolder}/`;
+  const shapes = templateRules.cardShapes(
+    config.templateText('card', workflow),
+  );
+  const noteRules = {
+    shape: templateRules.noteShape(config.templateText('note', workflow)),
+    done: workflow.done,
+  };
   const issues = [];
   const seen = new Set();
   function walk(current, depth) {
@@ -248,12 +295,13 @@ function check(board, ids) {
       const isScoped = !ids || ids.has(node.id);
       const { note, canvas } = notes.cardLinks(node);
       const isPlanNote = Boolean(note && note.startsWith(folder));
+      const isStale = isPlanNote && isStaleOrange(node, note, workflow.working);
       const found = [
-        ...(isScoped ? cardIssues(node, depth) : []),
+        ...(isScoped ? cardIssues(node, depth, shapes) : []),
         ...(isScoped && isPlanNote
-          ? noteIssues(store.readOrNull(note) || '', node.color)
+          ? noteIssues(store.readOrNull(note) || '', node.color, noteRules)
           : []),
-        ...(isPlanNote && isStaleOrange(node, note) ? [STALE] : []),
+        ...(isStale ? [staleIssue(workflow.working)] : []),
       ];
       const text = (node.text || node.file || '').split('\n')[0];
       issues.push(
@@ -269,47 +317,54 @@ function check(board, ids) {
   return { issues };
 }
 
-const RED = '1';
-const YELLOW = '3';
-const GREEN = '4';
-
-function colorCounts(colors) {
+// Per waiting color (blocked first, then review, each in canvas order) how
+// many cards have it; allDone: every card has the done color.
+function colorCounts(colors, workflow = workflowNow()) {
   function count(color) {
     return colors.filter((each) => each === color).length;
   }
+  const urgency = [...workflow.blocked, ...workflow.review];
 
   return {
-    red: count(RED),
-    yellow: count(YELLOW),
-    allGreen: colors.length > 0 && count(GREEN) === colors.length,
+    waiting: urgency.map((color) => [color, count(color)]),
+    total: urgency.reduce((sum, color) => sum + count(color), 0),
+    allDone:
+      Boolean(workflow.done) &&
+      colors.length > 0 &&
+      count(workflow.done) === colors.length,
   };
 }
 
-function desiredColor(card, inner, goColors) {
+// The most urgent waiting color inside (or the card's own, when User or an
+// agent set it) climbs; a rolled-up card whose inside is resolved takes the
+// done color when everything inside is done, else no color.
+function desiredColor(card, inner, rules) {
+  const { goColors, workflow } = rules;
   if (goColors.has(card.color)) {
     return card.color;
   }
 
   const rolled = card.text !== undefined && INSIDE_SUFFIX.test(card.text);
   const own = rolled ? null : card.color;
-  if (inner.red || own === '1') {
-    return '1';
+  const climbing = inner.waiting.find(
+    ([color, count]) => count || own === color,
+  );
+  if (climbing) {
+    return climbing[0];
   }
-  if (inner.yellow || own === '3') {
-    return '3';
-  }
-  if (rolled && (card.color === '1' || card.color === '3')) {
-    return inner.allGreen ? '4' : null;
+  if (rolled && workflow.waiting.has(card.color)) {
+    return inner.allDone ? workflow.done : null;
   }
 
   return card.color || null;
 }
 
 // A card linking a nested board takes its most urgent color and the count of
-// red / yellow cards inside as `· N inside` (any `· Nd` age goes).
-function nestedCardUpdate(card, inner, goColorSet) {
-  const color = desiredColor(card, inner, goColorSet);
-  const waiting = inner.red + inner.yellow;
+// waiting cards inside as `· N inside` (any `· Nd` age goes).
+// rules: { goColors, workflow }.
+function nestedCardUpdate(card, inner, rules) {
+  const color = desiredColor(card, inner, rules);
+  const waiting = inner.total;
   const text =
     card.text === undefined
       ? undefined
@@ -332,15 +387,19 @@ function nestedCardUpdate(card, inner, goColorSet) {
 }
 
 // Level is derived from the note: `- [ ]` / `- [x]` parts make it a plan,
-// otherwise it is a brief. Questions: `- [?]` above `## Decisions Record` (past
-// rounds).
-function noteState(relativePath) {
+// otherwise it is a brief. Questions: the question marker (`- [?]`) above the
+// Decisions Record heading (past rounds); both are workflow markers.
+function noteState(relativePath, markers = workflowNow().markers) {
   const text = fileSystem.readFileSync(store.vaultPath(relativePath), 'utf8');
   const parts = [...text.matchAll(PART_CHECKBOX)];
   const done = parts.filter((match) => match[1] !== ' ').length;
-  const questions = [
-    ...text.split(DECISIONS_RECORD_HEADING)[0].matchAll(OPEN_QUESTION),
-  ].length; // answered rounds don't count
+  const record = escapeRegex(markers.decisionsRecord);
+  const question = escapeRegex(markers.question);
+  const recordHeading = new RegExp(`^${record}`, 'm');
+  const openQuestion = new RegExp(`^\\s*- \\[${question}\\] `, 'gm');
+  // answered rounds don't count
+  const open = text.split(recordHeading)[0];
+  const questions = [...open.matchAll(openQuestion)].length;
 
   return {
     level: parts.length ? 'plan' : 'brief',
@@ -356,7 +415,11 @@ function staleDays() {
 } // plugin setting "Stale after"
 
 function tree(board) {
-  return notes.tree(board, { noteInfo: noteState });
+  const { markers } = workflowNow();
+
+  return notes.tree(board, {
+    noteInfo: (relativePath) => noteState(relativePath, markers),
+  });
 }
 
 // red > yellow are the "needs me" colors that climb to the parent card; go
@@ -365,6 +428,7 @@ function tree(board) {
 // the roll-up, one without it was set by an agent or User and is kept.
 // Nested boards are written before the boards that link them.
 function rollup(board) {
+  const workflow = workflowNow();
   const goColorSet = goColors();
   const days = staleDays();
   const changes = [];
@@ -375,21 +439,27 @@ function rollup(board) {
         return card.color;
       }
 
-      const update = nestedCardUpdate(card, walk(card.inside), goColorSet);
+      const inner = walk(card.inside);
+      const update = nestedCardUpdate(card, inner, {
+        goColors: goColorSet,
+        workflow,
+      });
       if (update.operation) {
         operations.push(update.operation);
       }
 
       return update.color;
     });
-    const ages = node.cards.map((card) => ageSuffixOperation(card, days));
+    const ages = node.cards.map((card) =>
+      ageSuffixOperation(card, days, workflow.review),
+    );
     operations.push(...ages.filter(Boolean));
     if (operations.length) {
       const via = store.writeOps(node.board, operations);
       changes.push({ board: node.board, via, operations });
     }
 
-    return colorCounts(colors);
+    return colorCounts(colors, workflow);
   }
   walk(tree(board));
 
@@ -400,11 +470,10 @@ export {
   ORANGE_STALE_MS,
   DEFAULT_PASS_COLORS,
   DEFAULT_NOTES_FOLDER,
-  WORKING,
-  WAITING,
   activeNode,
   parseColors,
   settings,
+  workflowNow,
   goColors,
   activeTree,
   ageSuffixOperation,

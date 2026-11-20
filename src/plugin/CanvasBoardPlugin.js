@@ -4,6 +4,7 @@ import * as commands from './commands.js';
 import * as starterBoard from './starterBoard.js';
 import * as pass from './pass.js';
 import * as store from '../board/store.js';
+import * as config from '../workflow/config.js';
 import * as unpack from './unpack.js';
 import CanvasBoardSettings from './CanvasBoardSettings.js';
 import fileSystem from 'fs';
@@ -34,6 +35,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
     this.apm = shared.startApmCounter(this, pluginDir);
     this.api = shared.createApi(this);
     this.installSkill(pluginDir);
+    this.installTemplates();
     this.addCommand({
       id: 'reset-skill',
       name: "Reset agent skill to the plugin's version (overwrites your edits)",
@@ -700,6 +702,55 @@ class CanvasBoardPlugin extends obsidian.Plugin {
     }
   }
 
+  // The card and plan-note templates (Settings > Workflow) are vault notes:
+  // written from the plugin's defaults when missing, then the user's.
+  installTemplates() {
+    const workflow = config.resolve(this.settings);
+    const templates = [
+      [workflow.cardTemplate, config.CARD_TEMPLATE],
+      [workflow.noteTemplate, config.NOTE_TEMPLATE],
+    ];
+    const missing = templates
+      .map(([relativePath, text]) => [
+        path.join(this.app.vault.adapter.basePath, relativePath),
+        text,
+      ])
+      .filter(([file]) => !fileSystem.existsSync(file));
+    for (const [file, text] of missing) {
+      try {
+        fileSystem.mkdirSync(path.dirname(file), { recursive: true });
+        fileSystem.writeFileSync(file, text);
+      } catch (error) {
+        console.error('kanvas-board: template install failed', error);
+      }
+    }
+  }
+
+  // What a pass reads: the agent instructions with their {placeholders}
+  // filled in from the workflow settings, written next to them when the pass
+  // starts (pass-instructions.md, git-ignored). Without instructions the pass
+  // points at the missing file, as before.
+  writePassInstructions() {
+    const relativePath = `${this.manifest.dir}/pass-instructions.md`;
+    try {
+      const text = fileSystem.readFileSync(this.skillPath(), 'utf8');
+      const filled = config.fillPlaceholders(
+        text,
+        config.resolve(this.settings),
+      );
+      fileSystem.writeFileSync(
+        path.join(this.app.vault.adapter.basePath, relativePath),
+        filled,
+      );
+
+      return relativePath;
+    } catch (error) {
+      console.error('kanvas-board: pass instructions not written', error);
+
+      return this.skillRelativePath();
+    }
+  }
+
   copySkill(pluginDir) {
     const skillTarget = this.skillPath();
     fileSystem.mkdirSync(path.dirname(skillTarget), { recursive: true });
@@ -929,7 +980,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
       return;
     }
     const template = String(this.settings.terminal || '').trim();
-    const prompt = pass.passPrompt(this.skillRelativePath(), board);
+    const prompt = pass.passPrompt(this.writePassInstructions(), board);
     const agent = pass.agentWords(this.settings.agentCommand, prompt);
     const launch = pass.terminalLaunch(template, { vault, board, agent });
     if (!launch) {

@@ -3420,6 +3420,14 @@ var EVAL_RESULT = /=>\s?([\s\S]*)$/;
 var PLUGIN_DIR = typeof __dirname === "string" ? __dirname : import_path.default.resolve(url.fileURLToPath(import_meta.url), "..", "..", "..");
 var ROOT = import_path.default.resolve(PLUGIN_DIR, "..", "..", "..");
 var SKIP_DIRS = /* @__PURE__ */ new Set([".git", ".obsidian", ".trash", "node_modules"]);
+var COLORS = {
+  red: "1",
+  orange: "2",
+  yellow: "3",
+  green: "4",
+  cyan: "5",
+  purple: "6"
+};
 var URGENCY = ["1", "3", "2", "5", "6", "4"];
 var TEMPLATE_DIR = "Templates/Canvas";
 var ARCHIVE_DIR = "Board notes/Archive";
@@ -4432,7 +4440,7 @@ async function applyToOpenCanvas(canvas, operations) {
   }
   canvas.setData(canvasData);
   canvas.requestSave();
-  await new Promise((resolve) => setTimeout(resolve, SAVE_DELAY_MS));
+  await new Promise((resolve2) => setTimeout(resolve2, SAVE_DELAY_MS));
   return "obsidian";
 }
 
@@ -5991,11 +5999,11 @@ function legendNodes(colorLabel) {
     height: WORKFLOW.length * 100 + 100
   };
   const cards = WORKFLOW.map(({ name, meaning }, index) => {
-    const colorName = COLOR_NUM[name] ? name : "uncolored";
+    const colorName2 = COLOR_NUM[name] ? name : "uncolored";
     return {
       id: newId(),
       type: "text",
-      text: `${DOT[name]} **${colorLabel(name)}** (${colorName})
+      text: `${DOT[name]} **${colorLabel(name)}** (${colorName2})
 ${meaning}`,
       x: 0,
       y: index * 100,
@@ -6167,6 +6175,125 @@ function startPass([command, commandArguments], { vault, board }) {
   }
 }
 
+// src/workflow/config.js
+var ROLES = ["working", "blocked", "review", "done", "idle"];
+var ROLE_MEANINGS = {
+  working: "An agent is on the card (required: exactly one color).",
+  blocked: "Waiting on you: nothing moves until it is unblocked.",
+  review: 'Waiting on you: a question or a review; ages after "Stale after".',
+  done: "Finished: a parent whose cards are all done takes it.",
+  idle: "No state of its own."
+};
+var DEFAULT_WORKFLOW = {
+  roles: {
+    red: "blocked",
+    orange: "working",
+    yellow: "review",
+    green: "done",
+    cyan: "idle",
+    purple: "idle"
+  },
+  markers: {
+    question: "?",
+    answer: "i",
+    decisionsRecord: "## Decisions Record"
+  },
+  // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md
+  cardTemplate: "",
+  noteTemplate: ""
+};
+var DEFAULT_NOTES_FOLDER = "Board notes";
+var TRAILING_SLASHES2 = /[/]+$/;
+var PLACEHOLDER = /\{(\w+)\}/g;
+var CARD_COMMENT = "%% Card template: the shapes of the card text an agent writes, one per line. A {word} stands for any text. A card without a [[link]] is a wish (free text) and always passes. Comments like this one are ignored. %%";
+var NOTE_COMMENT = '%% Plan note template: the frontmatter keys and headings of a note an agent writes for a card. Every heading is required, except one followed by an "optional" comment line, or a "when done" one (required once the card has the done color). Comments are for this template only: leave them out of the notes. %%';
+var CARD_TEMPLATE = `${CARD_COMMENT}
+[[{note}]]
+[[{note}]] \xB7 {reason}
+{recap} \xB7 done \xB7 [[{output}]]
+`;
+var NOTE_TEMPLATE = `---
+context:
+  -
+---
+${NOTE_COMMENT}
+> [!info] Since last time
+
+## Aim
+
+### Done when
+
+## Output
+%% when done %%
+
+## Design
+
+## Open questions
+%% optional %%
+
+## Decisions Record
+%% optional %%
+`;
+function folderOf(settings2) {
+  return String(settings2.notesFolder || DEFAULT_NOTES_FOLDER).replace(
+    TRAILING_SLASHES2,
+    ""
+  );
+}
+function templatePaths(settings2, workflow) {
+  const folder = `${folderOf(settings2)}/_templates`;
+  return {
+    cardTemplate: workflow.cardTemplate || `${folder}/Card.md`,
+    noteTemplate: workflow.noteTemplate || `${folder}/Plan note.md`
+  };
+}
+function colorsWith(roles, role) {
+  return Object.keys(COLORS).filter((name) => roles[name] === role).map((name) => COLORS[name]);
+}
+function resolve(settings2 = {}) {
+  const own = settings2.workflow || {};
+  const roles = { ...DEFAULT_WORKFLOW.roles, ...own.roles || {} };
+  const markers = { ...DEFAULT_WORKFLOW.markers, ...own.markers || {} };
+  const working = colorsWith(roles, "working")[0] || COLORS.orange;
+  const blocked = colorsWith(roles, "blocked");
+  const review = colorsWith(roles, "review");
+  return {
+    roles,
+    markers,
+    working,
+    blocked,
+    review,
+    waiting: /* @__PURE__ */ new Set([...blocked, ...review]),
+    done: colorsWith(roles, "done")[0] || "",
+    notesFolder: folderOf(settings2),
+    ...templatePaths(settings2, { ...DEFAULT_WORKFLOW, ...own })
+  };
+}
+function colorName(number) {
+  return Object.keys(COLORS).find((name) => COLORS[name] === number) || "none";
+}
+function placeholders(workflow) {
+  return {
+    notesFolder: workflow.notesFolder,
+    working: colorName(workflow.working),
+    done: workflow.done ? colorName(workflow.done) : "none",
+    blocked: workflow.blocked.map(colorName).join(" "),
+    review: workflow.review.map(colorName).join(" "),
+    cardTemplate: workflow.cardTemplate,
+    noteTemplate: workflow.noteTemplate,
+    question: `- [${workflow.markers.question}]`,
+    answer: `- [${workflow.markers.answer}]`,
+    decisionsRecord: workflow.markers.decisionsRecord
+  };
+}
+function fillPlaceholders(text, workflow) {
+  const values = placeholders(workflow);
+  return String(text).replace(
+    PLACEHOLDER,
+    (match, name) => name in values ? values[name] : match
+  );
+}
+
 // src/plugin/CanvasBoardSettings.js
 var obsidian6 = __toESM(require("obsidian"), 1);
 var import_fs4 = __toESM(require("fs"), 1);
@@ -6174,14 +6301,14 @@ var import_fs4 = __toESM(require("fs"), 1);
 // src/plugin/agentInstructions.js
 var LEADING_BLANK_LINES = /^(?:[ \t]*\n)+/;
 var LINE_BREAK = /\r?\n/;
-function sectionTitle(colorName) {
-  const word = colorName === "none" ? "uncolored" : colorName;
+function sectionTitle(colorName2) {
+  const word = colorName2 === "none" ? "uncolored" : colorName2;
   return `${word[0].toUpperCase()}${word.slice(1)} cards`;
 }
 function headingColor(line, colorNames) {
   const heading = line.trim();
   return colorNames.find(
-    (colorName) => heading === `## ${sectionTitle(colorName)}`
+    (colorName2) => heading === `## ${sectionTitle(colorName2)}`
   );
 }
 function trimBlankLines(text) {
@@ -6192,22 +6319,22 @@ function splitInstructions(text, colorNames) {
   const sections = {};
   let current = general;
   for (const line of String(text || "").split(LINE_BREAK)) {
-    const colorName = headingColor(line, colorNames);
-    if (!colorName) {
+    const colorName2 = headingColor(line, colorNames);
+    if (!colorName2) {
       current.push(line);
       continue;
     }
-    sections[colorName] ||= [];
-    current = sections[colorName];
+    sections[colorName2] ||= [];
+    current = sections[colorName2];
   }
   const colors = {};
-  for (const colorName of colorNames) {
-    colors[colorName] = trimBlankLines((sections[colorName] || []).join("\n"));
+  for (const colorName2 of colorNames) {
+    colors[colorName2] = trimBlankLines((sections[colorName2] || []).join("\n"));
   }
   return { general: trimBlankLines(general.join("\n")), colors };
 }
 function joinInstructions(parts, colorNames) {
-  const sections = colorNames.map((colorName) => [colorName, trimBlankLines(parts.colors[colorName])]).filter(([, body]) => body).map(([colorName, body]) => `## ${sectionTitle(colorName)}
+  const sections = colorNames.map((colorName2) => [colorName2, trimBlankLines(parts.colors[colorName2])]).filter(([, body]) => body).map(([colorName2, body]) => `## ${sectionTitle(colorName2)}
 
 ${body}`);
   const blocks = [trimBlankLines(parts.general), ...sections].filter(Boolean);
@@ -6220,6 +6347,10 @@ var import_path7 = __toESM(require("path"), 1);
 function fitToText(field) {
   field.style.height = "auto";
   field.style.height = `${field.scrollHeight + 2}px`;
+}
+function roleMeaning(name, role, meaning) {
+  const isOwnMeaning = !role || role === "idle" && DEFAULT_WORKFLOW.roles[name] === "idle";
+  return isOwnMeaning ? meaning : ROLE_MEANINGS[role];
 }
 var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
   constructor(app, plugin) {
@@ -6323,9 +6454,10 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     const instructions = this.readSkillParts();
     this.addGeneralSkillField();
     const goColors = parseColors(this.plugin.settings.passColors);
+    const workflow = resolve(this.plugin.settings);
     for (const { name, meaning } of WORKFLOW) {
       const colorNumber = COLOR_NUM[name];
-      const row = new obsidian6.Setting(containerEl).setName(colorNumber ? name : "uncolored").setDesc(meaning);
+      const row = new obsidian6.Setting(containerEl).setName(colorNumber ? name : "uncolored").setDesc(roleMeaning(name, workflow.roles[name], meaning));
       row.nameEl.prepend(
         createSpan({
           cls: "kanvas-board-dot kanvas-board-workflow-dot",
@@ -6337,6 +6469,9 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
           COLORS2.find((color) => color.name === name).label
         ).setValue((this.plugin.settings.colorLabels || {})[name] || "").onChange((value) => this.plugin.setColorLabel(name, value.trim()))
       );
+      if (colorNumber) {
+        this.addRoleDropdown(row, name, workflow.roles[name]);
+      }
       this.addWorkflowToggle(row, colorNumber, goColors);
       this.skillFields.colors[name] = this.addSkillField(
         instructions.colors[name],
@@ -6344,6 +6479,91 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
       );
     }
     this.watchSkillFields(this.plugin.skillPath());
+    this.displayWorkflowRules(workflow);
+  }
+  // A color's role (config.ROLES): exactly one color is working, so choosing
+  // working moves it here, and the working color cannot be left without one.
+  addRoleDropdown(row, name, role) {
+    row.addDropdown((dropdown) => {
+      for (const each of ROLES) {
+        dropdown.addOption(each, each);
+      }
+      dropdown.setValue(role).onChange(async (value) => {
+        if (role === "working") {
+          new obsidian6.Notice(
+            "Kanvas board: one color must mean working. Set another color to working instead."
+          );
+          dropdown.setValue(role);
+          return;
+        }
+        const roles = resolve(this.plugin.settings).roles;
+        if (value === "working") {
+          for (const other of Object.keys(roles)) {
+            roles[other] = roles[other] === "working" ? "idle" : roles[other];
+          }
+        }
+        roles[name] = value;
+        await this.saveWorkflow({ roles });
+        this.display();
+      });
+    });
+  }
+  async saveWorkflow(change) {
+    const settings2 = this.plugin.settings;
+    settings2.workflow = { ...settings2.workflow || {}, ...change };
+    await this.plugin.saveData(settings2);
+  }
+  // Markers and templates: what check and the level read in the notes, and
+  // the notes that set the shapes of agent-written cards and plan notes.
+  displayWorkflowRules(workflow) {
+    const { containerEl } = this;
+    const markerFields = [
+      ["question", "Question marker", "An open question: - [?] by default."],
+      ["answer", "Answer marker", "User's answer: - [i] by default."],
+      [
+        "decisionsRecord",
+        "Decisions Record heading",
+        "Questions below it are answered and no longer count."
+      ]
+    ];
+    for (const [key, name, description] of markerFields) {
+      new obsidian6.Setting(containerEl).setName(name).setDesc(description).addText(
+        (component) => component.setPlaceholder(DEFAULT_WORKFLOW.markers[key]).setValue(workflow.markers[key]).onChange(async (value) => {
+          const markers = { ...workflow.markers };
+          markers[key] = value.trim() || DEFAULT_WORKFLOW.markers[key];
+          await this.saveWorkflow({ markers });
+        })
+      );
+    }
+    this.addTemplateSetting(workflow, {
+      key: "cardTemplate",
+      name: "Card template",
+      description: "A note listing the shapes of the card text agents write, one per line ({word}: any text). Check holds agent-written cards to it."
+    });
+    this.addTemplateSetting(workflow, {
+      key: "noteTemplate",
+      name: "Plan note template",
+      description: "A note with the frontmatter keys and headings of the notes agents write. Check holds those notes to it."
+    });
+    new obsidian6.Setting(containerEl).setName("Reset workflow").setDesc(
+      "Roles, markers and template paths back to the defaults. The template notes and the agent instructions are kept."
+    ).addButton(
+      (button) => button.setButtonText("Reset").setWarning().onClick(async () => {
+        delete this.plugin.settings.workflow;
+        await this.plugin.saveData(this.plugin.settings);
+        this.display();
+      })
+    );
+  }
+  addTemplateSetting(workflow, { key, name, description }) {
+    new obsidian6.Setting(this.containerEl).setName(name).setDesc(
+      `${description} Written from the plugin's default when missing; the agent instructions name it as {` + key + "}."
+    ).addText(
+      (component) => component.setPlaceholder(workflow[key]).setValue((this.plugin.settings.workflow || {})[key] || "").onChange(async (value) => {
+        await this.saveWorkflow({ [key]: value.trim() });
+        this.plugin.installTemplates();
+      })
+    );
   }
   // The general instructions and Reset, at the top of Workflow.
   displayAgentInstructions() {
@@ -6381,8 +6601,8 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
             goColors.delete(colorNumber);
           }
           this.plugin.settings.passColors = WORKFLOW.map(
-            ({ name: colorName }) => colorName
-          ).filter((colorName) => goColors.has(COLOR_NUM[colorName])).join(" ");
+            ({ name: colorName2 }) => colorName2
+          ).filter((colorName2) => goColors.has(COLOR_NUM[colorName2])).join(" ");
           await this.plugin.saveData(this.plugin.settings);
         })
       );
@@ -6405,7 +6625,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
   // The skill file split into its general part and one part per color
   // (see agentInstructions.js); read once per display.
   readSkillParts() {
-    const colorNames = WORKFLOW.map(({ name: colorName }) => colorName);
+    const colorNames = WORKFLOW.map(({ name: colorName2 }) => colorName2);
     this.skillText = this.readSkill(this.plugin.skillPath());
     this.skillParts = splitInstructions(
       this.skillText,
@@ -6426,15 +6646,15 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
   }
   // Any instructions field (general or a color's) saves the whole file.
   watchSkillFields(skillFile) {
-    const colorNames = WORKFLOW.map(({ name: colorName }) => colorName);
+    const colorNames = WORKFLOW.map(({ name: colorName2 }) => colorName2);
     const general = this.skillFields.general;
     const colorFields = this.skillFields.colors;
     const fields = [general, ...Object.values(colorFields)];
     for (const field of fields) {
       field.addEventListener("change", () => {
         const colors = {};
-        for (const colorName of colorNames) {
-          colors[colorName] = colorFields[colorName].value;
+        for (const colorName2 of colorNames) {
+          colors[colorName2] = colorFields[colorName2].value;
         }
         const joined = joinInstructions(
           { general: general.value, colors },
@@ -6870,15 +7090,17 @@ var BoardView = class {
     badge.setText(`\xB7 ${count} folded`);
     badge.setAttr("aria-label", this.keyedLabel("Unfold 1 level", "unfold"));
   }
-  // Yellow (needs me) cards whose note was not touched for "Stale after" days:
+  // Review cards (yellow by default, Settings > Workflow roles) whose note was
+  // not touched for "Stale after" days:
   // a warning badge (the icon of `- [!]`) with the time since the note last
   // changed. Cards without a note have no date: no badge.
   paintStale(canvas) {
     const days = Number(this.settings.staleDays) || 0;
+    const { review } = resolve(this.settings);
     const board = canvas.view && canvas.view.file ? canvas.view.file.path : "";
     for (const node of canvas.nodes.values()) {
       const nodeData = node.getData();
-      const isWaiting = days > 0 && nodeData.color === "3";
+      const isWaiting = days > 0 && review.includes(nodeData.color);
       const age = isWaiting ? this.noteAgeDays(nodeData, board) : -1;
       this.paintStaleBadge(node, { age, days });
     }
@@ -6983,6 +7205,7 @@ var CanvasBoardPlugin = class extends obsidian8.Plugin {
     this.apm = startApmCounter(this, pluginDir);
     this.api = createApi(this);
     this.installSkill(pluginDir);
+    this.installTemplates();
     this.addCommand({
       id: "reset-skill",
       name: "Reset agent skill to the plugin's version (overwrites your edits)",
@@ -7478,8 +7701,8 @@ Shift-click: next direction`,
     };
     const byColor = {};
     for (const node of cards) {
-      const colorName = names[node.color || ""] || "custom";
-      byColor[colorName] = (byColor[colorName] || 0) + 1;
+      const colorName2 = names[node.color || ""] || "custom";
+      byColor[colorName2] = (byColor[colorName2] || 0) + 1;
     }
     const max = Number(this.settings.cardWarning) || 0;
     const isOverLimit = max > 0 && cards.length > max;
@@ -7496,7 +7719,7 @@ Shift-click: next direction`,
     }
     this.countEl.setAttr(
       "aria-label",
-      (isOverLimit ? `over ${max} \xB7 ` : "") + Object.entries(byColor).map(([colorName, count]) => `${colorName} ${count}`).join(" \xB7 ")
+      (isOverLimit ? `over ${max} \xB7 ` : "") + Object.entries(byColor).map(([colorName2, count]) => `${colorName2} ${count}`).join(" \xB7 ")
     );
     this.countEl.setAttr("data-tooltip-position", "top");
     this.countEl.show();
@@ -7551,6 +7774,49 @@ Shift-click: next direction`,
       new obsidian8.Notice(
         `Kanvas board: skill reset failed (${error.message})`
       );
+    }
+  }
+  // The card and plan-note templates (Settings > Workflow) are vault notes:
+  // written from the plugin's defaults when missing, then the user's.
+  installTemplates() {
+    const workflow = resolve(this.settings);
+    const templates = [
+      [workflow.cardTemplate, CARD_TEMPLATE],
+      [workflow.noteTemplate, NOTE_TEMPLATE]
+    ];
+    const missing = templates.map(([relativePath, text]) => [
+      import_path8.default.join(this.app.vault.adapter.basePath, relativePath),
+      text
+    ]).filter(([file]) => !import_fs5.default.existsSync(file));
+    for (const [file, text] of missing) {
+      try {
+        import_fs5.default.mkdirSync(import_path8.default.dirname(file), { recursive: true });
+        import_fs5.default.writeFileSync(file, text);
+      } catch (error) {
+        console.error("kanvas-board: template install failed", error);
+      }
+    }
+  }
+  // What a pass reads: the agent instructions with their {placeholders}
+  // filled in from the workflow settings, written next to them when the pass
+  // starts (pass-instructions.md, git-ignored). Without instructions the pass
+  // points at the missing file, as before.
+  writePassInstructions() {
+    const relativePath = `${this.manifest.dir}/pass-instructions.md`;
+    try {
+      const text = import_fs5.default.readFileSync(this.skillPath(), "utf8");
+      const filled = fillPlaceholders(
+        text,
+        resolve(this.settings)
+      );
+      import_fs5.default.writeFileSync(
+        import_path8.default.join(this.app.vault.adapter.basePath, relativePath),
+        filled
+      );
+      return relativePath;
+    } catch (error) {
+      console.error("kanvas-board: pass instructions not written", error);
+      return this.skillRelativePath();
     }
   }
   copySkill(pluginDir) {
@@ -7716,7 +7982,7 @@ Shift-click: next direction`,
     }
     if (!await this.hasGoCards(board, goColorSet)) {
       const names = Object.keys(COLOR_NUM).filter(
-        (colorName) => goColorSet.has(COLOR_NUM[colorName])
+        (colorName2) => goColorSet.has(COLOR_NUM[colorName2])
       );
       new obsidian8.Notice(
         `Kanvas board: nothing to do on ${board} (no ${names.join(" or ")} card)`
@@ -7724,7 +7990,7 @@ Shift-click: next direction`,
       return;
     }
     const template = String(this.settings.terminal || "").trim();
-    const prompt = passPrompt(this.skillRelativePath(), board);
+    const prompt = passPrompt(this.writePassInstructions(), board);
     const agent = agentWords(this.settings.agentCommand, prompt);
     const launch = terminalLaunch(template, { vault, board, agent });
     if (!launch) {

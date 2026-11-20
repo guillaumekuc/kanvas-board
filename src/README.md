@@ -7,7 +7,10 @@
 	- `geometry.js`: bounds, reading order, free spots, placement, dagre layout.
 	- `refactor.js`: pack, unpack, extract, merge, split, relink, templates. The `*Ops` functions are pure: they return operations, which the CLI writes to the file and the plugin applies to the open canvas.
 	- `notes.js`: card links, note contexts and names, `tree`, archive and restore.
-- `workflow/workflow.js`: the agent workflow on top of `board/`: what a pass reads (`tree --active`, note level), the roll-up and the check. Go colors come from the plugin setting "Pass colors" (`data.json`).
+- `workflow/`: the agent workflow on top of `board/`.
+	- `workflow.js`: what a pass reads (`tree --active`, note level), the roll-up and the check. Go colors come from the plugin setting "Pass colors" (`data.json`).
+	- `config.js`: the user's workflow (`workflow` in `data.json`, Settings > Workflow) over the defaults: color roles, markers, template paths, the built-in templates and the `{placeholders}` of the agent instructions. `resolve(settings)` is the one accessor.
+	- `templateRules.js`: the card and plan-note templates turned into what `check` requires (card text shapes, frontmatter keys, required headings).
 - `apm/apm.js`: the APM counter: canvas cards touched in a rolling window (default 15 min) in the status bar, colored against the personal best; shown only while a canvas is the active tab. An action is a card whose content or color changed on the open canvas; moving or resizing is not one. Pace counts distinct cards, so typing a sentence in one card counts once.
 - `plugin/`: the Obsidian plugin.
 	- `CanvasBoardPlugin.js`: load, commands plumbing, status bar, canvas decoration (header, controls, selection toolbar), templates, agent instructions file, edits, restore, Run pass.

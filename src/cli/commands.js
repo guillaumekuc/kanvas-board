@@ -5,6 +5,7 @@ import * as geometry from '../board/geometry.js';
 import * as notes from '../board/notes.js';
 import * as refactor from '../board/refactor.js';
 import * as store from '../board/store.js';
+import * as config from '../workflow/config.js';
 import * as workflow from '../workflow/workflow.js';
 
 const DEPENDS_ON_LABEL = /depends on/i;
@@ -229,6 +230,25 @@ function rollupCommand(cli) {
   cli.print(workflow.rollup(cli.board));
 }
 
+// The user's workflow (Settings > Workflow, data.json): color roles, markers,
+// template paths and the values {placeholders} take in the agent instructions.
+function workflowCommand(cli) {
+  const resolved = workflow.workflowNow();
+  cli.print({
+    ...resolved,
+    waiting: [...resolved.waiting],
+    placeholders: config.placeholders(resolved),
+  });
+}
+
+// The agent instructions with their {placeholders} filled in, as a pass reads
+// them.
+function instructionsCommand() {
+  const file = path.join(store.PLUGIN_DIR, 'agent-instructions.md');
+  const text = fileSystem.readFileSync(file, 'utf8');
+  process.stdout.write(config.fillPlaceholders(text, workflow.workflowNow()));
+}
+
 // Command pattern: each canvas.js command name (and its alias) maps to the
 // function that runs it.
 const byName = {
@@ -248,6 +268,8 @@ const byName = {
   restore: restoreCommand,
   rollup: rollupCommand,
   check: checkCommand,
+  workflow: workflowCommand,
+  instructions: instructionsCommand,
   collapse: packCommand,
   expand: unpackCommand,
 };
@@ -269,5 +291,7 @@ export {
   splitCommand,
   restoreCommand,
   rollupCommand,
+  workflowCommand,
+  instructionsCommand,
   byName,
 };

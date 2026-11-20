@@ -7,7 +7,7 @@
 // Usage (paths relative to the vault root; CANVAS = node .obsidian/plugins/kanvas-board/canvas.js):
 //   CANVAS read <board>                       nodes and edges as JSON
 //   CANVAS tree [<board>] [--active]          board + linked notes (level, parts) + nested canvases, as JSON
-//                                             --active: go (cyan/purple)/orange cards, cards edged to them, yellow/red count
+//                                             --active: go cards (cyan/purple) and working cards (orange), cards edged to them, waiting count (red/yellow)
 //   CANVAS set <board> <id> [--color c] [--text t] [--file path]
 //                                             c: red orange yellow green cyan purple none (or 1-6)
 //                                             --file turns the card into a file card, --text into a text card
@@ -30,9 +30,12 @@
 //                                             or one folder for all boards, default Board notes/Archive/)
 //   CANVAS restore <note>                     puts an archived card back on its board, note to .trash
 //   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
-//   CANVAS check [<board>] [--ids a,b]        read-only: broken invariants (links, card text, plan notes) as JSON. --ids: only
+//   CANVAS check [<board>] [--ids a,b]        read-only: broken links, card text and plan notes off the user's templates, stale working cards, as JSON. --ids: only
 //                                             the cards a pass wrote; without it, an audit of every colored card
-// tree, rollup and check are the agent workflow: they live in src/workflow/ (go colors: plugin setting "Workflow").
+//   CANVAS workflow                           the user's workflow as JSON: color roles (working, blocked, review, done), markers,
+//                                             template paths and the values of the {placeholders} in the agent instructions
+//   CANVAS instructions                       the agent instructions with their {placeholders} filled in
+// tree, rollup, check and workflow are the agent workflow: they live in src/workflow/ (plugin settings "Workflow").
 // Default board: the plugin setting "Default board" (data.json), else Board.canvas. Default direction: the plugin setting "Layout direction" (data.json), else TB.
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -4201,28 +4204,210 @@ function restoredEdgeOps(canvasData, frontmatter, { archivedId, restoredId }) {
   return operations;
 }
 
+// src/workflow/config.js
+var DEFAULT_WORKFLOW = {
+  roles: {
+    red: "blocked",
+    orange: "working",
+    yellow: "review",
+    green: "done",
+    cyan: "idle",
+    purple: "idle"
+  },
+  markers: {
+    question: "?",
+    answer: "i",
+    decisionsRecord: "## Decisions Record"
+  },
+  // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md
+  cardTemplate: "",
+  noteTemplate: ""
+};
+var DEFAULT_NOTES_FOLDER = "Board notes";
+var TRAILING_SLASHES2 = /[/]+$/;
+var PLACEHOLDER = /\{(\w+)\}/g;
+var CARD_COMMENT = "%% Card template: the shapes of the card text an agent writes, one per line. A {word} stands for any text. A card without a [[link]] is a wish (free text) and always passes. Comments like this one are ignored. %%";
+var NOTE_COMMENT = '%% Plan note template: the frontmatter keys and headings of a note an agent writes for a card. Every heading is required, except one followed by an "optional" comment line, or a "when done" one (required once the card has the done color). Comments are for this template only: leave them out of the notes. %%';
+var CARD_TEMPLATE = `${CARD_COMMENT}
+[[{note}]]
+[[{note}]] \xB7 {reason}
+{recap} \xB7 done \xB7 [[{output}]]
+`;
+var NOTE_TEMPLATE = `---
+context:
+  -
+---
+${NOTE_COMMENT}
+> [!info] Since last time
+
+## Aim
+
+### Done when
+
+## Output
+%% when done %%
+
+## Design
+
+## Open questions
+%% optional %%
+
+## Decisions Record
+%% optional %%
+`;
+function folderOf(settings3) {
+  return String(settings3.notesFolder || DEFAULT_NOTES_FOLDER).replace(
+    TRAILING_SLASHES2,
+    ""
+  );
+}
+function templatePaths(settings3, workflow) {
+  const folder = `${folderOf(settings3)}/_templates`;
+  return {
+    cardTemplate: workflow.cardTemplate || `${folder}/Card.md`,
+    noteTemplate: workflow.noteTemplate || `${folder}/Plan note.md`
+  };
+}
+function colorsWith(roles, role) {
+  return Object.keys(COLORS).filter((name2) => roles[name2] === role).map((name2) => COLORS[name2]);
+}
+function resolve(settings3 = {}) {
+  const own = settings3.workflow || {};
+  const roles = { ...DEFAULT_WORKFLOW.roles, ...own.roles || {} };
+  const markers = { ...DEFAULT_WORKFLOW.markers, ...own.markers || {} };
+  const working = colorsWith(roles, "working")[0] || COLORS.orange;
+  const blocked = colorsWith(roles, "blocked");
+  const review = colorsWith(roles, "review");
+  return {
+    roles,
+    markers,
+    working,
+    blocked,
+    review,
+    waiting: /* @__PURE__ */ new Set([...blocked, ...review]),
+    done: colorsWith(roles, "done")[0] || "",
+    notesFolder: folderOf(settings3),
+    ...templatePaths(settings3, { ...DEFAULT_WORKFLOW, ...own })
+  };
+}
+function templateText(kind, workflow) {
+  const relativePath = kind === "card" ? workflow.cardTemplate : workflow.noteTemplate;
+  const builtIn = kind === "card" ? CARD_TEMPLATE : NOTE_TEMPLATE;
+  return readOrNull(relativePath) || builtIn;
+}
+function colorName(number) {
+  return Object.keys(COLORS).find((name2) => COLORS[name2] === number) || "none";
+}
+function placeholders(workflow) {
+  return {
+    notesFolder: workflow.notesFolder,
+    working: colorName(workflow.working),
+    done: workflow.done ? colorName(workflow.done) : "none",
+    blocked: workflow.blocked.map(colorName).join(" "),
+    review: workflow.review.map(colorName).join(" "),
+    cardTemplate: workflow.cardTemplate,
+    noteTemplate: workflow.noteTemplate,
+    question: `- [${workflow.markers.question}]`,
+    answer: `- [${workflow.markers.answer}]`,
+    decisionsRecord: workflow.markers.decisionsRecord
+  };
+}
+function fillPlaceholders(text, workflow) {
+  const values = placeholders(workflow);
+  return String(text).replace(
+    PLACEHOLDER,
+    (match, name2) => name2 in values ? values[name2] : match
+  );
+}
+
 // src/workflow/workflow.js
 var import_fs3 = __toESM(require("fs"), 1);
 var import_path4 = __toESM(require("path"), 1);
+
+// src/workflow/templateRules.js
+var LINE_ENDINGS = /\r\n?/g;
+var COMMENT = /%%[\s\S]*?%%/g;
+var MARKER = /^%%\s*(optional|when done)\s*%%$/;
+var HEADING = /^(#{1,6}) +(.+?)\s*$/;
+var FRONTMATTER2 = /^---\n([\s\S]*?)\n---\n?/;
+var FRONTMATTER_KEY = /^(\w[\w-]*):/gm;
+var CARD_PLACEHOLDER = /(\[\[)?\{\w+\}/g;
+var REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/g;
+function escapeRegex(text) {
+  return text.replace(REGEX_SPECIAL, "\\$&");
+}
+function shapePattern(line) {
+  let pattern = "";
+  let last = 0;
+  for (const match of line.matchAll(CARD_PLACEHOLDER)) {
+    pattern += escapeRegex(line.slice(last, match.index));
+    pattern += match[1] ? "\\[\\[[^\\]\\n]+" : "[^\\n]+";
+    last = match.index + match[0].length;
+  }
+  pattern += escapeRegex(line.slice(last));
+  const shape = new RegExp(`^${pattern}$`);
+  return shape;
+}
+function cardShapes(templateSource) {
+  const lines = String(templateSource).replace(LINE_ENDINGS, "\n").replace(COMMENT, "").split("\n").map((line) => line.trim()).filter(Boolean);
+  return { lines, patterns: lines.map(shapePattern) };
+}
+function templateHeadings(body) {
+  const lines = body.split("\n");
+  const headings = [];
+  lines.forEach((line, index) => {
+    const match = HEADING.exec(line);
+    if (!match) {
+      return;
+    }
+    const level = match[1].length;
+    const next = lines.slice(index + 1).find((each) => each.trim());
+    const marker = next && MARKER.exec(next.trim());
+    const parent = [...headings].reverse().find((each) => each.level < level);
+    headings.push({
+      level,
+      line: `${match[1]} ${match[2]}`,
+      title: match[2],
+      parent: parent ? parent.title : null,
+      when: marker ? marker[1] : "always"
+    });
+  });
+  return headings;
+}
+function byLevel(first, second) {
+  return first.level - second.level;
+}
+function noteShape(templateSource) {
+  const source = String(templateSource).replace(LINE_ENDINGS, "\n").replace(COMMENT, (comment) => MARKER.test(comment) ? comment : "");
+  const frontmatter = (source.match(FRONTMATTER2) || [])[1] || "";
+  const keys = [...frontmatter.matchAll(FRONTMATTER_KEY)].map(
+    (match) => match[1]
+  );
+  const headings = templateHeadings(source.replace(FRONTMATTER2, ""));
+  return {
+    keys,
+    required: headings.filter((each) => each.when === "always").sort(byLevel),
+    whenDone: headings.filter((each) => each.when === "when done")
+  };
+}
+
+// src/workflow/workflow.js
 var LIST_SEPARATOR = /[\s,]+/;
 var CANVAS_COLOR_NUMBER = /^[1-6]$/;
 var ROLLUP_SUFFIXES = / · \d+ inside| · \d+d$/g;
 var STALE_SUFFIX = / · \d+d$/;
 var INSIDE_SUFFIX = / · \d+ inside/;
-var NOTE_CARD_TEXT = /^\[\[[^\]]+\]\]( · .+)?$/;
-var DONE_CARD_TEXT = /^[^\n]+ · done · \[\[[^\]]+\]\]$/;
-var FRONTMATTER2 = /^---\n([\s\S]*?)\n---/;
-var FRONTMATTER_KEY = /^(\w[\w-]*):/gm;
-var TRAILING_SLASHES2 = /[/]+$/;
+var FRONTMATTER3 = /^---\n([\s\S]*?)\n---/;
+var FRONTMATTER_KEY2 = /^(\w[\w-]*):/gm;
 var PART_CHECKBOX = /^\s*- \[([ xX])\] /gm;
-var DECISIONS_RECORD_HEADING = /^## Decisions Record/m;
-var OPEN_QUESTION = /^\s*- \[\?\] /gm;
+var REGEX_SPECIAL2 = /[.*+?^${}()|[\]\\]/g;
 var ORANGE_STALE_MS = 36e5;
 var DEFAULT_PASS_COLORS = "cyan purple";
-var DEFAULT_NOTES_FOLDER = "Board notes";
-var WORKING = "2";
-var WAITING = /* @__PURE__ */ new Set(["1", "3"]);
-function activeNode(boardTree, total, active) {
+function escapeRegex2(text) {
+  return text.replace(REGEX_SPECIAL2, "\\$&");
+}
+function activeNode(boardTree, total, colors) {
+  const { active, waiting } = colors;
   const ids = new Set(
     boardTree.cards.filter((card) => active.has(card.color)).map((card) => card.id)
   );
@@ -4237,10 +4422,10 @@ function activeNode(boardTree, total, active) {
   }
   const cards = [], context = [];
   for (const card of boardTree.cards) {
-    if (WAITING.has(card.color)) {
+    if (waiting.has(card.color)) {
       total.waiting++;
     }
-    const inside = card.inside && activeNode(card.inside, total, active);
+    const inside = card.inside && activeNode(card.inside, total, colors);
     if (ids.has(card.id) || inside && inside.cards.length) {
       cards.push({
         ...card,
@@ -4275,14 +4460,21 @@ function settings2() {
     return {};
   }
 }
+function workflowNow() {
+  return resolve(settings2());
+}
 function goColors() {
   const value = settings2().passColors;
   return parseColors(value === void 0 ? DEFAULT_PASS_COLORS : value);
 }
 function activeTree(boardTree) {
-  const active = /* @__PURE__ */ new Set([...goColors(), WORKING]);
+  const workflow = workflowNow();
+  const active = /* @__PURE__ */ new Set([...goColors(), workflow.working]);
   const total = { waiting: 0 };
-  const filtered = activeNode(boardTree, total, active);
+  const filtered = activeNode(boardTree, total, {
+    active,
+    waiting: workflow.waiting
+  });
   return {
     board: filtered.board,
     waiting: total.waiting,
@@ -4291,8 +4483,8 @@ function activeTree(boardTree) {
     edges: filtered.edges
   };
 }
-function ageSuffixOperation(card, days) {
-  const isAging = card.color === "3" && card.note && card.text !== void 0 && !card.inside;
+function ageSuffixOperation(card, days, review = workflowNow().review) {
+  const isAging = review.includes(card.color) && card.note && card.text !== void 0 && !card.inside;
   if (!isAging) {
     return null;
   }
@@ -4310,68 +4502,91 @@ function cardLinkTargets(node) {
     (match) => match[1].trim()
   );
 }
-function cardTextOk(raw) {
+function cardTextOk(raw, shapes = defaultCardShapes()) {
   const text = raw.trim();
   if (!text.includes("[[")) {
     return true;
   }
-  return NOTE_CARD_TEXT.test(text) || DONE_CARD_TEXT.test(text);
+  return shapes.patterns.some((pattern) => pattern.test(text));
 }
-var TEXT_SHAPES = "card text is neither a wish (no link),`[[Note]] \xB7 reason` nor `<recap> \xB7 done \xB7 [[Output]]`";
-function cardIssues(node, depth) {
+function defaultCardShapes() {
+  return cardShapes(templateText("card", workflowNow()));
+}
+function textShapesIssue(shapes) {
+  const listed = shapes.lines.map((line) => `\`${line}\``).join(", ");
+  return `card text is neither a wish (no link) nor a card template shape (${listed})`;
+}
+function cardIssues(node, depth, shapes = defaultCardShapes()) {
   const issues = cardLinkTargets(node).filter((link) => !findFile(link)).map((link) => `broken link [[${link}]]`);
   const isTopText = node.type === "text" && depth === 0;
-  if (isTopText && !cardTextOk(node.text || "")) {
-    issues.push(TEXT_SHAPES);
+  if (isTopText && !cardTextOk(node.text || "", shapes)) {
+    issues.push(textShapesIssue(shapes));
   }
   return issues;
 }
-function isStaleOrange(node, note) {
-  if (node.color !== WORKING) {
+function isStaleOrange(node, note, working = workflowNow().working) {
+  if (node.color !== working) {
     return false;
   }
   const age = Date.now() - import_fs3.default.statSync(vaultPath(note)).mtimeMs;
   return age > ORANGE_STALE_MS;
 }
-var REQUIRED_SECTIONS = ["Aim", "Design"];
-function noteIssues(source, color) {
-  const frontmatter = (source.match(FRONTMATTER2) || [])[1];
-  const keys = frontmatter ? [...frontmatter.matchAll(FRONTMATTER_KEY)].map((match) => match[1]) : [];
+function defaultNoteRules() {
+  const workflow = workflowNow();
+  return {
+    shape: noteShape(templateText("note", workflow)),
+    done: workflow.done
+  };
+}
+function noteIssues(source, color, rules = defaultNoteRules()) {
+  const { shape, done } = rules;
+  const frontmatter = (source.match(FRONTMATTER3) || [])[1];
+  const keys = frontmatter ? [...frontmatter.matchAll(FRONTMATTER_KEY2)].map((match) => match[1]) : [];
   function hasHeading(heading) {
     const headingLine = new RegExp(`^${heading}\\s*$`, "m");
     return headingLine.test(source);
   }
   const issues = [];
-  if (keys.join() !== "context") {
+  const expected = shape.keys.join(", ");
+  if (keys.join(", ") !== expected) {
     const listed = keys.join(", ") || "none";
-    issues.push(`note frontmatter is not \`context\` only (${listed})`);
+    issues.push(`note frontmatter is not \`${expected}\` only (${listed})`);
   }
-  if (noteContexts(frontmatter).length !== 1) {
+  const isOneContext = shape.keys.includes("context");
+  if (isOneContext && noteContexts(frontmatter).length !== 1) {
     issues.push("note does not have exactly one context");
   }
-  for (const section of REQUIRED_SECTIONS) {
-    if (!hasHeading(`## ${section}`)) {
-      issues.push(`note has no ## ${section}`);
+  for (const heading of shape.required) {
+    if (!hasHeading(escapeRegex2(heading.line))) {
+      const where = heading.parent ? ` (under ${heading.parent})` : "";
+      issues.push(`note has no ${heading.line}${where}`);
     }
   }
-  if (!hasHeading("### Done when")) {
-    issues.push("note has no ### Done when (under Aim)");
-  }
-  if (color === "4" && !hasHeading("## Output")) {
-    issues.push("green card, note has no ## Output");
+  const isDone = Boolean(done) && color === done;
+  for (const heading of isDone ? shape.whenDone : []) {
+    if (!hasHeading(escapeRegex2(heading.line))) {
+      issues.push(
+        `${colorName(done)} card, note has no ${heading.line}`
+      );
+    }
   }
   return issues;
 }
-function notesFolder() {
-  return String(settings2().notesFolder || DEFAULT_NOTES_FOLDER).replace(
-    TRAILING_SLASHES2,
-    ""
-  ) + "/";
-}
 var MAX_DEPTH = 2;
-var STALE = "orange card, note untouched for 1h+ (interrupted pass?)";
+function staleIssue(working) {
+  const name2 = colorName(working);
+  return `${name2} card, note untouched for 1h+ (interrupted pass?)`;
+}
 function check(board, ids) {
-  const folder = notesFolder();
+  const workflow = workflowNow();
+  const folder = `${workflow.notesFolder}/`;
+  const shapes = cardShapes(
+    templateText("card", workflow)
+  );
+  const noteRules = {
+    shape: noteShape(templateText("note", workflow)),
+    done: workflow.done
+  };
   const issues = [];
   const seen = /* @__PURE__ */ new Set();
   function walk(current, depth) {
@@ -4381,10 +4596,11 @@ function check(board, ids) {
       const isScoped = !ids || ids.has(node.id);
       const { note, canvas } = cardLinks(node);
       const isPlanNote = Boolean(note && note.startsWith(folder));
+      const isStale = isPlanNote && isStaleOrange(node, note, workflow.working);
       const found = [
-        ...isScoped ? cardIssues(node, depth) : [],
-        ...isScoped && isPlanNote ? noteIssues(readOrNull(note) || "", node.color) : [],
-        ...isPlanNote && isStaleOrange(node, note) ? [STALE] : []
+        ...isScoped ? cardIssues(node, depth, shapes) : [],
+        ...isScoped && isPlanNote ? noteIssues(readOrNull(note) || "", node.color, noteRules) : [],
+        ...isStale ? [staleIssue(workflow.working)] : []
       ];
       const text = (node.text || node.file || "").split("\n")[0];
       issues.push(
@@ -4398,39 +4614,38 @@ function check(board, ids) {
   walk(board, 0);
   return { issues };
 }
-var RED = "1";
-var YELLOW = "3";
-var GREEN = "4";
-function colorCounts(colors) {
+function colorCounts(colors, workflow = workflowNow()) {
   function count(color) {
     return colors.filter((each) => each === color).length;
   }
+  const urgency = [...workflow.blocked, ...workflow.review];
   return {
-    red: count(RED),
-    yellow: count(YELLOW),
-    allGreen: colors.length > 0 && count(GREEN) === colors.length
+    waiting: urgency.map((color) => [color, count(color)]),
+    total: urgency.reduce((sum, color) => sum + count(color), 0),
+    allDone: Boolean(workflow.done) && colors.length > 0 && count(workflow.done) === colors.length
   };
 }
-function desiredColor(card, inner, goColors2) {
+function desiredColor(card, inner, rules) {
+  const { goColors: goColors2, workflow } = rules;
   if (goColors2.has(card.color)) {
     return card.color;
   }
   const rolled = card.text !== void 0 && INSIDE_SUFFIX.test(card.text);
   const own = rolled ? null : card.color;
-  if (inner.red || own === "1") {
-    return "1";
+  const climbing = inner.waiting.find(
+    ([color, count]) => count || own === color
+  );
+  if (climbing) {
+    return climbing[0];
   }
-  if (inner.yellow || own === "3") {
-    return "3";
-  }
-  if (rolled && (card.color === "1" || card.color === "3")) {
-    return inner.allGreen ? "4" : null;
+  if (rolled && workflow.waiting.has(card.color)) {
+    return inner.allDone ? workflow.done : null;
   }
   return card.color || null;
 }
-function nestedCardUpdate(card, inner, goColorSet) {
-  const color = desiredColor(card, inner, goColorSet);
-  const waiting = inner.red + inner.yellow;
+function nestedCardUpdate(card, inner, rules) {
+  const color = desiredColor(card, inner, rules);
+  const waiting = inner.total;
   const text = card.text === void 0 ? void 0 : card.text.replace(ROLLUP_SUFFIXES, "") + (waiting ? ` \xB7 ${waiting} inside` : "");
   const isTextChanged = text !== card.text;
   if (color === card.color && !isTextChanged) {
@@ -4446,13 +4661,16 @@ function nestedCardUpdate(card, inner, goColorSet) {
   }
   return { color, operation };
 }
-function noteState(relativePath) {
+function noteState(relativePath, markers = workflowNow().markers) {
   const text = import_fs3.default.readFileSync(vaultPath(relativePath), "utf8");
   const parts = [...text.matchAll(PART_CHECKBOX)];
   const done = parts.filter((match) => match[1] !== " ").length;
-  const questions = [
-    ...text.split(DECISIONS_RECORD_HEADING)[0].matchAll(OPEN_QUESTION)
-  ].length;
+  const record = escapeRegex2(markers.decisionsRecord);
+  const question = escapeRegex2(markers.question);
+  const recordHeading = new RegExp(`^${record}`, "m");
+  const openQuestion = new RegExp(`^\\s*- \\[${question}\\] `, "gm");
+  const open = text.split(recordHeading)[0];
+  const questions = [...open.matchAll(openQuestion)].length;
   return {
     level: parts.length ? "plan" : "brief",
     parts: { done, total: parts.length },
@@ -4464,9 +4682,13 @@ function staleDays() {
   return Number.isFinite(days) && settings2().staleDays !== void 0 ? days : 7;
 }
 function tree2(board) {
-  return tree(board, { noteInfo: noteState });
+  const { markers } = workflowNow();
+  return tree(board, {
+    noteInfo: (relativePath) => noteState(relativePath, markers)
+  });
 }
 function rollup(board) {
+  const workflow = workflowNow();
   const goColorSet = goColors();
   const days = staleDays();
   const changes = [];
@@ -4476,19 +4698,25 @@ function rollup(board) {
       if (!card.inside) {
         return card.color;
       }
-      const update = nestedCardUpdate(card, walk(card.inside), goColorSet);
+      const inner = walk(card.inside);
+      const update = nestedCardUpdate(card, inner, {
+        goColors: goColorSet,
+        workflow
+      });
       if (update.operation) {
         operations.push(update.operation);
       }
       return update.color;
     });
-    const ages = node.cards.map((card) => ageSuffixOperation(card, days));
+    const ages = node.cards.map(
+      (card) => ageSuffixOperation(card, days, workflow.review)
+    );
     operations.push(...ages.filter(Boolean));
     if (operations.length) {
       const via = writeOps(node.board, operations);
       changes.push({ board: node.board, via, operations });
     }
-    return colorCounts(colors);
+    return colorCounts(colors, workflow);
   }
   walk(tree2(board));
   return changes;
@@ -4689,6 +4917,19 @@ function restoreCommand(cli2) {
 function rollupCommand(cli2) {
   cli2.print(rollup(cli2.board));
 }
+function workflowCommand(cli2) {
+  const resolved = workflowNow();
+  cli2.print({
+    ...resolved,
+    waiting: [...resolved.waiting],
+    placeholders: placeholders(resolved)
+  });
+}
+function instructionsCommand() {
+  const file = import_path5.default.join(PLUGIN_DIR, "agent-instructions.md");
+  const text = import_fs4.default.readFileSync(file, "utf8");
+  process.stdout.write(fillPlaceholders(text, workflowNow()));
+}
 var byName = {
   read: readCommand,
   tree: treeCommand,
@@ -4706,6 +4947,8 @@ var byName = {
   restore: restoreCommand,
   rollup: rollupCommand,
   check: checkCommand,
+  workflow: workflowCommand,
+  instructions: instructionsCommand,
   collapse: packCommand,
   expand: unpackCommand
 };
@@ -4735,7 +4978,7 @@ function parseArguments(args) {
     print: (value) => console.log(JSON.stringify(value, null, 2))
   };
 }
-var USAGE = "Usage: node .obsidian/plugins/kanvas-board/canvas.js read|tree|set|add|remove|edge|layout|pack|unpack|merge|split|extract|archive|restore|rollup|check <board> ... (see header)";
+var USAGE = "Usage: node .obsidian/plugins/kanvas-board/canvas.js read|tree|set|add|remove|edge|layout|pack|unpack|merge|split|extract|archive|restore|rollup|check|workflow|instructions <board> ... (see header)";
 var cli = parseArguments(process.argv.slice(2));
 var name = cli.commandName || "";
 var command = Object.hasOwn(byName, name) ? byName[name] : null;
