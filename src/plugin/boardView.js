@@ -14,7 +14,9 @@ class BoardView {
   // Filter state of an open canvas, made on first use.
   viewState(canvas) {
     const existing = this.views.get(canvas);
-    if (existing) return existing;
+    if (existing) {
+      return existing;
+    }
     const state = emptyViewState();
     this.views.set(canvas, state);
     // Decorator: updateSelection and applyHistory are wrapped, not replaced.
@@ -63,7 +65,9 @@ class BoardView {
     const folds = this.folds(canvas);
     if (folds.size) {
       this.setFolds(canvas, new Map([...folds.keys()].map((id) => [id, null])));
-    } else this.refreshView(canvas);
+    } else {
+      this.refreshView(canvas);
+    }
   }
 
   // A fold is stored on the card as "canvasBoard": {"folded": "in" | "out"}
@@ -78,7 +82,9 @@ class BoardView {
     const folds = new Map();
     for (const node of canvas.nodes.values()) {
       const direction = this.foldOf(node);
-      if (direction) folds.set(node.id, direction);
+      if (direction) {
+        folds.set(node.id, direction);
+      }
     }
     return folds;
   }
@@ -86,16 +92,26 @@ class BoardView {
   // `changes`: card id → direction to fold, or null to unfold. One canvas edit,
   // one undo step.
   setFolds(canvas, changes) {
-    if (!changes.size) return;
+    if (!changes.size) {
+      return;
+    }
     const canvasData = canvas.getData();
     for (const node of canvasData.nodes) {
-      if (!changes.has(node.id)) continue;
+      if (!changes.has(node.id)) {
+        continue;
+      }
       const boardData = { ...(node.canvasBoard || {}) };
       const direction = changes.get(node.id);
-      if (direction) boardData.folded = direction;
-      else delete boardData.folded;
-      if (Object.keys(boardData).length) node.canvasBoard = boardData;
-      else delete node.canvasBoard;
+      if (direction) {
+        boardData.folded = direction;
+      } else {
+        delete boardData.folded;
+      }
+      if (Object.keys(boardData).length) {
+        node.canvasBoard = boardData;
+      } else {
+        delete node.canvasBoard;
+      }
     }
     this.edit(canvas, [], canvasData);
     this.refreshView(canvas);
@@ -136,8 +152,12 @@ class BoardView {
   // another fold), so pressing unfold again opens the next level.
   unfoldTargets(canvas, id) {
     const node = canvas.nodes.get(id);
-    if (!node) return [];
-    if (this.foldOf(node)) return [id];
+    if (!node) {
+      return [];
+    }
+    if (this.foldOf(node)) {
+      return [id];
+    }
     const links = this.branchLinks(canvas, this.settings.foldDirection);
     const isFolded = (each) => {
       const eachNode = canvas.nodes.get(each);
@@ -164,7 +184,9 @@ class BoardView {
     for (const id of ids) {
       const node = canvas.nodes.get(id);
       const direction = node && this.foldOf(node);
-      if (!direction) continue;
+      if (!direction) {
+        continue;
+      }
       changes.set(id, null);
       const below = this.branchLevels(canvas, id, direction);
       const links = this.branchLinks(canvas, direction);
@@ -172,7 +194,9 @@ class BoardView {
       const leadingFurther = lastShown.filter(
         (each) => (links.get(each) || []).length,
       );
-      for (const each of leadingFurther) changes.set(each, direction);
+      for (const each of leadingFurther) {
+        changes.set(each, direction);
+      }
     }
     this.setFolds(canvas, changes);
   }
@@ -184,7 +208,9 @@ class BoardView {
     for (const match of (node.getData().text || '').matchAll(
       /(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g,
     )) {
-      if (!/^\d+$/.test(match[1])) tags.add(match[1]);
+      if (!/^\d+$/.test(match[1])) {
+        tags.add(match[1]);
+      }
     }
     return tags;
   }
@@ -192,8 +218,12 @@ class BoardView {
   // Every color and tag shows by default; a hidden color, or any hidden tag,
   // hides the card.
   matches(node, state) {
-    if (state.xcolors.has(node.getData().color || '')) return false;
-    if (!state.xtags.size) return true;
+    if (state.xcolors.has(node.getData().color || '')) {
+      return false;
+    }
+    if (!state.xtags.size) {
+      return true;
+    }
     const tags = this.cardTagSet(node);
     return ![...state.xtags].some((tag) => tags.has(tag));
   }
@@ -215,20 +245,28 @@ class BoardView {
     for (const [root, direction] of this.folds(canvas)) {
       const below = this.branchLevels(canvas, root, direction).flat();
       folded.set(root, below.length);
-      for (const id of below) hidden.add(id);
+      for (const id of below) {
+        hidden.add(id);
+      }
     }
     state.hidden = hidden;
     this.paint(canvas, hidden, folded);
     if ([...canvas.selection].some((selected) => hidden.has(selected.id))) {
       canvas.updateSelection(() => {});
     }
-    if (canvas === this.activeCanvas()) this.updateViewLabel(canvas);
+    if (canvas === this.activeCanvas()) {
+      this.updateViewLabel(canvas);
+    }
     const pane = this.panes.get(canvas);
-    if (pane) pane.update();
+    if (pane) {
+      pane.update();
+    }
   }
 
   hiddenByFilter(canvas, state) {
-    if (!this.filtering(state)) return [];
+    if (!this.filtering(state)) {
+      return [];
+    }
     return [...canvas.nodes.values()]
       .filter((node) => node.getData().type !== 'group')
       .filter((node) => !this.matches(node, state))
@@ -236,7 +274,9 @@ class BoardView {
   }
 
   hiddenByTagBranches(canvas, state) {
-    if (!state.xtags.size || !this.settings.hideTagBranches) return [];
+    if (!state.xtags.size || !this.settings.hideTagBranches) {
+      return [];
+    }
     function isCard(id) {
       return (
         canvas.nodes.get(id) && canvas.nodes.get(id).getData().type !== 'group'
@@ -279,7 +319,9 @@ class BoardView {
   paintFoldBadge(canvas, node, count) {
     let badge = node.nodeEl.querySelector(':scope > .kanvas-board-folded');
     if (count === undefined) {
-      if (badge) badge.remove();
+      if (badge) {
+        badge.remove();
+      }
       return;
     }
     if (!badge) {
@@ -323,14 +365,18 @@ class BoardView {
         ? this.app.vault.getAbstractFileByPath(nodeData.file)
         : match &&
           this.app.metadataCache.getFirstLinkpathDest(match[1].trim(), board);
-    if (!file || !file.stat) return -1;
+    if (!file || !file.stat) {
+      return -1;
+    }
     return Math.floor((Date.now() - file.stat.mtime) / 86400000);
   }
 
   paintStaleBadge(node, { age, days }) {
     let badge = node.nodeEl.querySelector(':scope > .kanvas-board-stale');
     if (age < days || age < 0) {
-      if (badge) badge.remove();
+      if (badge) {
+        badge.remove();
+      }
       return;
     }
     if (!badge) {
@@ -345,7 +391,9 @@ class BoardView {
       badge.createSpan({ cls: 'kanvas-board-stale-text' });
     }
     const label = age < 1 ? 'today' : `${age}d`;
-    if (badge.dataset.age === label) return;
+    if (badge.dataset.age === label) {
+      return;
+    }
     badge.dataset.age = label;
     badge.querySelector('.kanvas-board-stale-text').setText(label);
     const unit = `day${age === 1 ? '' : 's'}`;
@@ -396,7 +444,9 @@ class BoardView {
 
 function mixBoardView(targetClass) {
   for (const name of Object.getOwnPropertyNames(BoardView.prototype)) {
-    if (name === 'constructor') continue;
+    if (name === 'constructor') {
+      continue;
+    }
     const descriptor = Object.getOwnPropertyDescriptor(
       BoardView.prototype,
       name,

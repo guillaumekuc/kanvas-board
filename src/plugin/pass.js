@@ -8,7 +8,9 @@ import { LINUX_TERMINALS, COLOR_NUM } from './shared.js';
 // Claude Code: the setting, else the native installer's
 // ~/.local/bin/claude(.exe), else `claude` on PATH.
 function claudeBin(setting) {
-  if (setting) return setting;
+  if (setting) {
+    return setting;
+  }
   const local = path.join(
     operatingSystem.homedir(),
     '.local',
@@ -23,7 +25,9 @@ function claudeBin(setting) {
 // last), or Claude Code when the setting is empty.
 function agentWords(setting, prompt) {
   const template = String(setting || '').trim();
-  if (!template) return [claudeBin(''), prompt];
+  if (!template) {
+    return [claudeBin(''), prompt];
+  }
   const words = (template.match(/"[^"]*"|\S+/g) || []).map((word) =>
     word.replace(/^"|"$/g, ''),
   );
@@ -89,11 +93,15 @@ function defaultLaunch({ vault, board, agent }) {
 // the agent command with its prompt; else the platform's default terminal
 // (null when none is found).
 function terminalLaunch(template, { vault, board, agent }) {
-  if (!template) return defaultLaunch({ vault, board, agent });
+  if (!template) {
+    return defaultLaunch({ vault, board, agent });
+  }
   const values = { vault, board };
   const words = (template.match(/"[^"]*"|\S+/g) || []).flatMap((word) => {
     const bare = word.replace(/^"|"$/g, '');
-    if (bare === '{agent}' || bare === '{claude}') return agent;
+    if (bare === '{agent}' || bare === '{claude}') {
+      return agent;
+    }
     return [bare.replace(/\{(vault|board)\}/g, (match, name) => values[name])];
   });
   const [command, ...commandArguments] = words;

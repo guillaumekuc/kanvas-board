@@ -94,15 +94,20 @@ class VaultFileIndex {
     });
     for (const entry of entries) {
       const relativePath = path.posix.join(folder, entry.name);
-      if (!entry.isDirectory()) this.add(relativePath, entry.name);
-      else if (!this.skipped.has(entry.name)) this.walk(relativePath);
+      if (!entry.isDirectory()) {
+        this.add(relativePath, entry.name);
+      } else if (!this.skipped.has(entry.name)) {
+        this.walk(relativePath);
+      }
     }
   }
 
   // The first file found keeps a name shared by several.
   add(relativePath, name) {
     const key = name.endsWith('.md') ? name.slice(0, -3) : name;
-    if (!this.files.has(key)) this.files.set(key, relativePath);
+    if (!this.files.has(key)) {
+      this.files.set(key, relativePath);
+    }
     this.files.set(relativePath, relativePath);
     this.files.set(relativePath.replace(/\.md$/, ''), relativePath);
   }
@@ -151,7 +156,9 @@ function tryEval(binary, code) {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const match = out.match(/=>\s?([\s\S]*)$/);
-    if (!match) throw new Error(out.trim());
+    if (!match) {
+      throw new Error(out.trim());
+    }
     return match[1].trim();
   } catch (error) {
     return error.code === 'ENOENT' ? NOT_INSTALLED : null;
@@ -165,7 +172,9 @@ tryEval.NOT_INSTALLED = NOT_INSTALLED;
 function obsidianEval(code) {
   for (const binary of OBSIDIAN) {
     const result = tryEval(binary, code);
-    if (result !== NOT_INSTALLED) return result;
+    if (result !== NOT_INSTALLED) {
+      return result;
+    }
   }
   return null;
 }
@@ -227,8 +236,11 @@ function retype(node, type, value) {
 
 // An empty color means uncolored, which a canvas stores as no color field.
 function setColor(node, color) {
-  if (color) node.color = color;
-  else delete node.color;
+  if (color) {
+    node.color = color;
+  } else {
+    delete node.color;
+  }
 }
 
 const GEOMETRY = ['x', 'y', 'width', 'height'];
@@ -236,8 +248,12 @@ const GEOMETRY = ['x', 'y', 'width', 'height'];
 // Returns the card's id when its type changed (text <-> file).
 function setNode(canvasData, operation) {
   const node = canvasData.nodes.find((node) => node.id === operation.id);
-  if (!node) throw new Error('no node ' + operation.id);
-  if (operation.color !== undefined) setColor(node, operation.color);
+  if (!node) {
+    throw new Error('no node ' + operation.id);
+  }
+  if (operation.color !== undefined) {
+    setColor(node, operation.color);
+  }
   const retyped = [];
   if (operation.file !== undefined && retype(node, 'file', operation.file)) {
     retyped.push(node.id);
@@ -246,7 +262,9 @@ function setNode(canvasData, operation) {
     retyped.push(node.id);
   }
   for (const field of GEOMETRY) {
-    if (operation[field] !== undefined) node[field] = operation[field];
+    if (operation[field] !== undefined) {
+      node[field] = operation[field];
+    }
   }
   return retyped;
 }
@@ -254,8 +272,12 @@ function setNode(canvasData, operation) {
 // A missing edge is skipped: the user may have deleted it meanwhile.
 function updateEdge(canvasData, operation, fields) {
   const edge = canvasData.edges.find((edge) => edge.id === operation.id);
-  if (!edge) return;
-  for (const field of fields) edge[field] = operation[field];
+  if (!edge) {
+    return;
+  }
+  for (const field of fields) {
+    edge[field] = operation[field];
+  }
 }
 
 // Command pattern: each operation name maps to the function that applies it.
@@ -291,14 +313,18 @@ function applyOps(canvasData, operations) {
   for (const operation of operations) {
     const handler = OPERATION_HANDLERS[operation.op];
     const retypedIds = handler ? handler(canvasData, operation) : null;
-    if (retypedIds) retyped.push(...retypedIds);
+    if (retypedIds) {
+      retyped.push(...retypedIds);
+    }
   }
   return retyped;
 }
 
 function writeOps(board, operations) {
   const out = api('apply', board, operations);
-  if (out === 'obsidian') return 'obsidian';
+  if (out === 'obsidian') {
+    return 'obsidian';
+  }
   if (out !== null && out !== 'closed') {
     throw new Error(`Obsidian edit failed: ${out}`);
   }
@@ -334,7 +360,9 @@ function freePath(folder, name, extension) {
       folder,
       `${name}${attempt > 1 ? ' ' + attempt : ''}${extension}`,
     );
-    if (!fileSystem.existsSync(vaultPath(candidate))) return candidate;
+    if (!fileSystem.existsSync(vaultPath(candidate))) {
+      return candidate;
+    }
   }
 }
 

@@ -32,7 +32,9 @@ for (const name of PLUGIN_FILES) {
 const mainFile = path.join(pluginDir, 'main.js');
 const resolve = Module._resolveFilename;
 Module._resolveFilename = function resolveStub(request, ...rest) {
-  if (request === 'obsidian') return require.resolve('./obsidianStub.js');
+  if (request === 'obsidian') {
+    return require.resolve('./obsidianStub.js');
+  }
   return resolve.call(this, request, ...rest);
 };
 global.window = {
@@ -61,7 +63,9 @@ async function main() {
   };
   const plugin = new PluginClass(app, manifest);
   await plugin.onload();
-  for (const tab of plugin.recorded.settingTabs) tab.display();
+  for (const tab of plugin.recorded.settingTabs) {
+    tab.display();
+  }
   const created = {};
   plugin.app.vault = {
     adapter: app.vault.adapter,

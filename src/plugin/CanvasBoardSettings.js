@@ -59,7 +59,9 @@ class CanvasBoardSettings extends PluginSettingTab {
           const tab = this.app.setting.activeTab;
           if (tab && tab.searchComponent) {
             tab.searchComponent.setValue(this.plugin.manifest.name);
-            if (tab.setQuery) tab.setQuery(this.plugin.manifest.name);
+            if (tab.setQuery) {
+              tab.setQuery(this.plugin.manifest.name);
+            }
           }
         }),
       );
@@ -180,8 +182,11 @@ class CanvasBoardSettings extends PluginSettingTab {
             .setTooltip('Triggers the agent')
             .setValue(goColors.has(colorNumber))
             .onChange(async (isOn) => {
-              if (isOn) goColors.add(colorNumber);
-              else goColors.delete(colorNumber);
+              if (isOn) {
+                goColors.add(colorNumber);
+              } else {
+                goColors.delete(colorNumber);
+              }
               this.plugin.settings.passColors = WORKFLOW.map(
                 ([colorName]) => colorName,
               )
@@ -363,7 +368,9 @@ class CanvasBoardSettings extends PluginSettingTab {
         component.setValue(String(apmSettings.windowMinutes));
         component.inputEl.addEventListener('change', async () => {
           const minutes = Number(component.getValue());
-          if (!(minutes > 0) || minutes === apmSettings.windowMinutes) return;
+          if (!(minutes > 0) || minutes === apmSettings.windowMinutes) {
+            return;
+          }
           await apm.setWindow(minutes);
           this.display();
         });
@@ -402,7 +409,9 @@ class CanvasBoardSettings extends PluginSettingTab {
           .setValue(String(apmSettings.idleMinutes))
           .onChange(async (value) => {
             const minutes = Number(value);
-            if (!(minutes > 0)) return;
+            if (!(minutes > 0)) {
+              return;
+            }
             apmSettings.idleMinutes = minutes;
             await this.plugin.saveData(this.plugin.settings);
             apm.refresh();

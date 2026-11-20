@@ -76,7 +76,9 @@ class NamePrompt extends Modal {
     text.inputEl.addEventListener('keydown', (event) => {
       const suggestEl = this.suggest && this.suggest.suggestEl;
       const isSuggesting = Boolean(suggestEl && suggestEl.isConnected);
-      if (event.key !== 'Enter' || this.isPicked || isSuggesting) return;
+      if (event.key !== 'Enter' || this.isPicked || isSuggesting) {
+        return;
+      }
       event.preventDefault();
       this.submit();
     });
@@ -106,7 +108,9 @@ class NamePrompt extends Modal {
   }
 
   refresh() {
-    if (!this.button) return;
+    if (!this.button) {
+      return;
+    }
     const { overwrite } = this.options;
     const isOverwrite = Boolean(
       overwrite && this.value.trim() && overwrite(this.nameOf(this.value)),
@@ -118,7 +122,9 @@ class NamePrompt extends Modal {
 
   submit() {
     const name = this.nameOf(this.value);
-    if (!name) return;
+    if (!name) {
+      return;
+    }
     this.close();
     Promise.resolve(this.onSubmit(name)).catch(
       (error) => new Notice(`Kanvas board: ${error.message}`),
@@ -178,7 +184,9 @@ class UnpackChoice extends Modal {
         text: link.id ? `${link.label} (${link.path})` : link.path,
       });
     }
-    if (count > 8) list.createEl('li', { text: `and ${count - 8} more` });
+    if (count > 8) {
+      list.createEl('li', { text: `and ${count - 8} more` });
+    }
     const setting = new Setting(this.contentEl);
     const pick = (mode) => {
       this.close();

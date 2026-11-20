@@ -10,7 +10,9 @@ const STUB_URL = pathToFileURL(
 ).href;
 Module.registerHooks({
   resolve(specifier, context, nextResolve) {
-    if (specifier === 'obsidian') return { url: STUB_URL, shortCircuit: true };
+    if (specifier === 'obsidian') {
+      return { url: STUB_URL, shortCircuit: true };
+    }
     return nextResolve(specifier, context);
   },
 });
