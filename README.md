@@ -16,7 +16,13 @@ Desktop only. Tested on Windows with Obsidian 1.14.5 and Claude Code. The macOS 
 | green | Done | Finished. Remove the card when it no longer helps. |
 | uncolored | Inbox | An idea. The agent never touches it. |
 
-Labels and which colors start the agent: Settings > Workflow.
+These are the defaults. Settings > Workflow lets you redefine the workflow:
+
+- **Label** and **toggle** per color: how it reads, and whether it starts the agent.
+- **Role** per color: `working` (an agent is on the card; exactly one color, orange by default), `blocked` and `review` (waiting on you: counted, they climb to parent cards, blocked first; review cards age), `done` (a parent whose cards are all done takes it; optional) or `idle`.
+- **Markers**: the open question (`- [?]`) and answer (`- [i]`) markers, and the Decisions Record heading (questions below it are answered).
+- **Templates**: two notes in `<agent notes folder>/_templates/`, written the first time, then yours. `Card.md` lists the card text shapes agents write (`[[{note}]] · {reason}`, `{recap} · done · [[{output}]]`); `Plan note.md` holds the frontmatter keys and headings of their notes (a heading followed by `%% optional %%` or `%% when done %%` is not always required). `canvas.js check` reads both, so it checks what your workflow asks for.
+- **Reset workflow** brings the defaults back.
 
 ## How a card moves
 
@@ -44,9 +50,9 @@ Not in the community plugin directory yet.
 
 ## Run a pass
 
-Command **Kanvas board: Run pass**: a terminal opens with the agent in the vault folder, prompted with "Run a Kanvas board pass on <board>: follow .obsidian/plugins/kanvas-board/agent-instructions.md" for the active canvas (else the "Default board"). The agent first turns every card it takes orange, works, recolors them, then reports what needs you.
+Command **Kanvas board: Run pass**: a terminal opens with the agent in the vault folder, prompted with "Run a Kanvas board pass on <board>: follow .obsidian/plugins/kanvas-board/pass-instructions.md" (the agent instructions with their placeholders filled in) for the active canvas (else the "Default board"). The agent first turns every card it takes orange, works, recolors them, then reports what needs you.
 
-The agent's instructions are `agent-instructions.md` in the plugin folder, written from the plugin's `skill/SKILL.md` the first time (git-ignored, so `git pull` never overwrites it). It has a general part, then one `## <Color> cards` section per color (`## Uncolored cards` for none): the agent reads them all, and the Workflow toggles decide which cards it works, so an untoggled color's section only tells it what those cards are. Settings > Workflow shows the general part and its "Reset" at the top, then each color's part under its label and toggle, all saved as that one file; fields fit their text; Reset brings back the plugin's version. `skill/SKILL.md` is also a valid [Agent Skill](https://agentskills.io): copy it into your agent's skills folder to run a pass by name.
+The agent's instructions are `agent-instructions.md` in the plugin folder, written from the plugin's `skill/SKILL.md` the first time (git-ignored, so `git pull` never overwrites it). It has a general part, then one `## <Color> cards` section per color (`## Uncolored cards` for none): the agent reads them all, and the Workflow toggles decide which cards it works, so an untoggled color's section only tells it what those cards are. Settings > Workflow shows the general part and its "Reset" at the top, then each color's part under its label and toggle, all saved as that one file; fields fit their text; Reset brings back the plugin's version. The instructions can use `{notesFolder}`, `{noteTemplate}`, `{cardTemplate}`, `{working}`, `{done}`, `{blocked}`, `{review}`, `{question}`, `{answer}` and `{decisionsRecord}`: Run pass fills them in from Settings into `pass-instructions.md` (git-ignored) and points the agent there; `canvas.js workflow` prints the values, `canvas.js instructions` the filled text. `skill/SKILL.md` is also a valid [Agent Skill](https://agentskills.io): copy it into your agent's skills folder to run a pass by name.
 
 ## Board tools
 
