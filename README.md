@@ -46,7 +46,7 @@ Not in the community plugin directory yet.
 
 Command **Kanvas board: Run pass**: a terminal opens with the agent in the vault folder, prompted with "Run a Kanvas board pass on <board>: follow .obsidian/plugins/kanvas-board/agent-instructions.md" for the active canvas (else the "Default board"). The agent first turns every card it takes orange, works, recolors them, then reports what needs you.
 
-The agent's instructions are `agent-instructions.md` in the plugin folder, written from the plugin's `skill/SKILL.md` the first time (git-ignored, so `git pull` never overwrites it). Read and edit it in Settings > Agent instructions; "Reset" brings back the plugin's version. `skill/SKILL.md` is also a valid [Agent Skill](https://agentskills.io): copy it into your agent's skills folder to run a pass by name.
+The agent's instructions are `agent-instructions.md` in the plugin folder, written from the plugin's `skill/SKILL.md` the first time (git-ignored, so `git pull` never overwrites it). It has a general part, then one `## <Color> cards` section per color (`## Uncolored cards` for none): the agent reads them all, and the Workflow toggles decide which cards it works, so an untoggled color's section only tells it what those cards are. Settings > Agent instructions shows a General field and one field per color, saved as that one file; "Reset" brings back the plugin's version. `skill/SKILL.md` is also a valid [Agent Skill](https://agentskills.io): copy it into your agent's skills folder to run a pass by name.
 
 ## Board tools
 
