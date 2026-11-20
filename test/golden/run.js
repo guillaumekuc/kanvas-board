@@ -4,7 +4,7 @@ const fileSystem = require('fs');
 const operatingSystem = require('os');
 const path = require('path');
 const assert = require('assert');
-const { isDeepStrictEqual } = require('util');
+const util = require('util');
 const runScenario = require('./runScenario.js');
 const SCENARIOS = require('./scenarios.js');
 
@@ -22,7 +22,7 @@ if (process.argv.includes('--update')) {
 } else {
   const expected = JSON.parse(fileSystem.readFileSync(GOLDEN, 'utf8'));
   const failed = Object.keys(expected).filter(
-    (name) => !isDeepStrictEqual(actual[name], expected[name]),
+    (name) => !util.isDeepStrictEqual(actual[name], expected[name]),
   );
   for (const name of failed) {
     fileSystem.writeFileSync(

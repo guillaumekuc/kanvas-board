@@ -1,7 +1,7 @@
 const path = require('path');
 
 const ERROR_LINE = /^(\w*Error|Usage)/;
-const { spawnSync } = require('child_process');
+const childProcess = require('child_process');
 
 // Runs canvas.js offline and deterministic (see preload.js); keeps only the
 // error lines of stderr, since stack traces carry temporary paths.
@@ -14,7 +14,7 @@ function runCommand(vaultRoot, commandArguments) {
     'canvas.js',
   );
   const preload = path.join(__dirname, 'preload.js');
-  const result = spawnSync(
+  const result = childProcess.spawnSync(
     process.execPath,
     ['-r', preload, script, ...commandArguments],
     { cwd: vaultRoot, encoding: 'utf8' },

@@ -1,9 +1,9 @@
 // node test/plugin/run.js: the smoke report must match expected.json.
 const assert = require('assert');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const childProcess = require('child_process');
 
-const report = execFileSync(
+const report = childProcess.execFileSync(
   process.execPath,
   [path.join(__dirname, 'smoke.js')],
   { encoding: 'utf8' },

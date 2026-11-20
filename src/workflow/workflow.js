@@ -1,15 +1,7 @@
 import fileSystem from 'fs';
 import path from 'path';
-import { cardLinks, noteContexts, tree as baseTree } from '../board/notes.js';
-import {
-  findFile,
-  readOrNull,
-  readBoard,
-  vaultPath,
-  COLORS,
-  PLUGIN_DIR,
-  writeOps,
-} from '../board/store.js';
+import * as notes from '../board/notes.js';
+import * as store from '../board/store.js';
 
 const LIST_SEPARATOR = /[\s,]+/;
 const CANVAS_COLOR_NUMBER = /^[1-6]$/;
@@ -81,7 +73,7 @@ function parseColors(value) {
     String(value || '')
       .split(LIST_SEPARATOR)
       .filter(Boolean)
-      .map((color) => COLORS[color.toLowerCase()] || color)
+      .map((color) => store.COLORS[color.toLowerCase()] || color)
       .filter((color) => CANVAS_COLOR_NUMBER.test(color)),
   );
 }
@@ -89,7 +81,7 @@ function parseColors(value) {
 function settings() {
   try {
     return JSON.parse(
-      fileSystem.readFileSync(path.join(PLUGIN_DIR, 'data.json'), 'utf8'),
+      fileSystem.readFileSync(path.join(store.PLUGIN_DIR, 'data.json'), 'utf8'),
     );
   } catch (error) {
     return {};
@@ -162,7 +154,7 @@ const TEXT_SHAPES =
 // (plan-canvas cards are parts: free text).
 function cardIssues(node, depth) {
   const issues = cardLinkTargets(node)
-    .filter((link) => !findFile(link))
+    .filter((link) => !store.findFile(link))
     .map((link) => `broken link [[${link}]]`);
   const isTopText = node.type === 'text' && depth === 0;
   if (isTopText && !cardTextOk(node.text || '')) {
@@ -176,7 +168,7 @@ function isStaleOrange(node, note) {
   if (node.color !== WORKING) {
     return false;
   }
-  const age = Date.now() - fileSystem.statSync(vaultPath(note)).mtimeMs;
+  const age = Date.now() - fileSystem.statSync(store.vaultPath(note)).mtimeMs;
   return age > ORANGE_STALE_MS;
 }
 
@@ -198,7 +190,7 @@ function noteIssues(source, color) {
     const listed = keys.join(', ') || 'none';
     issues.push(`note frontmatter is not \`context\` only (${listed})`);
   }
-  if (noteContexts(frontmatter).length !== 1) {
+  if (notes.noteContexts(frontmatter).length !== 1) {
     issues.push('note does not have exactly one context');
   }
   for (const section of REQUIRED_SECTIONS) {
@@ -238,17 +230,17 @@ function check(board, ids) {
   const seen = new Set();
   function walk(current, depth) {
     seen.add(current);
-    const colored = readBoard(current).nodes.filter(
-      (node) => node.type !== 'group' && node.color,
-    );
+    const colored = store
+      .readBoard(current)
+      .nodes.filter((node) => node.type !== 'group' && node.color);
     for (const node of colored) {
       const isScoped = !ids || ids.has(node.id);
-      const { note, canvas } = cardLinks(node);
+      const { note, canvas } = notes.cardLinks(node);
       const isPlanNote = Boolean(note && note.startsWith(folder));
       const found = [
         ...(isScoped ? cardIssues(node, depth) : []),
         ...(isScoped && isPlanNote
-          ? noteIssues(readOrNull(note) || '', node.color)
+          ? noteIssues(store.readOrNull(note) || '', node.color)
           : []),
         ...(isPlanNote && isStaleOrange(node, note) ? [STALE] : []),
       ];
@@ -327,7 +319,7 @@ function nestedCardUpdate(card, inner, goColorSet) {
 // otherwise it is a brief. Questions: `- [?]` above `## Decisions Record` (past
 // rounds).
 function noteState(relativePath) {
-  const text = fileSystem.readFileSync(vaultPath(relativePath), 'utf8');
+  const text = fileSystem.readFileSync(store.vaultPath(relativePath), 'utf8');
   const parts = [...text.matchAll(PART_CHECKBOX)];
   const done = parts.filter((match) => match[1] !== ' ').length;
   const questions = [
@@ -346,7 +338,7 @@ function staleDays() {
 } // plugin setting "Stale after"
 
 function tree(board) {
-  return baseTree(board, { noteInfo: noteState });
+  return notes.tree(board, { noteInfo: noteState });
 }
 
 // red > yellow are the "needs me" colors that climb to the parent card; go
@@ -373,7 +365,7 @@ function rollup(board) {
     const ages = node.cards.map((card) => ageSuffixOperation(card, days));
     operations.push(...ages.filter(Boolean));
     if (operations.length) {
-      const via = writeOps(node.board, operations);
+      const via = store.writeOps(node.board, operations);
       changes.push({ board: node.board, via, operations });
     }
     return colorCounts(colors);

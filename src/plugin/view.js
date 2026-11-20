@@ -1,5 +1,5 @@
-import { Notice, Scope, setIcon } from 'obsidian';
-import { COLORS } from './shared.js';
+import * as obsidian from 'obsidian';
+import * as shared from './shared.js';
 
 const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
 
@@ -104,7 +104,7 @@ class FindBar {
         cls: 'document-search-button clickable-icon',
         attr: { 'aria-label': label },
       });
-      setIcon(buttonEl, icon);
+      obsidian.setIcon(buttonEl, icon);
       buttonEl.addEventListener('click', onClick);
     }
     button('arrow-up', 'Previous (Shift+Enter)', () => this.step(-1));
@@ -119,14 +119,14 @@ class FindBar {
       cls: 'document-search-close-button clickable-icon',
       attr: { 'aria-label': 'Close (Escape)' },
     });
-    setIcon(close, 'x');
+    obsidian.setIcon(close, 'x');
     close.addEventListener('click', () => this.close());
   }
 
   bindKeys() {
     // Own key scope while the field has focus: canvas keys (Delete, arrows)
     // stay off, global hotkeys still work.
-    this.scope = new Scope(this.plugin.app.scope);
+    this.scope = new obsidian.Scope(this.plugin.app.scope);
     this.input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && event.altKey) {
         event.preventDefault();
@@ -194,7 +194,9 @@ class FindBar {
     }
     if (matches.some((node) => plugin.isHidden(canvas, node))) {
       plugin.showAll(canvas);
-      new Notice('Kanvas board: filter and folds cleared to show the cards');
+      new obsidian.Notice(
+        'Kanvas board: filter and folds cleared to show the cards',
+      );
     }
     for (const node of matches) {
       node.nodeEl.addClass('is-current');
@@ -282,7 +284,9 @@ class FindBar {
     }
     if (plugin.isHidden(canvas, node)) {
       plugin.showAll(canvas);
-      new Notice('Kanvas board: filter and folds cleared to show the card');
+      new obsidian.Notice(
+        'Kanvas board: filter and folds cleared to show the card',
+      );
     }
     canvas.selectOnly(node);
     canvas.zoomToSelection();
@@ -329,7 +333,7 @@ class FilterPane {
         'data-tooltip-position': 'right',
       },
     });
-    setIcon(button, 'filter');
+    obsidian.setIcon(button, 'filter');
     button.addEventListener('click', () => this.toggle());
     this.badge = head.createSpan({ cls: 'kanvas-board-pane-badge' });
   }
@@ -361,7 +365,7 @@ class FilterPane {
       cls: 'clickable-icon kanvas-board-pane-reset',
       attr: { 'aria-label': 'Reset' },
     });
-    setIcon(resetEl, 'rotate-ccw');
+    obsidian.setIcon(resetEl, 'rotate-ccw');
     resetEl.addEventListener('click', () => {
       reset();
       this.plugin.refreshView(this.canvas);
@@ -375,7 +379,7 @@ class FilterPane {
       cls: 'clickable-icon',
       attr: { 'aria-label': 'Unhide all (clear filter and folds)' },
     });
-    setIcon(all, 'eye');
+    obsidian.setIcon(all, 'eye');
     all.addEventListener('click', () => this.plugin.showAll(this.canvas));
   }
 
@@ -458,14 +462,14 @@ class FilterPane {
   selectWhere(keep) {
     const { plugin, canvas } = this;
     if (!plugin.selectMore(canvas, [...canvas.selection], keep)) {
-      new Notice('Kanvas board: no visible card to select');
+      new obsidian.Notice('Kanvas board: no visible card to select');
     }
   }
 
   // Dots only, on one line; the name and card count are in the tooltip.
   renderColors(state, counts) {
     this.colorsEl.empty();
-    for (const { name, canvasColor: color } of COLORS) {
+    for (const { name, canvasColor: color } of shared.COLORS) {
       const isOut = state.xcolors.has(color);
       const label = this.plugin.colorLabel(name);
       const count = counts[color] || 0;

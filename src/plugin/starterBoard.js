@@ -1,7 +1,7 @@
-import { Notice } from 'obsidian';
+import * as obsidian from 'obsidian';
 import path from 'path';
-import { newId } from '../board/store.js';
-import { COLOR_NUM, WORKFLOW } from './shared.js';
+import * as store from '../board/store.js';
+import * as shared from './shared.js';
 
 const COLUMN_WIDTH = 400;
 const STEPS_X = COLUMN_WIDTH + 160;
@@ -42,7 +42,7 @@ const STEP_HEIGHT = 160;
 // The first steps, chained top to bottom, then a wish to try a pass on.
 function firstStepsCanvas() {
   const group = {
-    id: newId(),
+    id: store.newId(),
     type: 'group',
     label: 'First steps',
     x: STEPS_X - 40,
@@ -52,7 +52,7 @@ function firstStepsCanvas() {
   };
   function card(text, row) {
     return {
-      id: newId(),
+      id: store.newId(),
       type: 'text',
       text,
       x: STEPS_X,
@@ -71,7 +71,7 @@ function firstStepsCanvas() {
       continue;
     }
     edges.push({
-      id: newId(),
+      id: store.newId(),
       fromNode: above.id,
       fromSide: 'bottom',
       toNode: step.id,
@@ -88,18 +88,18 @@ function firstStepsCanvas() {
 // One card per color: its label and what it does (Settings > Workflow).
 function legendNodes(colorLabel) {
   const group = {
-    id: newId(),
+    id: store.newId(),
     type: 'group',
     label: 'How the colors work',
     x: -40,
     y: -80,
     width: COLUMN_WIDTH + 80,
-    height: WORKFLOW.length * 100 + 100,
+    height: shared.WORKFLOW.length * 100 + 100,
   };
-  const cards = WORKFLOW.map(({ name, meaning }, index) => {
-    const colorName = COLOR_NUM[name] ? name : 'uncolored';
+  const cards = shared.WORKFLOW.map(({ name, meaning }, index) => {
+    const colorName = shared.COLOR_NUM[name] ? name : 'uncolored';
     return {
-      id: newId(),
+      id: store.newId(),
       type: 'text',
       text: `${DOT[name]} **${colorLabel(name)}** (${colorName})\n${meaning}`,
       x: 0,
@@ -147,9 +147,9 @@ async function createStarterBoard(plugin) {
     }
     const file = await vault.create(board, content);
     await plugin.app.workspace.getLeaf(false).openFile(file);
-    new Notice(`Kanvas board: starter board created (${board})`);
+    new obsidian.Notice(`Kanvas board: starter board created (${board})`);
   } catch (error) {
-    new Notice(
+    new obsidian.Notice(
       `Kanvas board: could not create the starter board (${error.message})`,
     );
   }

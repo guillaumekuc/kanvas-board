@@ -1,4 +1,4 @@
-import { newId, parseOrNull, applyOps } from '../board/store.js';
+import * as store from '../board/store.js';
 
 const WIKILINK_ALIAS = /\|([^\]]+)\]\]/;
 
@@ -26,7 +26,7 @@ function groupLinkOperations(plugin, canvas, unpacked) {
     {
       op: 'edge',
       edge: {
-        id: newId(),
+        id: store.newId(),
         fromNode: node.id,
         fromSide,
         toNode: groupId,
@@ -179,7 +179,7 @@ async function subcanvasLinks(plugin, file, { canvas, skipId }) {
     const open = from === here ? canvas : plugin.openCanvas(from);
     const canvasData = open
       ? open.getData()
-      : parseOrNull(await vault.cachedRead(canvasFile));
+      : store.parseOrNull(await vault.cachedRead(canvasFile));
     const nodes = ((canvasData || {}).nodes || []).filter(
       (node) => !(from === here && node.id === skipId) && isLinking(node, from),
     );
@@ -212,7 +212,7 @@ const SAVE_DELAY_MS = 2500;
 // keep its id.
 async function applyToOpenCanvas(canvas, operations) {
   const canvasData = canvas.getData();
-  const retyped = applyOps(canvasData, operations);
+  const retyped = store.applyOps(canvasData, operations);
   if (retyped.length) {
     const nodes = canvasData.nodes.filter((node) => !retyped.includes(node.id));
     canvas.setData({ ...canvasData, nodes });

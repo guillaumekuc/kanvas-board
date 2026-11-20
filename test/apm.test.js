@@ -1,29 +1,21 @@
 // node test/apm.test.js: the APM counter with Obsidian stubbed.
 const assert = require('assert');
-const {
-  ApmCounter,
-  loadSettings,
-  band,
-  rateName,
-  touchedCards,
-  cardsOf,
-  unitOf,
-} = require('../src/apm/apm.js');
+const apm = require('../src/apm/apm.js');
 
-assert.strictEqual(rateName(15), 'AP15M');
-assert.strictEqual(rateName(1), 'APM');
+assert.strictEqual(apm.rateName(15), 'AP15M');
+assert.strictEqual(apm.rateName(1), 'APM');
 assert.strictEqual(
-  band(10, { personalBest: 3, lowPercent: 25 }),
+  apm.band(10, { personalBest: 3, lowPercent: 25 }),
   'calibrating',
 );
-assert.strictEqual(band(20, { personalBest: 20, lowPercent: 25 }), 'best');
-assert.strictEqual(band(16, { personalBest: 20, lowPercent: 25 }), 'green');
-assert.strictEqual(band(1, { personalBest: 20, lowPercent: 25 }), 'low');
+assert.strictEqual(apm.band(20, { personalBest: 20, lowPercent: 25 }), 'best');
+assert.strictEqual(apm.band(16, { personalBest: 20, lowPercent: 25 }), 'green');
+assert.strictEqual(apm.band(1, { personalBest: 20, lowPercent: 25 }), 'low');
 assert.strictEqual(
-  band(1, { personalBest: 20, lowPercent: 25, isWarmingUp: true }),
+  apm.band(1, { personalBest: 20, lowPercent: 25, isWarmingUp: true }),
   'calibrating',
 );
-const before = cardsOf(
+const before = apm.cardsOf(
   JSON.stringify({
     nodes: [
       { id: 'a', text: 'x', x: 0 },
@@ -31,7 +23,7 @@ const before = cardsOf(
     ],
   }),
 );
-const after = cardsOf(
+const after = apm.cardsOf(
   JSON.stringify({
     nodes: [
       { id: 'a', text: 'x', x: 99 },
@@ -40,7 +32,7 @@ const after = cardsOf(
   }),
 );
 assert.deepStrictEqual(
-  touchedCards(before, after).sort(),
+  apm.touchedCards(before, after).sort(),
   ['b', 'c'],
   'moving a card is not an action',
 );
@@ -53,12 +45,12 @@ const legacy = {
   lowPercent: 25,
   idleMinutes: 5,
   windowMinutes: 15,
-  unit: unitOf(15),
+  unit: apm.unitOf(15),
 };
-assert.strictEqual(loadSettings(undefined, legacy).pb, 23);
-assert.strictEqual(loadSettings({ ...legacy, pb: 30 }, legacy).pb, 30);
-assert.strictEqual(loadSettings({ ...legacy, unit: 'cards/1' }).pb, 0);
-assert.strictEqual(loadSettings(undefined, undefined).pb, 0);
+assert.strictEqual(apm.loadSettings(undefined, legacy).pb, 23);
+assert.strictEqual(apm.loadSettings({ ...legacy, pb: 30 }, legacy).pb, 30);
+assert.strictEqual(apm.loadSettings({ ...legacy, unit: 'cards/1' }).pb, 0);
+assert.strictEqual(apm.loadSettings(undefined, undefined).pb, 0);
 
 // Shown only while a canvas is the active tab; the count keeps running
 // elsewhere.
@@ -87,9 +79,9 @@ const plugin = {
   activeCanvas: () => active.canvas,
   addStatusBarItem: () => element,
 };
-const counter = new ApmCounter(
+const counter = new apm.ApmCounter(
   plugin,
-  loadSettings(undefined, legacy),
+  apm.loadSettings(undefined, legacy),
   async () => {
     active.saves++;
   },

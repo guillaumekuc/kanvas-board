@@ -1,4 +1,4 @@
-import { newId, SIDES, settings } from './store.js';
+import * as store from './store.js';
 
 const WIKILINK_SHOWN_TEXT = /\[\[([^\]|]*\|)?([^\]]*)\]\]/g;
 const DEPENDS_ON_LABEL = /depends on/i;
@@ -95,7 +95,7 @@ function groupAround(nodes, label) {
   const right = Math.max(...nodes.map((node) => node.x + node.width));
   const bottom = Math.max(...nodes.map((node) => node.y + node.height));
   return {
-    id: newId(),
+    id: store.newId(),
     type: 'group',
     label,
     x: left,
@@ -250,7 +250,7 @@ function layoutOps(canvasData, options) {
   const layout = { ...options, direction, flow };
   const placed = dagrePlacement(moving, inner, layout);
   const offset = nearestFreeOffset(placed, { moving, fixed, direction });
-  const [fromSide, toSide] = SIDES[direction];
+  const [fromSide, toSide] = store.SIDES[direction];
   function sides(edge) {
     return isBackEdge(edge, flow)
       ? { fromSide: toSide, toSide: fromSide }
@@ -270,7 +270,9 @@ function layoutOps(canvasData, options) {
 }
 
 function defaultDir() {
-  return SIDES[settings().layoutDirection] ? settings().layoutDirection : 'TB';
+  return store.SIDES[store.settings().layoutDirection]
+    ? store.settings().layoutDirection
+    : 'TB';
 }
 
 export {

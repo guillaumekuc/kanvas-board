@@ -1,5 +1,5 @@
-import { setIcon } from 'obsidian';
-import { branchLevelsFrom, emptyViewState, FilterPane } from './view.js';
+import * as obsidian from 'obsidian';
+import * as view from './view.js';
 
 const INLINE_TAG = /(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g;
 const DIGITS_ONLY = /^\d+$/;
@@ -12,7 +12,7 @@ const FIRST_WIKILINK_TARGET = /\[\[([^\]|#]+)/;
 class BoardView {
   // The view state if the canvas has one yet, else an empty one (not kept).
   peekViewState(canvas) {
-    return this.views.get(canvas) || emptyViewState();
+    return this.views.get(canvas) || view.emptyViewState();
   }
 
   // Filter state of an open canvas, made on first use.
@@ -21,7 +21,7 @@ class BoardView {
     if (existing) {
       return existing;
     }
-    const state = emptyViewState();
+    const state = view.emptyViewState();
     this.views.set(canvas, state);
     // Decorator: updateSelection and applyHistory are wrapped, not replaced.
     // Hidden cards never stay selected (select all, drag to select), so Delete
@@ -124,7 +124,7 @@ class BoardView {
   pane(canvas) {
     let pane = this.panes.get(canvas);
     if (!pane) {
-      pane = new FilterPane(this, canvas);
+      pane = new view.FilterPane(this, canvas);
       this.panes.set(canvas, pane);
     }
     return pane;
@@ -148,7 +148,7 @@ class BoardView {
 
   // Ids below a folded card, level by level (level 1 first).
   branchLevels(canvas, root, direction) {
-    return branchLevelsFrom(this.branchLinks(canvas, direction), root);
+    return view.branchLevelsFrom(this.branchLinks(canvas, direction), root);
   }
 
   // The cards an unfold on `id` applies to: the card itself if folded, else the
@@ -387,7 +387,7 @@ class BoardView {
         cls: 'kanvas-board-stale',
         attr: { 'data-tooltip-position': 'top' },
       });
-      setIcon(
+      obsidian.setIcon(
         badge.createSpan({ cls: 'kanvas-board-stale-icon' }),
         'triangle-alert',
       );

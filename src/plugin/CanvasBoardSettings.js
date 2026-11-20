@@ -1,15 +1,11 @@
-import { COLORS, COLOR_NUM, DEFAULTS, WORKFLOW } from './shared.js';
-import { Notice, PluginSettingTab, Setting } from 'obsidian';
+import * as shared from './shared.js';
+import * as obsidian from 'obsidian';
 import fileSystem from 'fs';
-import { parseColors } from './pass.js';
-import {
-  joinInstructions,
-  sectionTitle,
-  splitInstructions,
-} from './agentInstructions.js';
+import * as pass from './pass.js';
+import * as agentInstructions from './agentInstructions.js';
 import path from 'path';
 
-class CanvasBoardSettings extends PluginSettingTab {
+class CanvasBoardSettings extends obsidian.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -27,27 +23,27 @@ class CanvasBoardSettings extends PluginSettingTab {
   }
 
   addTextSetting(name, description, key) {
-    return new Setting(this.containerEl)
+    return new obsidian.Setting(this.containerEl)
       .setName(name)
       .setDesc(description)
       .addText((component) =>
         component
-          .setPlaceholder(DEFAULTS[key])
+          .setPlaceholder(shared.DEFAULTS[key])
           .setValue(this.plugin.settings[key])
           .onChange(async (value) => {
-            this.plugin.settings[key] = value.trim() || DEFAULTS[key];
+            this.plugin.settings[key] = value.trim() || shared.DEFAULTS[key];
             await this.plugin.saveData(this.plugin.settings);
           }),
       );
   }
 
   addHeading(name) {
-    return new Setting(this.containerEl).setName(name).setHeading();
+    return new obsidian.Setting(this.containerEl).setName(name).setHeading();
   }
 
   displayHotkeys() {
     const { containerEl } = this;
-    new Setting(containerEl)
+    new obsidian.Setting(containerEl)
       .setName('Hotkeys')
       .setDesc(
         'Every canvas board command can have a key; buttons and menu ' +
@@ -70,7 +66,7 @@ class CanvasBoardSettings extends PluginSettingTab {
   displayBoard() {
     const { containerEl } = this;
     this.addHeading('Board');
-    new Setting(containerEl)
+    new obsidian.Setting(containerEl)
       .setName('Starter board')
       .setDesc(
         'A board with the color legend and first steps: the default ' +
@@ -112,7 +108,7 @@ class CanvasBoardSettings extends PluginSettingTab {
 
   displayArchive() {
     const { containerEl } = this;
-    new Setting(containerEl)
+    new obsidian.Setting(containerEl)
       .setName('Archive')
       .setDesc(
         'Where "Archive selected cards" puts the notes: a "<board> ' +
@@ -149,10 +145,10 @@ class CanvasBoardSettings extends PluginSettingTab {
         'such a card and the agent takes those cards. All off: the ' +
         'agent never starts.',
     );
-    const goColors = parseColors(this.plugin.settings.passColors);
-    for (const { name, meaning } of WORKFLOW) {
-      const colorNumber = COLOR_NUM[name];
-      const row = new Setting(containerEl)
+    const goColors = pass.parseColors(this.plugin.settings.passColors);
+    for (const { name, meaning } of shared.WORKFLOW) {
+      const colorNumber = shared.COLOR_NUM[name];
+      const row = new obsidian.Setting(containerEl)
         .setName(colorNumber ? name : 'uncolored')
         .setDesc(meaning);
       row.nameEl.prepend(
@@ -163,7 +159,9 @@ class CanvasBoardSettings extends PluginSettingTab {
       );
       row.addText((component) =>
         component
-          .setPlaceholder(COLORS.find((color) => color.name === name).label)
+          .setPlaceholder(
+            shared.COLORS.find((color) => color.name === name).label,
+          )
           .setValue((this.plugin.settings.colorLabels || {})[name] || '')
           .onChange((value) => this.plugin.setColorLabel(name, value.trim())),
       );
@@ -187,10 +185,12 @@ class CanvasBoardSettings extends PluginSettingTab {
               } else {
                 goColors.delete(colorNumber);
               }
-              this.plugin.settings.passColors = WORKFLOW.map(
+              this.plugin.settings.passColors = shared.WORKFLOW.map(
                 ({ name: colorName }) => colorName,
               )
-                .filter((colorName) => goColors.has(COLOR_NUM[colorName]))
+                .filter((colorName) =>
+                  goColors.has(shared.COLOR_NUM[colorName]),
+                )
                 .join(' ');
               await this.plugin.saveData(this.plugin.settings);
             }),
@@ -223,7 +223,7 @@ class CanvasBoardSettings extends PluginSettingTab {
     // The instructions the agent follows on a pass, edited here; the pass
     // prompt points the agent at the file.
     const skillFile = this.plugin.skillPath();
-    new Setting(containerEl)
+    new obsidian.Setting(containerEl)
       .setName('Agent instructions')
       .setDesc(
         'What the agent does on a pass: a general part, then one ' +
@@ -254,9 +254,9 @@ class CanvasBoardSettings extends PluginSettingTab {
   // One field for the general part and one per color; any of them saves the
   // whole file (see agentInstructions.js).
   addSkillEditors(skillFile) {
-    const colorNames = WORKFLOW.map(({ name: colorName }) => colorName);
+    const colorNames = shared.WORKFLOW.map(({ name: colorName }) => colorName);
     const text = this.readSkill(skillFile);
-    const parts = splitInstructions(text, colorNames);
+    const parts = agentInstructions.splitInstructions(text, colorNames);
     const general = this.addSkillField(parts.general, '16');
     if (text === null) {
       general.placeholder =
@@ -274,7 +274,7 @@ class CanvasBoardSettings extends PluginSettingTab {
         for (const colorName of colorNames) {
           colors[colorName] = colorFields[colorName].value;
         }
-        const joined = joinInstructions(
+        const joined = agentInstructions.joinInstructions(
           { general: general.value, colors },
           colorNames,
         );
@@ -301,11 +301,11 @@ class CanvasBoardSettings extends PluginSettingTab {
   }
 
   addColorSkillHeading(colorName) {
-    const colorNumber = COLOR_NUM[colorName];
-    const goColors = parseColors(this.plugin.settings.passColors);
+    const colorNumber = shared.COLOR_NUM[colorName];
+    const goColors = pass.parseColors(this.plugin.settings.passColors);
     const isWorked = Boolean(colorNumber) && goColors.has(colorNumber);
-    const row = new Setting(this.containerEl)
-      .setName(sectionTitle(colorName))
+    const row = new obsidian.Setting(this.containerEl)
+      .setName(agentInstructions.sectionTitle(colorName))
       .setDesc(
         isWorked
           ? 'A pass works these cards (Workflow toggle on).'
@@ -324,9 +324,9 @@ class CanvasBoardSettings extends PluginSettingTab {
     try {
       fileSystem.mkdirSync(path.dirname(skillFile), { recursive: true });
       fileSystem.writeFileSync(skillFile, text);
-      new Notice('Kanvas board: agent instructions saved');
+      new obsidian.Notice('Kanvas board: agent instructions saved');
     } catch (error) {
-      new Notice(
+      new obsidian.Notice(
         `Kanvas board: could not save the agent instructions ` +
           `(${error.message})`,
       );
@@ -341,7 +341,7 @@ class CanvasBoardSettings extends PluginSettingTab {
     );
     const apm = this.plugin.apm;
     const apmSettings = apm.settings;
-    new Setting(containerEl)
+    new obsidian.Setting(containerEl)
       .setName('Personal best')
       .setDesc(
         apmSettings.pb
@@ -358,7 +358,7 @@ class CanvasBoardSettings extends PluginSettingTab {
             this.display();
           }),
       );
-    new Setting(containerEl)
+    new obsidian.Setting(containerEl)
       .setName('Window (minutes)')
       .setDesc(
         'Cards are counted over this rolling window. Changing it ' +
@@ -381,7 +381,7 @@ class CanvasBoardSettings extends PluginSettingTab {
     const { containerEl } = this;
     const apm = this.plugin.apm;
     const apmSettings = apm.settings;
-    new Setting(containerEl)
+    new obsidian.Setting(containerEl)
       .setName('Alert below')
       .setDesc(
         'Percent of the personal best under which the counter turns ' +
@@ -398,7 +398,7 @@ class CanvasBoardSettings extends PluginSettingTab {
             apm.refresh();
           }),
       );
-    new Setting(containerEl)
+    new obsidian.Setting(containerEl)
       .setName('Idle after (minutes)')
       .setDesc(
         'Without an action for this long, the alert stops and the ' +
@@ -422,7 +422,7 @@ class CanvasBoardSettings extends PluginSettingTab {
   displayLayoutAndView() {
     const { containerEl } = this;
     this.addHeading('Layout');
-    new Setting(containerEl)
+    new obsidian.Setting(containerEl)
       .setName('Layout direction')
       .setDesc(
         'Tidy layout and agent-made plan canvases: the card a branch ' +
@@ -443,7 +443,7 @@ class CanvasBoardSettings extends PluginSettingTab {
           .onChange((value) => this.plugin.setLayoutDirection(value)),
       );
     this.addHeading('View');
-    new Setting(containerEl)
+    new obsidian.Setting(containerEl)
       .setName('Fold direction')
       .setDesc(
         'Fold branch hides the cards the card points to (outgoing) or ' +
@@ -460,7 +460,7 @@ class CanvasBoardSettings extends PluginSettingTab {
             await this.plugin.saveData(this.plugin.settings);
           }),
       );
-    new Setting(containerEl)
+    new obsidian.Setting(containerEl)
       .setName('Hide cards under hidden tags')
       .setDesc(
         'Hiding a tag in the filter pane also hides the branch of ' +
