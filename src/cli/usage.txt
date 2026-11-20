@@ -6,7 +6,7 @@
 // Usage (paths relative to the vault root; CANVAS = node .obsidian/plugins/kanvas-board/canvas.js):
 //   CANVAS read <board>                       nodes and edges as JSON
 //   CANVAS tree [<board>] [--active]          board + linked notes (level, parts) + nested canvases, as JSON
-//                                             --active: go (cyan/purple)/orange cards, cards edged to them, yellow/red count
+//                                             --active: go cards (cyan/purple) and working cards (orange), cards edged to them, waiting count (red/yellow)
 //   CANVAS set <board> <id> [--color c] [--text t] [--file path]
 //                                             c: red orange yellow green cyan purple none (or 1-6)
 //                                             --file turns the card into a file card, --text into a text card
@@ -29,7 +29,10 @@
 //                                             or one folder for all boards, default Board notes/Archive/)
 //   CANVAS restore <note>                     puts an archived card back on its board, note to .trash
 //   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
-//   CANVAS check [<board>] [--ids a,b]        read-only: broken invariants (links, card text, plan notes) as JSON. --ids: only
+//   CANVAS check [<board>] [--ids a,b]        read-only: broken links, card text and plan notes off the user's templates, stale working cards, as JSON. --ids: only
 //                                             the cards a pass wrote; without it, an audit of every colored card
-// tree, rollup and check are the agent workflow: they live in src/workflow/ (go colors: plugin setting "Workflow").
+//   CANVAS workflow                           the user's workflow as JSON: color roles (working, blocked, review, done), markers,
+//                                             template paths and the values of the {placeholders} in the agent instructions
+//   CANVAS instructions                       the agent instructions with their {placeholders} filled in
+// tree, rollup, check and workflow are the agent workflow: they live in src/workflow/ (plugin settings "Workflow").
 // Default board: the plugin setting "Default board" (data.json), else Board.canvas. Default direction: the plugin setting "Layout direction" (data.json), else TB.
