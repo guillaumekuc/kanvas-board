@@ -19,9 +19,13 @@ function registerColorCommands(plugin) {
       name: plugin.colorCommandName(name),
       checkCallback: (checking) => {
         const canvas = plugin.activeCanvas();
-        if (!canvas || canvas.selection.size === 0) return false;
+        if (!canvas || canvas.selection.size === 0) {
+          return false;
+        }
         if (!checking) {
-          for (const node of canvas.selection) node.setColor(color);
+          for (const node of canvas.selection) {
+            node.setColor(color);
+          }
           canvas.requestSave();
         }
         return true;
@@ -38,7 +42,9 @@ function registerTidyCommands(plugin) {
     name: 'Tidy layout (selected cards)',
     checkCallback: (checking) => {
       const canvas = plugin.activeCanvas();
-      if (!canvas) return false;
+      if (!canvas) {
+        return false;
+      }
       if (!checking) {
         if (canvas.selection.size < 2) {
           new Notice(
@@ -73,8 +79,12 @@ function registerTidyCommands(plugin) {
       id: `tidy-direction-${direction.toLowerCase()}`,
       name: `Tidy layout direction: ${name}`,
       checkCallback: (checking) => {
-        if (plugin.settings.layoutDirection === direction) return false;
-        if (!checking) plugin.setLayoutDirection(direction);
+        if (plugin.settings.layoutDirection === direction) {
+          return false;
+        }
+        if (!checking) {
+          plugin.setLayoutDirection(direction);
+        }
         return true;
       },
     });
@@ -209,7 +219,9 @@ function registerExtractCommand(plugin) {
       run: (canvas, [node]) => {
         const editor = plugin.cardEditor(node);
         const part = editor.getSelection();
-        if (!part.trim()) throw new Error('select some text in the card first');
+        if (!part.trim()) {
+          throw new Error('select some text in the card first');
+        }
         const from = editor.posToOffset(editor.getCursor('from'));
         const before = editor.getValue();
         editor.replaceSelection('');
@@ -219,7 +231,9 @@ function registerExtractCommand(plugin) {
           (savedCard) => savedCard.id === node.id,
         );
         // the editor may not have saved yet: work from what it showed
-        if (savedNode) savedNode.text = before;
+        if (savedNode) {
+          savedNode.text = before;
+        }
         plugin.edit(
           canvas,
           plugin.boardLibrary.extractOps(canvasData, {
@@ -343,7 +357,9 @@ function registerFoldDirectionCommands(plugin) {
       id: `fold-direction-${direction}`,
       name: `Fold direction: ${label}`,
       checkCallback: (checking) => {
-        if (plugin.settings.foldDirection === direction) return false;
+        if (plugin.settings.foldDirection === direction) {
+          return false;
+        }
         if (!checking) {
           plugin.settings.foldDirection = direction;
           plugin.saveData(plugin.settings);
@@ -479,7 +495,9 @@ function registerTemplateInsertCommand(plugin) {
     name: 'Insert cards from template',
     checkCallback: (checking) => {
       const canvas = plugin.activeCanvas();
-      if (!canvas) return false;
+      if (!canvas) {
+        return false;
+      }
       if (!checking) {
         const files = templateFiles(plugin);
         if (!files.length) {
@@ -507,7 +525,9 @@ function registerViewCommands(plugin) {
     name: 'Search current canvas',
     checkCallback: (checking) => {
       const canvas = plugin.activeCanvas();
-      if (!canvas) return false;
+      if (!canvas) {
+        return false;
+      }
       if (!checking) {
         let findBar = plugin.finds.get(canvas);
         if (!findBar) {
@@ -524,8 +544,12 @@ function registerViewCommands(plugin) {
     name: 'Toggle filter pane',
     checkCallback: (checking) => {
       const canvas = plugin.activeCanvas();
-      if (!canvas) return false;
-      if (!checking) plugin.pane(canvas).toggle();
+      if (!canvas) {
+        return false;
+      }
+      if (!checking) {
+        plugin.pane(canvas).toggle();
+      }
       return true;
     },
   });
@@ -534,8 +558,12 @@ function registerViewCommands(plugin) {
     name: 'Unhide all',
     checkCallback: (checking) => {
       const canvas = plugin.activeCanvas();
-      if (!canvas || !plugin.viewLabel(canvas)) return false;
-      if (!checking) plugin.showAll(canvas);
+      if (!canvas || !plugin.viewLabel(canvas)) {
+        return false;
+      }
+      if (!checking) {
+        plugin.showAll(canvas);
+      }
       return true;
     },
   });
@@ -547,7 +575,9 @@ function registerRestoreCommands(plugin) {
     name: 'Restore archived card (from its archive note)',
     checkCallback: (checking) => {
       const file = plugin.app.workspace.getActiveFile();
-      if (!isArchiveNote(plugin.app, file)) return false;
+      if (!isArchiveNote(plugin.app, file)) {
+        return false;
+      }
       if (!checking) {
         plugin
           .restore(file)
@@ -621,7 +651,9 @@ function registerContextMenus(plugin) {
         [...canvas.selection].find(
           (each) => each.isEditing && plugin.cardEditor(each) === editor,
         );
-      if (node) plugin.addActionItems(menu, canvas, [node]);
+      if (node) {
+        plugin.addActionItems(menu, canvas, [node]);
+      }
     }),
   );
 }

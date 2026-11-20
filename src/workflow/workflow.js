@@ -25,13 +25,19 @@ function activeNode(boardTree, total, active) {
   );
   const near = new Set();
   for (const edge of boardTree.edges) {
-    if (ids.has(edge.from) && !ids.has(edge.to)) near.add(edge.to);
-    if (ids.has(edge.to) && !ids.has(edge.from)) near.add(edge.from);
+    if (ids.has(edge.from) && !ids.has(edge.to)) {
+      near.add(edge.to);
+    }
+    if (ids.has(edge.to) && !ids.has(edge.from)) {
+      near.add(edge.from);
+    }
   }
   const cards = [],
     context = [];
   for (const card of boardTree.cards) {
-    if (WAITING.has(card.color)) total.waiting++;
+    if (WAITING.has(card.color)) {
+      total.waiting++;
+    }
     const inside = card.inside && activeNode(card.inside, total, active);
     if (ids.has(card.id) || (inside && inside.cards.length)) {
       cards.push({
@@ -101,7 +107,9 @@ function activeTree(boardTree) {
 function ageSuffixOperation(card, days) {
   const isAging =
     card.color === '3' && card.note && card.text !== undefined && !card.inside;
-  if (!isAging) return null;
+  if (!isAging) {
+    return null;
+  }
   const base = card.text.replace(/ · \d+d$/, '');
   const isStale = days > 0 && card.note.ageDays >= days;
   const text = isStale ? `${base} · ${card.note.ageDays}d` : base;
@@ -112,7 +120,9 @@ const WIKILINK = /\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g;
 
 // What a card links: its file, or the targets of the wikilinks in its text.
 function cardLinkTargets(node) {
-  if (node.type === 'file') return [node.file];
+  if (node.type === 'file') {
+    return [node.file];
+  }
   return [...(node.text || '').matchAll(WIKILINK)].map((match) =>
     match[1].trim(),
   );
@@ -124,7 +134,9 @@ function cardLinkTargets(node) {
 // reason`, or a recap `<words> · done · [[Output]]`.
 function cardTextOk(raw) {
   const text = raw.trim();
-  if (!text.includes('[[')) return text.split('\n').length <= 3;
+  if (!text.includes('[[')) {
+    return text.split('\n').length <= 3;
+  }
   return (
     /^\[\[[^\]]+\]\]( · .+)?$/.test(text) ||
     /^[^\n]+ · done · \[\[[^\]]+\]\]$/.test(text)
@@ -142,13 +154,17 @@ function cardIssues(node, depth) {
     .filter((link) => !findFile(link))
     .map((link) => `broken link [[${link}]]`);
   const isTopText = node.type === 'text' && depth === 0;
-  if (isTopText && !cardTextOk(node.text || '')) issues.push(TEXT_SHAPES);
+  if (isTopText && !cardTextOk(node.text || '')) {
+    issues.push(TEXT_SHAPES);
+  }
   return issues;
 }
 
 // An orange card whose note nobody touched for a while: a pass that stopped.
 function isStaleOrange(node, note) {
-  if (node.color !== WORKING) return false;
+  if (node.color !== WORKING) {
+    return false;
+  }
   const age = Date.now() - fileSystem.statSync(vaultPath(note)).mtimeMs;
   return age > ORANGE_STALE_MS;
 }
@@ -174,7 +190,9 @@ function noteIssues(source, color) {
     issues.push('note does not have exactly one context');
   }
   for (const section of REQUIRED_SECTIONS) {
-    if (!hasHeading(`## ${section}`)) issues.push(`note has no ## ${section}`);
+    if (!hasHeading(`## ${section}`)) {
+      issues.push(`note has no ## ${section}`);
+    }
   }
   if (!hasHeading('### Done when')) {
     issues.push('note has no ### Done when (under Aim)');
@@ -251,11 +269,17 @@ function colorCounts(colors) {
 }
 
 function desiredColor(card, inner, goColors) {
-  if (goColors.has(card.color)) return card.color;
+  if (goColors.has(card.color)) {
+    return card.color;
+  }
   const rolled = card.text !== undefined && / · \d+ inside/.test(card.text);
   const own = rolled ? null : card.color;
-  if (inner.red || own === '1') return '1';
-  if (inner.yellow || own === '3') return '3';
+  if (inner.red || own === '1') {
+    return '1';
+  }
+  if (inner.yellow || own === '3') {
+    return '3';
+  }
   if (rolled && (card.color === '1' || card.color === '3')) {
     return inner.allGreen ? '4' : null;
   }
@@ -281,7 +305,9 @@ function nestedCardUpdate(card, inner, goColorSet) {
     id: card.id,
     color: color === null ? '' : color,
   };
-  if (isTextChanged) operation.text = text;
+  if (isTextChanged) {
+    operation.text = text;
+  }
   return { color, operation };
 }
 
@@ -323,9 +349,13 @@ function rollup(board) {
   function walk(node) {
     const operations = [];
     const colors = node.cards.map((card) => {
-      if (!card.inside) return card.color;
+      if (!card.inside) {
+        return card.color;
+      }
       const update = nestedCardUpdate(card, walk(card.inside), goColorSet);
-      if (update.operation) operations.push(update.operation);
+      if (update.operation) {
+        operations.push(update.operation);
+      }
       return update.color;
     });
     const ages = node.cards.map((card) => ageSuffixOperation(card, days));

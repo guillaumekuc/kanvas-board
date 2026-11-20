@@ -16,13 +16,23 @@ const DEFAULTS = {
 };
 
 function band(pace, { personalBest, lowPercent, isWarmingUp = false }) {
-  if (personalBest < MIN_PB) return 'calibrating';
-  if (pace >= personalBest) return 'best';
+  if (personalBest < MIN_PB) {
+    return 'calibrating';
+  }
+  if (pace >= personalBest) {
+    return 'best';
+  }
   const ratio = (pace / personalBest) * 100;
   // a session's first window can't be full yet: no alert
-  if (ratio < lowPercent) return isWarmingUp ? 'calibrating' : 'low';
-  if (ratio < 50) return 'orange';
-  if (ratio < 75) return 'yellow';
+  if (ratio < lowPercent) {
+    return isWarmingUp ? 'calibrating' : 'low';
+  }
+  if (ratio < 50) {
+    return 'orange';
+  }
+  if (ratio < 75) {
+    return 'yellow';
+  }
   return 'green';
 }
 
@@ -46,9 +56,15 @@ function rateName(windowMinutes) {
 function touchedCards(before, after) {
   const out = [];
   for (const [id, content] of after) {
-    if (before.get(id) !== content) out.push(id);
+    if (before.get(id) !== content) {
+      out.push(id);
+    }
   }
-  for (const id of before.keys()) if (!after.has(id)) out.push(id);
+  for (const id of before.keys()) {
+    if (!after.has(id)) {
+      out.push(id);
+    }
+  }
   return out;
 }
 
@@ -90,7 +106,9 @@ class ApmCounter {
     );
     this.app.workspace.onLayoutReady(async () => {
       for (const file of this.app.vault.getFiles()) {
-        if (file.extension === 'canvas') await this.snapshot(file);
+        if (file.extension === 'canvas') {
+          await this.snapshot(file);
+        }
       }
       plugin.registerEvent(
         this.app.vault.on('modify', (file) => this.onModify(file)),
@@ -119,7 +137,9 @@ class ApmCounter {
   }
 
   async unload() {
-    if (this.dirty) await this.save();
+    if (this.dirty) {
+      await this.save();
+    }
   }
 
   // Returns the file's cards, or null when it can't be read as a canvas right
@@ -135,10 +155,14 @@ class ApmCounter {
   }
 
   async onModify(file) {
-    if (file.extension !== 'canvas') return;
+    if (file.extension !== 'canvas') {
+      return;
+    }
     const before = this.snapshots.get(file.path);
     const after = await this.snapshot(file);
-    if (!before || !after) return;
+    if (!before || !after) {
+      return;
+    }
     const now = Date.now();
     if (
       now - this.lastInput > INPUT_MS ||
@@ -153,8 +177,12 @@ class ApmCounter {
   }
 
   record(keys, now = Date.now()) {
-    if (!keys.length) return;
-    for (const cardId of keys) this.touched.set(cardId, now);
+    if (!keys.length) {
+      return;
+    }
+    for (const cardId of keys) {
+      this.touched.set(cardId, now);
+    }
     if (now - this.lastAction > this.settings.idleMinutes * MINUTE_MS) {
       this.sessionStart = now;
     }
@@ -165,7 +193,9 @@ class ApmCounter {
   pace(now = Date.now()) {
     const windowMs = this.settings.windowMinutes * MINUTE_MS;
     for (const [cardId, touchedAt] of this.touched) {
-      if (touchedAt <= now - windowMs) this.touched.delete(cardId);
+      if (touchedAt <= now - windowMs) {
+        this.touched.delete(cardId);
+      }
     }
     return this.touched.size;
   }
@@ -206,7 +236,9 @@ class ApmCounter {
     }
     // the window and the PB keep running, only the display stops outside a
     // canvas
-    if (!isShown) return;
+    if (!isShown) {
+      return;
+    }
     const state = this.isIdle(now)
       ? 'idle'
       : band(pace, {
@@ -216,7 +248,9 @@ class ApmCounter {
             now - this.sessionStart < settings.windowMinutes * MINUTE_MS,
         });
     if (this.state !== state) {
-      if (this.state) this.element.removeClass('apm-' + this.state);
+      if (this.state) {
+        this.element.removeClass('apm-' + this.state);
+      }
       this.element.addClass('apm-' + state);
       this.state = state;
     }

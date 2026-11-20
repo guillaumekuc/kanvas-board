@@ -5,11 +5,21 @@ function anything() {
   return new Proxy(function stub() {}, {
     set: (target, key, value) => assigned.set(key, value),
     get: (target, key) => {
-      if (assigned.has(key)) return assigned.get(key);
-      if (key === Symbol.toPrimitive) return () => '';
-      if (key === 'then') return undefined;
-      if (key === Symbol.iterator) return [][Symbol.iterator].bind([]);
-      if (key === 'length') return 0;
+      if (assigned.has(key)) {
+        return assigned.get(key);
+      }
+      if (key === Symbol.toPrimitive) {
+        return () => '';
+      }
+      if (key === 'then') {
+        return undefined;
+      }
+      if (key === Symbol.iterator) {
+        return [][Symbol.iterator].bind([]);
+      }
+      if (key === 'length') {
+        return 0;
+      }
       return anything();
     },
     apply: () => anything(),

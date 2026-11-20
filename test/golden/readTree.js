@@ -8,7 +8,9 @@ function readTree(root, directory = '') {
     withFileTypes: true,
   })) {
     const relativePath = path.posix.join(directory, entry.name);
-    if (relativePath === '.obsidian') continue;
+    if (relativePath === '.obsidian') {
+      continue;
+    }
     if (entry.isDirectory()) {
       Object.assign(snapshot, readTree(root, relativePath));
     } else {

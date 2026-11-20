@@ -26,9 +26,9 @@ module.exports = [
       camelcase: ['error', { properties: 'never' }],
       // Booleans: isX / hasX
       'style/boolean-prefix': 'error',
-      // K&R braces
+      // K&R braces, always explicit (no braceless if/for/while bodies)
       'brace-style': ['error', '1tbs', { allowSingleLine: true }],
-      curly: ['error', 'multi-line'],
+      curly: ['error', 'all'],
       // Function declarations, not functions stored in consts (arrows that
       // need the enclosing this stay arrows)
       'func-style': ['error', 'declaration'],

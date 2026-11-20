@@ -18,7 +18,9 @@ import { newId, mostUrgent } from './store.js';
 function collapseOps(canvasData, { ids, file, label }) {
   const pick = withGroupMembers(canvasData, ids);
   const moving = canvasData.nodes.filter((node) => pick.has(node.id));
-  if (!moving.length) throw new Error('nothing to collapse');
+  if (!moving.length) {
+    throw new Error('nothing to collapse');
+  }
   const box = bounds(moving);
   const subcanvas = {
     nodes: moving.map((node) => ({
@@ -54,7 +56,9 @@ function collapseOps(canvasData, { ids, file, label }) {
       });
     }
   }
-  for (const node of moving) operations.push({ op: 'remove', id: node.id });
+  for (const node of moving) {
+    operations.push({ op: 'remove', id: node.id });
+  }
   return { operations, subcanvas, id: card.id };
 }
 
@@ -77,8 +81,12 @@ function retargetOps(edges, fromId, toId) {
 // the edges on the card go to it.
 function expandOps(canvasData, { id, subcanvas, group }) {
   const card = canvasData.nodes.find((node) => node.id === id);
-  if (!card) throw new Error('no node ' + id);
-  if (!subcanvas.nodes.length) throw new Error('empty subcanvas');
+  if (!card) {
+    throw new Error('no node ' + id);
+  }
+  if (!subcanvas.nodes.length) {
+    throw new Error('empty subcanvas');
+  }
   const taken = new Set(
     [...canvasData.nodes, ...canvasData.edges].map((item) => item.id),
   );
@@ -126,7 +134,9 @@ function extractOps(canvasData, { id, part, from }) {
     from !== undefined && card.text.slice(from, from + part.length) === part
       ? from
       : card.text.indexOf(part);
-  if (!part.trim() || offset < 0) throw new Error('text not found in the card');
+  if (!part.trim() || offset < 0) {
+    throw new Error('text not found in the card');
+  }
   const left = (
     card.text.slice(0, offset) + card.text.slice(offset + part.length)
   )
@@ -154,7 +164,9 @@ function extractOps(canvasData, { id, part, from }) {
     width: card.width,
     height,
   };
-  if (card.color) node.color = card.color;
+  if (card.color) {
+    node.color = card.color;
+  }
   return [
     { op: 'set', id, text: left, height: fitHeight(left, card.width) },
     { op: 'add', node },
@@ -209,13 +221,19 @@ function mergeEdgeOps(canvasData, { keep, gone }) {
     const isIncoming = merged.has(edge.toNode);
     const isInside = isOutgoing && isIncoming;
     const touchesGone = gone.has(edge.fromNode) || gone.has(edge.toNode);
-    if (isInside && touchesGone) operations.push({ op: 'unedge', id: edge.id });
-    if (isInside || (!isOutgoing && !isIncoming)) continue;
+    if (isInside && touchesGone) {
+      operations.push({ op: 'unedge', id: edge.id });
+    }
+    if (isInside || (!isOutgoing && !isIncoming)) {
+      continue;
+    }
     const [mine, other] = isOutgoing
       ? [edge.fromNode, edge.toNode]
       : [edge.toNode, edge.fromNode];
     const length = centerDistance(nodeById(mine), nodeById(other) || keep);
-    if (!linksByOther.has(other)) linksByOther.set(other, []);
+    if (!linksByOther.has(other)) {
+      linksByOther.set(other, []);
+    }
     linksByOther.get(other).push({ edge, isOutgoing, length });
   }
   for (const links of linksByOther.values()) {
@@ -230,7 +248,9 @@ function mergeOps(canvasData, ids) {
   const cards = canvasData.nodes
     .filter((node) => ids.includes(node.id))
     .sort(byReading);
-  if (cards.length < 2) throw new Error('merge needs 2+ cards');
+  if (cards.length < 2) {
+    throw new Error('merge needs 2+ cards');
+  }
   if (cards.some((node) => node.type !== 'text')) {
     throw new Error('merge takes text cards only');
   }
@@ -260,7 +280,9 @@ function splitText(text, separator) {
     ? text
         .split('\n')
         .reduce((pieces, line) => {
-          if (starts.test(line) || !pieces.length) pieces.push([]);
+          if (starts.test(line) || !pieces.length) {
+            pieces.push([]);
+          }
           pieces[pieces.length - 1].push(line);
           return pieces;
         }, [])
@@ -277,7 +299,9 @@ function splitOps(canvasData, id, separator = 'paragraph') {
     throw new Error('split takes one text card');
   }
   const pieces = splitText(card.text || '', separator);
-  if (pieces.length < 2) throw new Error(`nothing to split by ${separator}`);
+  if (pieces.length < 2) {
+    throw new Error(`nothing to split by ${separator}`);
+  }
   let top = card.y;
   return pieces.map((text, index) => {
     const height = fitHeight(text, card.width);
@@ -332,7 +356,9 @@ function relinkText(text, hits, replace) {
     /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
     (link, ...groups) => {
       const [target, , alias] = groups; // the #subpath group is not needed
-      if (!hits(target.trim())) return link;
+      if (!hits(target.trim())) {
+        return link;
+      }
       const name = path.posix.basename(target.trim()).replace(/\.canvas$/, '');
       return replace(alias || name);
     },
@@ -343,7 +369,9 @@ function relinkText(text, hits, replace) {
 // land with their top-left at `origin`.
 function templateOps(template, origin) {
   const nodes = template.nodes || [];
-  if (!nodes.length) throw new Error('empty template');
+  if (!nodes.length) {
+    throw new Error('empty template');
+  }
   const minX = Math.min(...nodes.map((node) => node.x)),
     minY = Math.min(...nodes.map((node) => node.y));
   const ids = new Map(nodes.map((node) => [node.id, newId()]));

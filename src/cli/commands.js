@@ -61,7 +61,9 @@ function addCommand(cli) {
     height,
   };
   const color = colorArg(cli.option('--color'));
-  if (color) node.color = color;
+  if (color) {
+    node.color = color;
+  }
   writeOps(cli.board, [{ op: 'add', node }]);
   console.log(node.id);
 }
@@ -102,7 +104,9 @@ function edgeCommand(cli) {
     : [flowFrom, flowTo];
   const [fromNode, toNode] = cli.rest;
   const edge = { id: newId(), fromNode, fromSide, toNode, toSide };
-  if (label) edge.label = label;
+  if (label) {
+    edge.label = label;
+  }
   console.log(writeOps(cli.board, [{ op: 'edge', edge }]));
 }
 
@@ -129,8 +133,12 @@ function setCommand(cli) {
     id: cli.rest[0],
     color: colorArg(cli.option('--color')),
   };
-  if (cli.option('--text') !== undefined) operation.text = cli.option('--text');
-  if (cli.option('--file') !== undefined) operation.file = cli.option('--file');
+  if (cli.option('--text') !== undefined) {
+    operation.text = cli.option('--text');
+  }
+  if (cli.option('--file') !== undefined) {
+    operation.file = cli.option('--file');
+  }
   console.log(writeOps(cli.board, [operation]));
 }
 
@@ -157,7 +165,9 @@ function layoutCommand(cli) {
 
 function packCommand(cli) {
   const name = cli.option('--name');
-  if (!name) throw new Error('collapse needs --name');
+  if (!name) {
+    throw new Error('collapse needs --name');
+  }
   const file = freePath(path.posix.dirname(cli.board), name, '.canvas');
   const { operations, subcanvas, id } = collapseOps(readBoard(cli.board), {
     ids: cli.list('--ids'),
@@ -175,7 +185,9 @@ function unpackCommand(cli) {
   const [id] = cli.rest;
   const card = readBoard(cli.board).nodes.find((node) => node.id === id);
   const subcanvas = card && cardLinks(card).canvas;
-  if (!subcanvas) throw new Error('card links no canvas');
+  if (!subcanvas) {
+    throw new Error('card links no canvas');
+  }
   const isKept = cli.hasFlag('--keep');
   const others = isKept ? [] : linksTo(subcanvas, cli.board, id);
   const operations = expandOps(readBoard(cli.board), {
@@ -183,7 +195,9 @@ function unpackCommand(cli) {
     subcanvas: readBoard(subcanvas),
   });
   writeOps(cli.board, operations);
-  if (isKept) return console.log('unpacked (copy), kept', subcanvas);
+  if (isKept) {
+    return console.log('unpacked (copy), kept', subcanvas);
+  }
   if (others.length) {
     const linking = others.join(', ');
     console.log('unpacked, kept', subcanvas, '- still linked from:', linking);

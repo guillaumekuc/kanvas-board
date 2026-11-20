@@ -3160,12 +3160,22 @@ var DEFAULTS = {
   windowMinutes: 15
 };
 function band(pace, { personalBest, lowPercent, isWarmingUp = false }) {
-  if (personalBest < MIN_PB) return "calibrating";
-  if (pace >= personalBest) return "best";
+  if (personalBest < MIN_PB) {
+    return "calibrating";
+  }
+  if (pace >= personalBest) {
+    return "best";
+  }
   const ratio = pace / personalBest * 100;
-  if (ratio < lowPercent) return isWarmingUp ? "calibrating" : "low";
-  if (ratio < 50) return "orange";
-  if (ratio < 75) return "yellow";
+  if (ratio < lowPercent) {
+    return isWarmingUp ? "calibrating" : "low";
+  }
+  if (ratio < 50) {
+    return "orange";
+  }
+  if (ratio < 75) {
+    return "yellow";
+  }
   return "green";
 }
 function cardsOf(json) {
@@ -3184,9 +3194,15 @@ function rateName(windowMinutes) {
 function touchedCards(before, after) {
   const out = [];
   for (const [id, content] of after) {
-    if (before.get(id) !== content) out.push(id);
+    if (before.get(id) !== content) {
+      out.push(id);
+    }
   }
-  for (const id of before.keys()) if (!after.has(id)) out.push(id);
+  for (const id of before.keys()) {
+    if (!after.has(id)) {
+      out.push(id);
+    }
+  }
   return out;
 }
 function unitOf(windowMinutes) {
@@ -3225,7 +3241,9 @@ var ApmCounter = class {
     );
     this.app.workspace.onLayoutReady(async () => {
       for (const file of this.app.vault.getFiles()) {
-        if (file.extension === "canvas") await this.snapshot(file);
+        if (file.extension === "canvas") {
+          await this.snapshot(file);
+        }
       }
       plugin.registerEvent(
         this.app.vault.on("modify", (file) => this.onModify(file))
@@ -3252,7 +3270,9 @@ var ApmCounter = class {
     this.plugin.registerDomEvent(targetWindow, "mousedown", input, options);
   }
   async unload() {
-    if (this.dirty) await this.save();
+    if (this.dirty) {
+      await this.save();
+    }
   }
   // Returns the file's cards, or null when it can't be read as a canvas right
   // now (a half-written file).
@@ -3266,10 +3286,14 @@ var ApmCounter = class {
     }
   }
   async onModify(file) {
-    if (file.extension !== "canvas") return;
+    if (file.extension !== "canvas") {
+      return;
+    }
     const before = this.snapshots.get(file.path);
     const after = await this.snapshot(file);
-    if (!before || !after) return;
+    if (!before || !after) {
+      return;
+    }
     const now = Date.now();
     if (now - this.lastInput > INPUT_MS || this.app.workspace.getActiveFile()?.path !== file.path) {
       return;
@@ -3280,8 +3304,12 @@ var ApmCounter = class {
     );
   }
   record(keys, now = Date.now()) {
-    if (!keys.length) return;
-    for (const cardId of keys) this.touched.set(cardId, now);
+    if (!keys.length) {
+      return;
+    }
+    for (const cardId of keys) {
+      this.touched.set(cardId, now);
+    }
     if (now - this.lastAction > this.settings.idleMinutes * MINUTE_MS) {
       this.sessionStart = now;
     }
@@ -3291,7 +3319,9 @@ var ApmCounter = class {
   pace(now = Date.now()) {
     const windowMs = this.settings.windowMinutes * MINUTE_MS;
     for (const [cardId, touchedAt] of this.touched) {
-      if (touchedAt <= now - windowMs) this.touched.delete(cardId);
+      if (touchedAt <= now - windowMs) {
+        this.touched.delete(cardId);
+      }
     }
     return this.touched.size;
   }
@@ -3327,14 +3357,18 @@ var ApmCounter = class {
       this.element.toggle(isShown);
       this.isShown = isShown;
     }
-    if (!isShown) return;
+    if (!isShown) {
+      return;
+    }
     const state = this.isIdle(now) ? "idle" : band(pace, {
       personalBest: settings2.pb,
       lowPercent: settings2.lowPercent,
       isWarmingUp: now - this.sessionStart < settings2.windowMinutes * MINUTE_MS
     });
     if (this.state !== state) {
-      if (this.state) this.element.removeClass("apm-" + this.state);
+      if (this.state) {
+        this.element.removeClass("apm-" + this.state);
+      }
       this.element.addClass("apm-" + state);
       this.state = state;
     }
@@ -3432,14 +3466,19 @@ var VaultFileIndex = class {
     });
     for (const entry of entries) {
       const relativePath = import_path.default.posix.join(folder, entry.name);
-      if (!entry.isDirectory()) this.add(relativePath, entry.name);
-      else if (!this.skipped.has(entry.name)) this.walk(relativePath);
+      if (!entry.isDirectory()) {
+        this.add(relativePath, entry.name);
+      } else if (!this.skipped.has(entry.name)) {
+        this.walk(relativePath);
+      }
     }
   }
   // The first file found keeps a name shared by several.
   add(relativePath, name) {
     const key = name.endsWith(".md") ? name.slice(0, -3) : name;
-    if (!this.files.has(key)) this.files.set(key, relativePath);
+    if (!this.files.has(key)) {
+      this.files.set(key, relativePath);
+    }
     this.files.set(relativePath, relativePath);
     this.files.set(relativePath.replace(/\.md$/, ""), relativePath);
   }
@@ -3460,7 +3499,9 @@ function tryEval(binary, code) {
       stdio: ["ignore", "pipe", "pipe"]
     });
     const match = out.match(/=>\s?([\s\S]*)$/);
-    if (!match) throw new Error(out.trim());
+    if (!match) {
+      throw new Error(out.trim());
+    }
     return match[1].trim();
   } catch (error) {
     return error.code === "ENOENT" ? NOT_INSTALLED : null;
@@ -3484,14 +3525,21 @@ function retype(node, type, value) {
   return isRetyped;
 }
 function setColor(node, color) {
-  if (color) node.color = color;
-  else delete node.color;
+  if (color) {
+    node.color = color;
+  } else {
+    delete node.color;
+  }
 }
 var GEOMETRY = ["x", "y", "width", "height"];
 function setNode(canvasData, operation) {
   const node = canvasData.nodes.find((node2) => node2.id === operation.id);
-  if (!node) throw new Error("no node " + operation.id);
-  if (operation.color !== void 0) setColor(node, operation.color);
+  if (!node) {
+    throw new Error("no node " + operation.id);
+  }
+  if (operation.color !== void 0) {
+    setColor(node, operation.color);
+  }
   const retyped = [];
   if (operation.file !== void 0 && retype(node, "file", operation.file)) {
     retyped.push(node.id);
@@ -3500,14 +3548,20 @@ function setNode(canvasData, operation) {
     retyped.push(node.id);
   }
   for (const field of GEOMETRY) {
-    if (operation[field] !== void 0) node[field] = operation[field];
+    if (operation[field] !== void 0) {
+      node[field] = operation[field];
+    }
   }
   return retyped;
 }
 function updateEdge(canvasData, operation, fields) {
   const edge = canvasData.edges.find((edge2) => edge2.id === operation.id);
-  if (!edge) return;
-  for (const field of fields) edge[field] = operation[field];
+  if (!edge) {
+    return;
+  }
+  for (const field of fields) {
+    edge[field] = operation[field];
+  }
 }
 var handlers = {
   set: setNode,
@@ -3533,7 +3587,9 @@ function applyOps(canvasData, operations) {
   for (const operation of operations) {
     const handler = OPERATION_HANDLERS[operation.op];
     const retypedIds = handler ? handler(canvasData, operation) : null;
-    if (retypedIds) retyped.push(...retypedIds);
+    if (retypedIds) {
+      retyped.push(...retypedIds);
+    }
   }
   return retyped;
 }
@@ -3584,7 +3640,9 @@ function centeredFreeOffset(nodes, card, others) {
     y: Math.round(card.y + (card.height - box.height) / 2) - box.y
   };
   for (let step = 0; step < CENTERED_MAX_STEPS; step++) {
-    if (!overlapsAny(nodes, others, offset)) break;
+    if (!overlapsAny(nodes, others, offset)) {
+      break;
+    }
     offset.x += STEP;
   }
   return offset;
@@ -3643,7 +3701,9 @@ function nearestFreeOffset(placed, { moving, fixed, direction }) {
   const axis = ACROSS_ROWS.has(direction) ? "y" : "x";
   const offset = { ...center };
   for (let attempt = 1; attempt <= MAX_STEPS; attempt++) {
-    if (!overlapsAny(placed, fixed, offset)) break;
+    if (!overlapsAny(placed, fixed, offset)) {
+      break;
+    }
     const side = attempt % 2 ? 1 : -1;
     offset[axis] = center[axis] + side * Math.ceil(attempt / 2) * STEP;
   }
@@ -3658,7 +3718,9 @@ function withGroupMembers(canvasData, ids) {
     return node.x >= group.x && node.y >= group.y && node.x + node.width <= group.x + group.width && node.y + node.height <= group.y + group.height;
   }
   for (const node of canvasData.nodes) {
-    if (groups.some((group) => isInside(node, group))) pick.add(node.id);
+    if (groups.some((group) => isInside(node, group))) {
+      pick.add(node.id);
+    }
   }
   return pick;
 }
@@ -3695,7 +3757,9 @@ function layoutOps(canvasData, options) {
   const pick = new Set(ids && ids.length ? ids : cards.map((node) => node.id));
   const moving = cards.filter((node) => pick.has(node.id));
   const fixed = cards.filter((node) => !pick.has(node.id));
-  if (!moving.length) return [];
+  if (!moving.length) {
+    return [];
+  }
   const inner = canvasData.edges.filter(
     (edge) => pick.has(edge.fromNode) && pick.has(edge.toNode)
   );
@@ -3723,7 +3787,9 @@ function layoutOps(canvasData, options) {
 function collapseOps(canvasData, { ids, file, label }) {
   const pick = withGroupMembers(canvasData, ids);
   const moving = canvasData.nodes.filter((node) => pick.has(node.id));
-  if (!moving.length) throw new Error("nothing to collapse");
+  if (!moving.length) {
+    throw new Error("nothing to collapse");
+  }
   const box = bounds(moving);
   const subcanvas = {
     nodes: moving.map((node) => ({
@@ -3757,7 +3823,9 @@ function collapseOps(canvasData, { ids, file, label }) {
       });
     }
   }
-  for (const node of moving) operations.push({ op: "remove", id: node.id });
+  for (const node of moving) {
+    operations.push({ op: "remove", id: node.id });
+  }
   return { operations, subcanvas, id: card.id };
 }
 function retargetOps(edges, fromId, toId) {
@@ -3770,8 +3838,12 @@ function retargetOps(edges, fromId, toId) {
 }
 function expandOps(canvasData, { id, subcanvas, group }) {
   const card = canvasData.nodes.find((node) => node.id === id);
-  if (!card) throw new Error("no node " + id);
-  if (!subcanvas.nodes.length) throw new Error("empty subcanvas");
+  if (!card) {
+    throw new Error("no node " + id);
+  }
+  if (!subcanvas.nodes.length) {
+    throw new Error("empty subcanvas");
+  }
   const taken = new Set(
     [...canvasData.nodes, ...canvasData.edges].map((item) => item.id)
   );
@@ -3812,7 +3884,9 @@ function extractOps(canvasData, { id, part, from }) {
     throw new Error("extract takes one text card");
   }
   const offset = from !== void 0 && card.text.slice(from, from + part.length) === part ? from : card.text.indexOf(part);
-  if (!part.trim() || offset < 0) throw new Error("text not found in the card");
+  if (!part.trim() || offset < 0) {
+    throw new Error("text not found in the card");
+  }
   const left = (card.text.slice(0, offset) + card.text.slice(offset + part.length)).replace(/\n{3,}/g, "\n\n").trim();
   const text = part.trim();
   const height = fitHeight(text, card.width);
@@ -3831,7 +3905,9 @@ function extractOps(canvasData, { id, part, from }) {
     width: card.width,
     height
   };
-  if (card.color) node.color = card.color;
+  if (card.color) {
+    node.color = card.color;
+  }
   return [
     { op: "set", id, text: left, height: fitHeight(left, card.width) },
     { op: "add", node }
@@ -3875,11 +3951,17 @@ function mergeEdgeOps(canvasData, { keep, gone }) {
     const isIncoming = merged.has(edge.toNode);
     const isInside = isOutgoing && isIncoming;
     const touchesGone = gone.has(edge.fromNode) || gone.has(edge.toNode);
-    if (isInside && touchesGone) operations.push({ op: "unedge", id: edge.id });
-    if (isInside || !isOutgoing && !isIncoming) continue;
+    if (isInside && touchesGone) {
+      operations.push({ op: "unedge", id: edge.id });
+    }
+    if (isInside || !isOutgoing && !isIncoming) {
+      continue;
+    }
     const [mine, other] = isOutgoing ? [edge.fromNode, edge.toNode] : [edge.toNode, edge.fromNode];
     const length = centerDistance(nodeById(mine), nodeById(other) || keep);
-    if (!linksByOther.has(other)) linksByOther.set(other, []);
+    if (!linksByOther.has(other)) {
+      linksByOther.set(other, []);
+    }
     linksByOther.get(other).push({ edge, isOutgoing, length });
   }
   for (const links of linksByOther.values()) {
@@ -3889,7 +3971,9 @@ function mergeEdgeOps(canvasData, { keep, gone }) {
 }
 function mergeOps(canvasData, ids) {
   const cards = canvasData.nodes.filter((node) => ids.includes(node.id)).sort(byReading);
-  if (cards.length < 2) throw new Error("merge needs 2+ cards");
+  if (cards.length < 2) {
+    throw new Error("merge needs 2+ cards");
+  }
   if (cards.some((node) => node.type !== "text")) {
     throw new Error("merge takes text cards only");
   }
@@ -3909,7 +3993,9 @@ function splitText(text, separator) {
   const headingMatch = /^h([1-6])$/.exec(separator);
   const starts = headingMatch ? new RegExp(`^#{${headingMatch[1]}} `) : separator === "bullet" ? /^([-*+]|\d+[.)]) / : null;
   const pieces = starts ? text.split("\n").reduce((pieces2, line) => {
-    if (starts.test(line) || !pieces2.length) pieces2.push([]);
+    if (starts.test(line) || !pieces2.length) {
+      pieces2.push([]);
+    }
     pieces2[pieces2.length - 1].push(line);
     return pieces2;
   }, []).map((pieceLines) => pieceLines.join("\n")) : text.split(/\n\s*\n/);
@@ -3921,7 +4007,9 @@ function splitOps(canvasData, id, separator = "paragraph") {
     throw new Error("split takes one text card");
   }
   const pieces = splitText(card.text || "", separator);
-  if (pieces.length < 2) throw new Error(`nothing to split by ${separator}`);
+  if (pieces.length < 2) {
+    throw new Error(`nothing to split by ${separator}`);
+  }
   let top = card.y;
   return pieces.map((text, index) => {
     const height = fitHeight(text, card.width);
@@ -3952,7 +4040,9 @@ function relinkText(text, hits, replace) {
     /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
     (link, ...groups) => {
       const [target, , alias] = groups;
-      if (!hits(target.trim())) return link;
+      if (!hits(target.trim())) {
+        return link;
+      }
       const name = import_path2.default.posix.basename(target.trim()).replace(/\.canvas$/, "");
       return replace(alias || name);
     }
@@ -3960,7 +4050,9 @@ function relinkText(text, hits, replace) {
 }
 function templateOps(template, origin) {
   const nodes = template.nodes || [];
-  if (!nodes.length) throw new Error("empty template");
+  if (!nodes.length) {
+    throw new Error("empty template");
+  }
   const minX = Math.min(...nodes.map((node) => node.x)), minY = Math.min(...nodes.map((node) => node.y));
   const ids = new Map(nodes.map((node) => [node.id, newId()]));
   const operations = nodes.map((node) => ({
@@ -4004,7 +4096,9 @@ function archiveDir(board, options = {}) {
 }
 function archiveNote(canvasData, { id, board, date, contexts = [] }) {
   const node = canvasData.nodes.find((node2) => node2.id === id);
-  if (!node) throw new Error("no node " + id);
+  if (!node) {
+    throw new Error("no node " + id);
+  }
   const edges = canvasData.edges.filter((edge) => edge.fromNode === id || edge.toNode === id).map(
     (edge) => yamlStr(
       [
@@ -4053,7 +4147,9 @@ function restoreOps(canvasData, source) {
   }
   function get(field) {
     const match = new RegExp(`^${field}: (.*)$`, "m").exec(frontmatter);
-    if (!match) return void 0;
+    if (!match) {
+      return void 0;
+    }
     const value = match[1].trim();
     return value.startsWith('"') ? JSON.parse(value) : value;
   }
@@ -4070,28 +4166,53 @@ function restoreOps(canvasData, source) {
     width: Number(get("width")),
     height: Number(get("height"))
   };
-  if (type === "text") node.text = body;
-  if (type === "file") node.file = get("card-file");
-  if (type === "link") node.url = get("card-url");
-  if (get("color")) node.color = get("color");
-  const operations = [{ op: "add", node }];
-  const old = get("card-id");
+  if (type === "text") {
+    node.text = body;
+  }
+  if (type === "file") {
+    node.file = get("card-file");
+  }
+  if (type === "link") {
+    node.url = get("card-url");
+  }
+  if (get("color")) {
+    node.color = get("color");
+  }
+  const edges = restoredEdgeOps(canvasData, frontmatter, {
+    archivedId: get("card-id"),
+    restoredId: id
+  });
+  return { board, operations: [{ op: "add", node }, ...edges] };
+}
+function restoredEdgeOps(canvasData, frontmatter, { archivedId, restoredId }) {
+  const ids = new Set(canvasData.nodes.map((node) => node.id));
   const edgeIds = new Set(canvasData.edges.map((edge) => edge.id));
+  const operations = [];
   for (const edgeLine of frontmatter.matchAll(/^ {2}- (".*")$/gm)) {
     const [edgeId, from, fromSide, toId, toSide, label] = JSON.parse(
       edgeLine[1]
     ).split(" | ");
-    const fromNode = from === old ? id : from, toNode = toId === old ? id : toId;
-    if (edgeIds.has(edgeId) || !(fromNode === id || ids.has(fromNode)) || !(toNode === id || ids.has(toNode))) {
+    const fromNode = from === archivedId ? restoredId : from;
+    const toNode = toId === archivedId ? restoredId : toId;
+    const isEndMissing = [fromNode, toNode].some(
+      (end) => end !== restoredId && !ids.has(end)
+    );
+    if (edgeIds.has(edgeId) || isEndMissing) {
       continue;
     }
-    const edge = { id: edgeId, fromNode, toNode };
-    if (fromSide) edge.fromSide = fromSide;
-    if (toSide) edge.toSide = toSide;
-    if (label) edge.label = label;
+    const edge = Object.fromEntries(
+      Object.entries({
+        id: edgeId,
+        fromNode,
+        toNode,
+        fromSide,
+        toSide,
+        label
+      }).filter(([, value]) => value)
+    );
     operations.push({ op: "edge", edge });
   }
-  return { board, operations };
+  return operations;
 }
 
 // src/plugin/unpack.js
@@ -4122,8 +4243,9 @@ function groupLinkOperations(plugin, canvas, unpacked) {
 function relinkCanvasData(canvasData, redirect) {
   const { library, subcanvasPath, here, hits, toLink } = redirect;
   for (const node of canvasData.nodes || []) {
-    if (node.type === "file" && node.file === subcanvasPath) node.file = here;
-    else if (node.type === "text") {
+    if (node.type === "file" && node.file === subcanvasPath) {
+      node.file = here;
+    } else if (node.type === "text") {
       node.text = library.relinkText(node.text, hits, toLink);
     }
   }
@@ -4139,7 +4261,9 @@ async function redirectOutsideLinks(plugin, unpacked) {
   );
   for (const filePath of paths) {
     const linkingFile = plugin.app.vault.getAbstractFileByPath(filePath);
-    if (!linkingFile) continue;
+    if (!linkingFile) {
+      continue;
+    }
     const hits = isSubcanvas(filePath);
     const redirect = { library, subcanvasPath: file.path, here, hits, toLink };
     const open = filePath.endsWith(".canvas") && plugin.openCanvas(filePath);
@@ -4203,8 +4327,12 @@ async function unpackSubcanvas(plugin, canvas, request) {
     );
   }
   plugin.edit(canvas, operations);
-  if (mode === "group") await redirectOutsideLinks(plugin, unpacked);
-  if (mode !== "copy") await plugin.app.fileManager.trashFile(file);
+  if (mode === "group") {
+    await redirectOutsideLinks(plugin, unpacked);
+  }
+  if (mode !== "copy") {
+    await plugin.app.fileManager.trashFile(file);
+  }
   const counts = {
     cardCount: subcanvas.nodes.length,
     linkCount: links.length,
@@ -4385,7 +4513,9 @@ function createApi(plugin) {
   };
 }
 function isArchiveNote(app, file) {
-  if (!file || file.extension !== "md") return false;
+  if (!file || file.extension !== "md") {
+    return false;
+  }
   const { frontmatter } = app.metadataCache.getFileCache(file) || {};
   return Boolean(frontmatter && frontmatter["archived-from"]);
 }
@@ -4482,7 +4612,9 @@ var NamePrompt = class extends import_obsidian.Modal {
     text.inputEl.addEventListener("keydown", (event) => {
       const suggestEl = this.suggest && this.suggest.suggestEl;
       const isSuggesting = Boolean(suggestEl && suggestEl.isConnected);
-      if (event.key !== "Enter" || this.isPicked || isSuggesting) return;
+      if (event.key !== "Enter" || this.isPicked || isSuggesting) {
+        return;
+      }
       event.preventDefault();
       this.submit();
     });
@@ -4507,7 +4639,9 @@ var NamePrompt = class extends import_obsidian.Modal {
     return isSuggestion ? value.trim() : value.trim().replace(FORBIDDEN, "");
   }
   refresh() {
-    if (!this.button) return;
+    if (!this.button) {
+      return;
+    }
     const { overwrite } = this.options;
     const isOverwrite = Boolean(
       overwrite && this.value.trim() && overwrite(this.nameOf(this.value))
@@ -4518,7 +4652,9 @@ var NamePrompt = class extends import_obsidian.Modal {
   }
   submit() {
     const name = this.nameOf(this.value);
-    if (!name) return;
+    if (!name) {
+      return;
+    }
     this.close();
     Promise.resolve(this.onSubmit(name)).catch(
       (error) => new import_obsidian.Notice(`Kanvas board: ${error.message}`)
@@ -4566,7 +4702,9 @@ var UnpackChoice = class extends import_obsidian.Modal {
         text: link.id ? `${link.label} (${link.path})` : link.path
       });
     }
-    if (count > 8) list.createEl("li", { text: `and ${count - 8} more` });
+    if (count > 8) {
+      list.createEl("li", { text: `and ${count - 8} more` });
+    }
     const setting = new import_obsidian.Setting(this.contentEl);
     const pick = (mode) => {
       this.close();
@@ -4616,10 +4754,14 @@ function frameText(root, query) {
   const ownerDocument = root.ownerDocument;
   const walker = ownerDocument.createTreeWalker(root, 4);
   const texts = [];
-  while (walker.nextNode()) texts.push(walker.currentNode);
+  while (walker.nextNode()) {
+    texts.push(walker.currentNode);
+  }
   const frames = [];
   for (const node of texts) {
-    if (node.parentElement.closest(".cm-editor, input, textarea")) continue;
+    if (node.parentElement.closest(".cm-editor, input, textarea")) {
+      continue;
+    }
     const here = [];
     for (const offset of matchOffsets(node.data, query).reverse()) {
       const hit = node.splitText(offset);
@@ -4715,7 +4857,9 @@ var FindBar = class {
     this.element.show();
     this.input.focus();
     this.input.select();
-    if (this.input.value) this.search();
+    if (this.input.value) {
+      this.search();
+    }
   }
   close() {
     this.mark([]);
@@ -4731,7 +4875,9 @@ var FindBar = class {
     this.show();
   }
   step(step) {
-    if (!this.matches.length) return;
+    if (!this.matches.length) {
+      return;
+    }
     this.index = (this.index + step + this.matches.length) % this.matches.length;
     this.show();
   }
@@ -4739,15 +4885,21 @@ var FindBar = class {
   // goes back to one at a time.
   selectAll() {
     const { canvas, plugin, matches } = this;
-    if (!matches.length) return;
+    if (!matches.length) {
+      return;
+    }
     if (matches.some((node) => plugin.isHidden(canvas, node))) {
       plugin.showAll(canvas);
       new import_obsidian2.Notice("Kanvas board: filter and folds cleared to show the cards");
     }
-    for (const node of matches) node.nodeEl.addClass("is-current");
+    for (const node of matches) {
+      node.nodeEl.addClass("is-current");
+    }
     canvas.updateSelection(() => {
       canvas.selection.clear();
-      for (const node of matches) canvas.selection.add(node);
+      for (const node of matches) {
+        canvas.selection.add(node);
+      }
     });
     canvas.zoomToSelection();
     this.countEl.setText(`all ${matches.length}`);
@@ -4757,7 +4909,9 @@ var FindBar = class {
     for (const node of this.canvas.nodes.values()) {
       node.nodeEl.removeClass("kanvas-board-find-match", "is-current");
     }
-    for (const node of nodes) node.nodeEl.addClass("kanvas-board-find-match");
+    for (const node of nodes) {
+      node.nodeEl.addClass("kanvas-board-find-match");
+    }
     this.frame(nodes);
   }
   // Frames the query in the given cards (default: the same ones again) and
@@ -4767,7 +4921,9 @@ var FindBar = class {
       return node.contentEl || node.nodeEl;
     }
     this.observer.disconnect();
-    for (const node of this.framed) clearFrames(root(node));
+    for (const node of this.framed) {
+      clearFrames(root(node));
+    }
     this.framed = nodes;
     const query = this.input.value.trim();
     for (const node of nodes) {
@@ -4788,7 +4944,9 @@ var FindBar = class {
   // scroll the canvas itself.
   reveal(frame) {
     const box = frame.closest(".markdown-preview-view");
-    if (!box) return;
+    if (!box) {
+      return;
+    }
     const frameBox = frame.getBoundingClientRect(), view = box.getBoundingClientRect();
     const zoom = view.height / box.offsetHeight || 1;
     box.scrollTop += (frameBox.top - view.top) / zoom - box.clientHeight / 2;
@@ -4801,7 +4959,9 @@ var FindBar = class {
     );
     this.field.toggleClass("mod-no-match", !!query && !this.matches.length);
     const node = this.matches[this.index];
-    if (!node) return;
+    if (!node) {
+      return;
+    }
     for (const matchNode of this.matches) {
       matchNode.nodeEl.toggleClass("is-current", matchNode === node);
     }
@@ -4895,7 +5055,9 @@ var FilterPane = class {
   tags() {
     const tags = /* @__PURE__ */ new Set();
     for (const node of this.canvas.nodes.values()) {
-      for (const tag of this.plugin.cardTagSet(node)) tags.add(tag);
+      for (const tag of this.plugin.cardTagSet(node)) {
+        tags.add(tag);
+      }
     }
     return tags;
   }
@@ -4909,7 +5071,9 @@ var FilterPane = class {
     const counts = {};
     for (const node of this.canvas.nodes.values()) {
       const data = node.getData();
-      if (data.type === "group") continue;
+      if (data.type === "group") {
+        continue;
+      }
       counts[data.color || ""] = (counts[data.color || ""] || 0) + 1;
     }
     return counts;
@@ -4923,7 +5087,9 @@ var FilterPane = class {
     const isActive = plugin.filtering(plugin.peekViewState(canvas)) || folds.size > 0;
     this.badge.setText(isActive ? plugin.viewLabel(canvas) : "");
     this.badge.toggle(!this.isOpen && isActive);
-    if (!this.isOpen) return;
+    if (!this.isOpen) {
+      return;
+    }
     const state = plugin.viewState(canvas);
     const tags = [.../* @__PURE__ */ new Set([...this.tags(), ...state.xtags])].sort();
     const foldedCards = [...folds.keys()].map((id) => canvas.nodes.get(id)).filter(Boolean).map((node) => [node.getData().color, plugin.cardText(node)]);
@@ -4936,15 +5102,20 @@ var FilterPane = class {
       foldedCards,
       state.hidden.size
     ]);
-    if (key === this.key) return;
+    if (key === this.key) {
+      return;
+    }
     this.key = key;
     this.renderColors(state, counts);
     this.renderTags(state, tags);
     this.renderFolds(folds);
   }
   toggleIn(set, value) {
-    if (set.has(value)) set.delete(value);
-    else set.add(value);
+    if (set.has(value)) {
+      set.delete(value);
+    } else {
+      set.add(value);
+    }
     this.plugin.refreshView(this.canvas);
   }
   selectWhere(keep) {
@@ -5003,7 +5174,9 @@ var FilterPane = class {
     this.foldedSection.toggle(folds.size > 0);
     for (const [id, direction] of folds) {
       const node = this.canvas.nodes.get(id);
-      if (node) this.renderFoldRow(node, direction);
+      if (node) {
+        this.renderFoldRow(node, direction);
+      }
     }
   }
   // Color dot, first line as title, the rest muted below, and how many cards
@@ -5057,7 +5230,9 @@ function branchLevelsFrom(links, root) {
   let level = [root];
   while (level.length) {
     level = level.flatMap((id) => links.get(id) || []).filter(isNew);
-    if (level.length) levels.push(level);
+    if (level.length) {
+      levels.push(level);
+    }
   }
   return levels;
 }
@@ -5081,9 +5256,13 @@ function registerColorCommands(plugin) {
       name: plugin.colorCommandName(name),
       checkCallback: (checking) => {
         const canvas = plugin.activeCanvas();
-        if (!canvas || canvas.selection.size === 0) return false;
+        if (!canvas || canvas.selection.size === 0) {
+          return false;
+        }
         if (!checking) {
-          for (const node of canvas.selection) node.setColor(color);
+          for (const node of canvas.selection) {
+            node.setColor(color);
+          }
           canvas.requestSave();
         }
         return true;
@@ -5097,7 +5276,9 @@ function registerTidyCommands(plugin) {
     name: "Tidy layout (selected cards)",
     checkCallback: (checking) => {
       const canvas = plugin.activeCanvas();
-      if (!canvas) return false;
+      if (!canvas) {
+        return false;
+      }
       if (!checking) {
         if (canvas.selection.size < 2) {
           new import_obsidian3.Notice(
@@ -5131,8 +5312,12 @@ function registerTidyCommands(plugin) {
       id: `tidy-direction-${direction.toLowerCase()}`,
       name: `Tidy layout direction: ${name}`,
       checkCallback: (checking) => {
-        if (plugin.settings.layoutDirection === direction) return false;
-        if (!checking) plugin.setLayoutDirection(direction);
+        if (plugin.settings.layoutDirection === direction) {
+          return false;
+        }
+        if (!checking) {
+          plugin.setLayoutDirection(direction);
+        }
         return true;
       }
     });
@@ -5237,7 +5422,9 @@ function registerExtractCommand(plugin) {
       run: (canvas, [node]) => {
         const editor = plugin.cardEditor(node);
         const part = editor.getSelection();
-        if (!part.trim()) throw new Error("select some text in the card first");
+        if (!part.trim()) {
+          throw new Error("select some text in the card first");
+        }
         const from = editor.posToOffset(editor.getCursor("from"));
         const before = editor.getValue();
         editor.replaceSelection("");
@@ -5246,7 +5433,9 @@ function registerExtractCommand(plugin) {
         const savedNode = canvasData.nodes.find(
           (savedCard) => savedCard.id === node.id
         );
-        if (savedNode) savedNode.text = before;
+        if (savedNode) {
+          savedNode.text = before;
+        }
         plugin.edit(
           canvas,
           plugin.boardLibrary.extractOps(canvasData, {
@@ -5350,7 +5539,9 @@ function registerFoldDirectionCommands(plugin) {
       id: `fold-direction-${direction}`,
       name: `Fold direction: ${label}`,
       checkCallback: (checking) => {
-        if (plugin.settings.foldDirection === direction) return false;
+        if (plugin.settings.foldDirection === direction) {
+          return false;
+        }
         if (!checking) {
           plugin.settings.foldDirection = direction;
           plugin.saveData(plugin.settings);
@@ -5473,7 +5664,9 @@ function registerTemplateInsertCommand(plugin) {
     name: "Insert cards from template",
     checkCallback: (checking) => {
       const canvas = plugin.activeCanvas();
-      if (!canvas) return false;
+      if (!canvas) {
+        return false;
+      }
       if (!checking) {
         const files = templateFiles(plugin);
         if (!files.length) {
@@ -5499,7 +5692,9 @@ function registerViewCommands(plugin) {
     name: "Search current canvas",
     checkCallback: (checking) => {
       const canvas = plugin.activeCanvas();
-      if (!canvas) return false;
+      if (!canvas) {
+        return false;
+      }
       if (!checking) {
         let findBar = plugin.finds.get(canvas);
         if (!findBar) {
@@ -5516,8 +5711,12 @@ function registerViewCommands(plugin) {
     name: "Toggle filter pane",
     checkCallback: (checking) => {
       const canvas = plugin.activeCanvas();
-      if (!canvas) return false;
-      if (!checking) plugin.pane(canvas).toggle();
+      if (!canvas) {
+        return false;
+      }
+      if (!checking) {
+        plugin.pane(canvas).toggle();
+      }
       return true;
     }
   });
@@ -5526,8 +5725,12 @@ function registerViewCommands(plugin) {
     name: "Unhide all",
     checkCallback: (checking) => {
       const canvas = plugin.activeCanvas();
-      if (!canvas || !plugin.viewLabel(canvas)) return false;
-      if (!checking) plugin.showAll(canvas);
+      if (!canvas || !plugin.viewLabel(canvas)) {
+        return false;
+      }
+      if (!checking) {
+        plugin.showAll(canvas);
+      }
       return true;
     }
   });
@@ -5538,7 +5741,9 @@ function registerRestoreCommands(plugin) {
     name: "Restore archived card (from its archive note)",
     checkCallback: (checking) => {
       const file = plugin.app.workspace.getActiveFile();
-      if (!isArchiveNote(plugin.app, file)) return false;
+      if (!isArchiveNote(plugin.app, file)) {
+        return false;
+      }
       if (!checking) {
         plugin.restore(file).catch((error) => new import_obsidian3.Notice(`Kanvas board: ${error.message}`));
       }
@@ -5600,7 +5805,9 @@ function registerContextMenus(plugin) {
       const node = canvas && [...canvas.selection].find(
         (each) => each.isEditing && plugin.cardEditor(each) === editor
       );
-      if (node) plugin.addActionItems(menu, canvas, [node]);
+      if (node) {
+        plugin.addActionItems(menu, canvas, [node]);
+      }
     })
   );
 }
@@ -5675,7 +5882,9 @@ function firstStepsCanvas() {
     const step = card(text, row);
     const above = steps[steps.length - 1];
     steps.push(step);
-    if (!above) continue;
+    if (!above) {
+      continue;
+    }
     edges.push({
       id: newId(),
       fromNode: above.id,
@@ -5716,12 +5925,16 @@ ${meaning}`,
   return [group, ...cards];
 }
 function starterBoardPath(vault, defaultBoard) {
-  if (!vault.getAbstractFileByPath(defaultBoard)) return defaultBoard;
+  if (!vault.getAbstractFileByPath(defaultBoard)) {
+    return defaultBoard;
+  }
   const parent = import_path5.default.posix.dirname(defaultBoard);
   const folder = parent === "." ? "" : `${parent}/`;
   for (let suffix = 1; ; suffix++) {
     const board = `${folder}Starter board${suffix > 1 ? ` ${suffix}` : ""}.canvas`;
-    if (!vault.getAbstractFileByPath(board)) return board;
+    if (!vault.getAbstractFileByPath(board)) {
+      return board;
+    }
   }
 }
 async function createStarterBoard(plugin) {
@@ -5756,7 +5969,9 @@ var import_fs3 = __toESM(require("fs"), 1);
 var import_os = __toESM(require("os"), 1);
 var import_path6 = __toESM(require("path"), 1);
 function claudeBin(setting) {
-  if (setting) return setting;
+  if (setting) {
+    return setting;
+  }
   const local = import_path6.default.join(
     import_os.default.homedir(),
     ".local",
@@ -5767,7 +5982,9 @@ function claudeBin(setting) {
 }
 function agentWords(setting, prompt) {
   const template = String(setting || "").trim();
-  if (!template) return [claudeBin(""), prompt];
+  if (!template) {
+    return [claudeBin(""), prompt];
+  }
   const words = (template.match(/"[^"]*"|\S+/g) || []).map(
     (word) => word.replace(/^"|"$/g, "")
   );
@@ -5816,11 +6033,15 @@ function defaultLaunch({ vault, board, agent }) {
   return found ? [found[0], found[1](vault, agent)] : null;
 }
 function terminalLaunch(template, { vault, board, agent }) {
-  if (!template) return defaultLaunch({ vault, board, agent });
+  if (!template) {
+    return defaultLaunch({ vault, board, agent });
+  }
   const values = { vault, board };
   const words = (template.match(/"[^"]*"|\S+/g) || []).flatMap((word) => {
     const bare = word.replace(/^"|"$/g, "");
-    if (bare === "{agent}" || bare === "{claude}") return agent;
+    if (bare === "{agent}" || bare === "{claude}") {
+      return agent;
+    }
     return [bare.replace(/\{(vault|board)\}/g, (match, name) => values[name])];
   });
   const [command, ...commandArguments] = words;
@@ -5941,7 +6162,9 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
         const tab = this.app.setting.activeTab;
         if (tab && tab.searchComponent) {
           tab.searchComponent.setValue(this.plugin.manifest.name);
-          if (tab.setQuery) tab.setQuery(this.plugin.manifest.name);
+          if (tab.setQuery) {
+            tab.setQuery(this.plugin.manifest.name);
+          }
         }
       })
     );
@@ -6024,8 +6247,11 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
       } else {
         row.addToggle(
           (component) => component.setTooltip("Triggers the agent").setValue(goColors.has(colorNumber)).onChange(async (isOn) => {
-            if (isOn) goColors.add(colorNumber);
-            else goColors.delete(colorNumber);
+            if (isOn) {
+              goColors.add(colorNumber);
+            } else {
+              goColors.delete(colorNumber);
+            }
             this.plugin.settings.passColors = WORKFLOW.map(
               ([colorName]) => colorName
             ).filter((colorName) => goColors.has(COLOR_NUM[colorName])).join(" ");
@@ -6155,7 +6381,9 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
       component.setValue(String(apmSettings.windowMinutes));
       component.inputEl.addEventListener("change", async () => {
         const minutes = Number(component.getValue());
-        if (!(minutes > 0) || minutes === apmSettings.windowMinutes) return;
+        if (!(minutes > 0) || minutes === apmSettings.windowMinutes) {
+          return;
+        }
         await apm.setWindow(minutes);
         this.display();
       });
@@ -6179,7 +6407,9 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
     ).addText(
       (component) => component.setValue(String(apmSettings.idleMinutes)).onChange(async (value) => {
         const minutes = Number(value);
-        if (!(minutes > 0)) return;
+        if (!(minutes > 0)) {
+          return;
+        }
         apmSettings.idleMinutes = minutes;
         await this.plugin.saveData(this.plugin.settings);
         apm.refresh();
@@ -6237,7 +6467,9 @@ var BoardView = class {
   // Filter state of an open canvas, made on first use.
   viewState(canvas) {
     const existing = this.views.get(canvas);
-    if (existing) return existing;
+    if (existing) {
+      return existing;
+    }
     const state = emptyViewState();
     this.views.set(canvas, state);
     const plugin = this;
@@ -6275,7 +6507,9 @@ var BoardView = class {
     const folds = this.folds(canvas);
     if (folds.size) {
       this.setFolds(canvas, new Map([...folds.keys()].map((id) => [id, null])));
-    } else this.refreshView(canvas);
+    } else {
+      this.refreshView(canvas);
+    }
   }
   // A fold is stored on the card as "canvasBoard": {"folded": "in" | "out"}
   // (the fold direction). JSON Canvas 1.0 has no such field; other readers
@@ -6288,23 +6522,35 @@ var BoardView = class {
     const folds = /* @__PURE__ */ new Map();
     for (const node of canvas.nodes.values()) {
       const direction = this.foldOf(node);
-      if (direction) folds.set(node.id, direction);
+      if (direction) {
+        folds.set(node.id, direction);
+      }
     }
     return folds;
   }
   // `changes`: card id → direction to fold, or null to unfold. One canvas edit,
   // one undo step.
   setFolds(canvas, changes) {
-    if (!changes.size) return;
+    if (!changes.size) {
+      return;
+    }
     const canvasData = canvas.getData();
     for (const node of canvasData.nodes) {
-      if (!changes.has(node.id)) continue;
+      if (!changes.has(node.id)) {
+        continue;
+      }
       const boardData = { ...node.canvasBoard || {} };
       const direction = changes.get(node.id);
-      if (direction) boardData.folded = direction;
-      else delete boardData.folded;
-      if (Object.keys(boardData).length) node.canvasBoard = boardData;
-      else delete node.canvasBoard;
+      if (direction) {
+        boardData.folded = direction;
+      } else {
+        delete boardData.folded;
+      }
+      if (Object.keys(boardData).length) {
+        node.canvasBoard = boardData;
+      } else {
+        delete node.canvasBoard;
+      }
     }
     this.edit(canvas, [], canvasData);
     this.refreshView(canvas);
@@ -6338,8 +6584,12 @@ var BoardView = class {
   // another fold), so pressing unfold again opens the next level.
   unfoldTargets(canvas, id) {
     const node = canvas.nodes.get(id);
-    if (!node) return [];
-    if (this.foldOf(node)) return [id];
+    if (!node) {
+      return [];
+    }
+    if (this.foldOf(node)) {
+      return [id];
+    }
     const links = this.branchLinks(canvas, this.settings.foldDirection);
     const isFolded = (each) => {
       const eachNode = canvas.nodes.get(each);
@@ -6365,7 +6615,9 @@ var BoardView = class {
     for (const id of ids) {
       const node = canvas.nodes.get(id);
       const direction = node && this.foldOf(node);
-      if (!direction) continue;
+      if (!direction) {
+        continue;
+      }
       changes.set(id, null);
       const below = this.branchLevels(canvas, id, direction);
       const links = this.branchLinks(canvas, direction);
@@ -6373,7 +6625,9 @@ var BoardView = class {
       const leadingFurther = lastShown.filter(
         (each) => (links.get(each) || []).length
       );
-      for (const each of leadingFurther) changes.set(each, direction);
+      for (const each of leadingFurther) {
+        changes.set(each, direction);
+      }
     }
     this.setFolds(canvas, changes);
   }
@@ -6384,15 +6638,21 @@ var BoardView = class {
     for (const match of (node.getData().text || "").matchAll(
       /(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g
     )) {
-      if (!/^\d+$/.test(match[1])) tags.add(match[1]);
+      if (!/^\d+$/.test(match[1])) {
+        tags.add(match[1]);
+      }
     }
     return tags;
   }
   // Every color and tag shows by default; a hidden color, or any hidden tag,
   // hides the card.
   matches(node, state) {
-    if (state.xcolors.has(node.getData().color || "")) return false;
-    if (!state.xtags.size) return true;
+    if (state.xcolors.has(node.getData().color || "")) {
+      return false;
+    }
+    if (!state.xtags.size) {
+      return true;
+    }
     const tags = this.cardTagSet(node);
     return ![...state.xtags].some((tag) => tags.has(tag));
   }
@@ -6412,7 +6672,9 @@ var BoardView = class {
     for (const [root, direction] of this.folds(canvas)) {
       const below = this.branchLevels(canvas, root, direction).flat();
       folded.set(root, below.length);
-      for (const id of below) hidden.add(id);
+      for (const id of below) {
+        hidden.add(id);
+      }
     }
     state.hidden = hidden;
     this.paint(canvas, hidden, folded);
@@ -6420,16 +6682,24 @@ var BoardView = class {
       canvas.updateSelection(() => {
       });
     }
-    if (canvas === this.activeCanvas()) this.updateViewLabel(canvas);
+    if (canvas === this.activeCanvas()) {
+      this.updateViewLabel(canvas);
+    }
     const pane = this.panes.get(canvas);
-    if (pane) pane.update();
+    if (pane) {
+      pane.update();
+    }
   }
   hiddenByFilter(canvas, state) {
-    if (!this.filtering(state)) return [];
+    if (!this.filtering(state)) {
+      return [];
+    }
     return [...canvas.nodes.values()].filter((node) => node.getData().type !== "group").filter((node) => !this.matches(node, state)).map((node) => node.id);
   }
   hiddenByTagBranches(canvas, state) {
-    if (!state.xtags.size || !this.settings.hideTagBranches) return [];
+    if (!state.xtags.size || !this.settings.hideTagBranches) {
+      return [];
+    }
     function isCard(id) {
       return canvas.nodes.get(id) && canvas.nodes.get(id).getData().type !== "group";
     }
@@ -6465,7 +6735,9 @@ var BoardView = class {
   paintFoldBadge(canvas, node, count) {
     let badge = node.nodeEl.querySelector(":scope > .kanvas-board-folded");
     if (count === void 0) {
-      if (badge) badge.remove();
+      if (badge) {
+        badge.remove();
+      }
       return;
     }
     if (!badge) {
@@ -6502,13 +6774,17 @@ var BoardView = class {
   noteAgeDays(nodeData, board) {
     const match = nodeData.type === "text" && /\[\[([^\]|#]+)/.exec(nodeData.text || "");
     const file = nodeData.type === "file" ? this.app.vault.getAbstractFileByPath(nodeData.file) : match && this.app.metadataCache.getFirstLinkpathDest(match[1].trim(), board);
-    if (!file || !file.stat) return -1;
+    if (!file || !file.stat) {
+      return -1;
+    }
     return Math.floor((Date.now() - file.stat.mtime) / 864e5);
   }
   paintStaleBadge(node, { age, days }) {
     let badge = node.nodeEl.querySelector(":scope > .kanvas-board-stale");
     if (age < days || age < 0) {
-      if (badge) badge.remove();
+      if (badge) {
+        badge.remove();
+      }
       return;
     }
     if (!badge) {
@@ -6523,7 +6799,9 @@ var BoardView = class {
       badge.createSpan({ cls: "kanvas-board-stale-text" });
     }
     const label = age < 1 ? "today" : `${age}d`;
-    if (badge.dataset.age === label) return;
+    if (badge.dataset.age === label) {
+      return;
+    }
     badge.dataset.age = label;
     badge.querySelector(".kanvas-board-stale-text").setText(label);
     const unit = `day${age === 1 ? "" : "s"}`;
@@ -6557,7 +6835,9 @@ var BoardView = class {
 };
 function mixBoardView(targetClass) {
   for (const name of Object.getOwnPropertyNames(BoardView.prototype)) {
-    if (name === "constructor") continue;
+    if (name === "constructor") {
+      continue;
+    }
     const descriptor = Object.getOwnPropertyDescriptor(
       BoardView.prototype,
       name
@@ -6594,7 +6874,9 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
     this.panes = /* @__PURE__ */ new Map();
     this.finds = /* @__PURE__ */ new Map();
     this.actions = [];
-    for (const register of commands) register(this);
+    for (const register of commands) {
+      register(this);
+    }
     this.startStatusBar();
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", () => this.tick())
@@ -6615,8 +6897,12 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
       name,
       checkCallback: (checking) => {
         const canvas = this.activeCanvas();
-        if (!canvas || !test(canvas, [...canvas.selection])) return false;
-        if (!checking) this.runAction(run, canvas, [...canvas.selection]);
+        if (!canvas || !test(canvas, [...canvas.selection])) {
+          return false;
+        }
+        if (!checking) {
+          this.runAction(run, canvas, [...canvas.selection]);
+        }
         return true;
       }
     });
@@ -6644,7 +6930,9 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
     );
     canvas.updateSelection(() => {
       canvas.selection.clear();
-      for (const node of [...selection, ...added]) canvas.selection.add(node);
+      for (const node of [...selection, ...added]) {
+        canvas.selection.add(node);
+      }
     });
     return added.length;
   }
@@ -6657,7 +6945,9 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
     this.viewEl.addClass("mod-clickable");
     this.viewEl.onClickEvent(() => {
       const canvas = this.activeCanvas();
-      if (canvas) this.pane(canvas).toggle(true);
+      if (canvas) {
+        this.pane(canvas).toggle(true);
+      }
     });
   }
   // Cards that come into view or are added get the classes again. Every open
@@ -6667,7 +6957,9 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
     const open = /* @__PURE__ */ new Set();
     for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
       const canvas = leaf.view.canvas;
-      if (!canvas || !canvas.wrapperEl) continue;
+      if (!canvas || !canvas.wrapperEl) {
+        continue;
+      }
       open.add(canvas);
       this.decorate(leaf.view);
       this.refreshView(canvas);
@@ -6691,7 +6983,9 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
       const canvas = leaf.view.canvas;
       this.undecorate(leaf.view);
-      if (!this.views.has(canvas)) continue;
+      if (!this.views.has(canvas)) {
+        continue;
+      }
       delete canvas.updateSelection;
       delete canvas.applyHistory;
       this.paint(canvas, /* @__PURE__ */ new Set(), /* @__PURE__ */ new Map());
@@ -6714,8 +7008,11 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
     const labels = this.settings.colorLabels = {
       ...this.settings.colorLabels
     };
-    if (label) labels[name] = label;
-    else delete labels[name];
+    if (label) {
+      labels[name] = label;
+    } else {
+      delete labels[name];
+    }
     await this.saveData(this.settings);
     const row = COLORS2.find((colorRow) => colorRow[0] === name);
     const colorCommand = this.app.commands && this.app.commands.commands[`${this.manifest.id}:color-${row[2]}`];
@@ -6723,7 +7020,9 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
     if (colorCommand) {
       colorCommand.name = `${this.manifest.name}: ${commandName}`;
     }
-    for (const canvas of this.panes.keys()) this.refreshView(canvas);
+    for (const canvas of this.panes.keys()) {
+      this.refreshView(canvas);
+    }
   }
   // Hotkey of a plugin command as Obsidian prints it ("Alt + ↑"), or ''.
   hotkey(id) {
@@ -6744,7 +7043,9 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
   // Menu item title with its key, muted, after the label.
   keyedTitle(label, id) {
     const hotkey = this.hotkey(id);
-    if (!hotkey) return label;
+    if (!hotkey) {
+      return label;
+    }
     return createFragment((fragment) => {
       fragment.appendText(label);
       fragment.createSpan({ cls: "kanvas-board-key", text: hotkey });
@@ -6771,7 +7072,9 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
         canvas.undo();
         for (const filePath of files) {
           const file = this.app.vault.getAbstractFileByPath(filePath);
-          if (file) await this.app.fileManager.trashFile(file);
+          if (file) {
+            await this.app.fileManager.trashFile(file);
+          }
         }
         if (restore && !this.app.vault.getAbstractFileByPath(restore.path)) {
           await this.app.vault.create(restore.path, restore.content);
@@ -6837,7 +7140,9 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
   decorate(view) {
     this.decorateHeader(view);
     const controls = view.canvas.wrapperEl && view.canvas.wrapperEl.querySelector(".canvas-controls");
-    if (controls) this.decorateControls(view, controls);
+    if (controls) {
+      this.decorateControls(view, controls);
+    }
     this.decorateSelectionToolbar(view.canvas);
   }
   // View header: Run pass, a command about the whole board.
@@ -6849,7 +7154,9 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
         () => this.runPass()
       );
     }
-    if (!view.canvasBoardAction) return;
+    if (!view.canvasBoardAction) {
+      return;
+    }
     view.canvasBoardAction.setAttr(
       "aria-label",
       this.keyedLabel("Run pass", "run-pass")
@@ -6865,7 +7172,9 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
       );
     }
     const tidy = group.querySelector('[data-command="tidy-layout"]');
-    if (tidy) this.decorateTidyButton(tidy);
+    if (tidy) {
+      this.decorateTidyButton(tidy);
+    }
   }
   addControlGroup(view, controls) {
     const group = createDiv({
@@ -6884,8 +7193,11 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
       (0, import_obsidian8.setIcon)(button, icon);
       button.addEventListener("click", (event) => {
         const isNextDirection = id === "tidy-layout" && event.shiftKey;
-        if (isNextDirection) this.cycleLayoutDirection();
-        else this.runOn(view, id);
+        if (isNextDirection) {
+          this.cycleLayoutDirection();
+        } else {
+          this.runOn(view, id);
+        }
       });
     }
     return group;
@@ -6910,7 +7222,9 @@ Shift-click: next direction`,
   // when they apply.
   decorateSelectionToolbar(canvas) {
     const menu = canvas.menu;
-    if (!menu || !menu.render || menu.canvasBoardRender) return;
+    if (!menu || !menu.render || menu.canvasBoardRender) {
+      return;
+    }
     const original = menu.canvasBoardRender = menu.render;
     const plugin = this;
     menu.render = function(...values) {
@@ -6937,7 +7251,9 @@ Shift-click: next direction`,
     for (const item of swatches) {
       const color = (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || "";
       const row = COLORS2.find((colorRow) => colorRow[1] === color);
-      if (!row) continue;
+      if (!row) {
+        continue;
+      }
       item.setAttrs({
         "aria-label": this.keyedLabel(
           this.colorLabel(row[0]),
@@ -6955,7 +7271,9 @@ Shift-click: next direction`,
     }
     for (const id of ["fold", "unfold", "archive"]) {
       const action = this.actions.find((candidate) => candidate.id === id);
-      if (!action || !action.test(canvas, selection)) continue;
+      if (!action || !action.test(canvas, selection)) {
+        continue;
+      }
       const button = element.createEl("button", {
         cls: "clickable-icon kanvas-board-menu-btn",
         attr: {
@@ -7008,7 +7326,9 @@ Shift-click: next direction`,
     const added = operations.filter((operation) => operation.op === "add").map((operation) => canvas.nodes.get(operation.node.id)).filter(Boolean);
     canvas.updateSelection(() => {
       canvas.selection.clear();
-      for (const node of added) canvas.selection.add(node);
+      for (const node of added) {
+        canvas.selection.add(node);
+      }
     });
   }
   updateCount() {
@@ -7044,7 +7364,9 @@ Shift-click: next direction`,
       text: `${cards.length} cards`,
       cls: isOverLimit ? "kanvas-board-over" : ""
     });
-    if (selectedCount) this.countEl.appendText(` \xB7 ${selectedCount} selected`);
+    if (selectedCount) {
+      this.countEl.appendText(` \xB7 ${selectedCount} selected`);
+    }
     this.countEl.setAttr(
       "aria-label",
       (isOverLimit ? `over ${max} \xB7 ` : "") + Object.entries(byColor).map(([colorName, count]) => `${colorName} ${count}`).join(" \xB7 ")
@@ -7054,7 +7376,9 @@ Shift-click: next direction`,
   }
   // Before "Agent command", the setting only held the Claude Code binary.
   migrateClaudePath() {
-    if (!("claudePath" in this.settings)) return;
+    if (!("claudePath" in this.settings)) {
+      return;
+    }
     if (this.settings.claudePath && !this.settings.agentCommand) {
       this.settings.agentCommand = `"${this.settings.claudePath}"`;
     }
@@ -7077,9 +7401,13 @@ Shift-click: next direction`,
   }
   installSkill(pluginDir) {
     try {
-      if (import_fs5.default.existsSync(this.skillPath())) return;
+      if (import_fs5.default.existsSync(this.skillPath())) {
+        return;
+      }
       const legacy = this.legacySkillPath();
-      if (legacy) return import_fs5.default.copyFileSync(legacy, this.skillPath());
+      if (legacy) {
+        return import_fs5.default.copyFileSync(legacy, this.skillPath());
+      }
       this.copySkill(pluginDir);
     } catch (error) {
       console.error("kanvas-board: skill sync failed", error);
@@ -7137,7 +7465,9 @@ Shift-click: next direction`,
     for (let attempt = 1; ; attempt++) {
       const suffix = attempt > 1 ? ` ${attempt}` : "";
       const candidate = `${folder}${name}${suffix}${extension}`;
-      if (!this.app.vault.getAbstractFileByPath(candidate)) return candidate;
+      if (!this.app.vault.getAbstractFileByPath(candidate)) {
+        return candidate;
+      }
     }
   }
   subcanvasLinks(file, canvas, skipId) {
@@ -7157,7 +7487,9 @@ Shift-click: next direction`,
   linkedCanvas(node) {
     const nodeData = node.getData();
     const target = nodeData.type === "file" ? nodeData.file : ((nodeData.text || "").match(/\[\[([^\]|#]+\.canvas)/) || [])[1];
-    if (!target || !target.endsWith(".canvas")) return null;
+    if (!target || !target.endsWith(".canvas")) {
+      return null;
+    }
     return this.app.vault.getAbstractFileByPath(target) || this.app.metadataCache.getFirstLinkpathDest(target.trim(), "");
   }
   cardEditor(node) {
@@ -7181,7 +7513,9 @@ Shift-click: next direction`,
       source
     );
     const file = this.app.vault.getAbstractFileByPath(board) || this.app.metadataCache.getFirstLinkpathDest(board, note.path);
-    if (!file) throw new Error(`board ${board} not found`);
+    if (!file) {
+      throw new Error(`board ${board} not found`);
+    }
     const canvas = this.openCanvas(file.path);
     if (canvas) {
       this.edit(
@@ -7224,7 +7558,9 @@ Shift-click: next direction`,
     }
     const open = this.openCanvas(board);
     const nodes = open ? open.getData().nodes : await read(board);
-    if (nodes.some(isGo)) return true;
+    if (nodes.some(isGo)) {
+      return true;
+    }
     const linkedCanvases = nodes.flatMap((node) => [
       ...(node.text || "").matchAll(/\[\[([^\]|#]+\.canvas)/g)
     ]);
@@ -7233,7 +7569,9 @@ Shift-click: next direction`,
         match[1].trim(),
         board
       );
-      if (linkedFile && (await read(linkedFile.path)).some(isGo)) return true;
+      if (linkedFile && (await read(linkedFile.path)).some(isGo)) {
+        return true;
+      }
     }
     return false;
   }
@@ -7242,7 +7580,9 @@ Shift-click: next direction`,
     const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
     const board = view && view.getViewType() === "canvas" && view.file ? view.file.path : this.settings.defaultBoard;
     const goColorSet = parseColors(this.settings.passColors);
-    if (!goColorSet.size) return this.noticeNoGoColor();
+    if (!goColorSet.size) {
+      return this.noticeNoGoColor();
+    }
     if (!await this.hasGoCards(board, goColorSet)) {
       const names = Object.keys(COLOR_NUM).filter(
         (colorName) => goColorSet.has(COLOR_NUM[colorName])

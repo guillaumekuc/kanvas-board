@@ -33,10 +33,14 @@ function frameText(root, query) {
   const ownerDocument = root.ownerDocument;
   const walker = ownerDocument.createTreeWalker(root, 4); // text nodes
   const texts = [];
-  while (walker.nextNode()) texts.push(walker.currentNode);
+  while (walker.nextNode()) {
+    texts.push(walker.currentNode);
+  }
   const frames = [];
   for (const node of texts) {
-    if (node.parentElement.closest('.cm-editor, input, textarea')) continue;
+    if (node.parentElement.closest('.cm-editor, input, textarea')) {
+      continue;
+    }
     const here = [];
     // from the end, so the offsets before stay valid
     for (const offset of matchOffsets(node.data, query).reverse()) {
@@ -149,7 +153,9 @@ class FindBar {
     this.element.show();
     this.input.focus();
     this.input.select();
-    if (this.input.value) this.search();
+    if (this.input.value) {
+      this.search();
+    }
   }
 
   close() {
@@ -172,7 +178,9 @@ class FindBar {
   }
 
   step(step) {
-    if (!this.matches.length) return;
+    if (!this.matches.length) {
+      return;
+    }
     this.index =
       (this.index + step + this.matches.length) % this.matches.length;
     this.show();
@@ -182,15 +190,21 @@ class FindBar {
   // goes back to one at a time.
   selectAll() {
     const { canvas, plugin, matches } = this;
-    if (!matches.length) return;
+    if (!matches.length) {
+      return;
+    }
     if (matches.some((node) => plugin.isHidden(canvas, node))) {
       plugin.showAll(canvas);
       new Notice('Kanvas board: filter and folds cleared to show the cards');
     }
-    for (const node of matches) node.nodeEl.addClass('is-current');
+    for (const node of matches) {
+      node.nodeEl.addClass('is-current');
+    }
     canvas.updateSelection(() => {
       canvas.selection.clear();
-      for (const node of matches) canvas.selection.add(node);
+      for (const node of matches) {
+        canvas.selection.add(node);
+      }
     });
     canvas.zoomToSelection();
     this.countEl.setText(`all ${matches.length}`);
@@ -201,7 +215,9 @@ class FindBar {
     for (const node of this.canvas.nodes.values()) {
       node.nodeEl.removeClass('kanvas-board-find-match', 'is-current');
     }
-    for (const node of nodes) node.nodeEl.addClass('kanvas-board-find-match');
+    for (const node of nodes) {
+      node.nodeEl.addClass('kanvas-board-find-match');
+    }
     this.frame(nodes);
   }
 
@@ -213,7 +229,9 @@ class FindBar {
       return node.contentEl || node.nodeEl;
     }
     this.observer.disconnect();
-    for (const node of this.framed) clearFrames(root(node));
+    for (const node of this.framed) {
+      clearFrames(root(node));
+    }
     this.framed = nodes;
     const query = this.input.value.trim();
     for (const node of nodes) {
@@ -235,7 +253,9 @@ class FindBar {
   // scroll the canvas itself.
   reveal(frame) {
     const box = frame.closest('.markdown-preview-view');
-    if (!box) return;
+    if (!box) {
+      return;
+    }
     const frameBox = frame.getBoundingClientRect(),
       view = box.getBoundingClientRect();
     // on-screen sizes are scaled by the canvas zoom, scrollTop is not
@@ -255,7 +275,9 @@ class FindBar {
     );
     this.field.toggleClass('mod-no-match', !!query && !this.matches.length);
     const node = this.matches[this.index];
-    if (!node) return;
+    if (!node) {
+      return;
+    }
     for (const matchNode of this.matches) {
       matchNode.nodeEl.toggleClass('is-current', matchNode === node);
     }
@@ -361,7 +383,9 @@ class FilterPane {
   tags() {
     const tags = new Set();
     for (const node of this.canvas.nodes.values()) {
-      for (const tag of this.plugin.cardTagSet(node)) tags.add(tag);
+      for (const tag of this.plugin.cardTagSet(node)) {
+        tags.add(tag);
+      }
     }
     return tags;
   }
@@ -377,7 +401,9 @@ class FilterPane {
     const counts = {};
     for (const node of this.canvas.nodes.values()) {
       const data = node.getData();
-      if (data.type === 'group') continue;
+      if (data.type === 'group') {
+        continue;
+      }
       counts[data.color || ''] = (counts[data.color || ''] || 0) + 1;
     }
     return counts;
@@ -393,7 +419,9 @@ class FilterPane {
       plugin.filtering(plugin.peekViewState(canvas)) || folds.size > 0;
     this.badge.setText(isActive ? plugin.viewLabel(canvas) : '');
     this.badge.toggle(!this.isOpen && isActive);
-    if (!this.isOpen) return;
+    if (!this.isOpen) {
+      return;
+    }
     const state = plugin.viewState(canvas);
     // A hidden tag stays listed, to show it again.
     const tags = [...new Set([...this.tags(), ...state.xtags])].sort();
@@ -410,7 +438,9 @@ class FilterPane {
       foldedCards,
       state.hidden.size,
     ]);
-    if (key === this.key) return;
+    if (key === this.key) {
+      return;
+    }
     this.key = key;
     this.renderColors(state, counts);
     this.renderTags(state, tags);
@@ -418,8 +448,11 @@ class FilterPane {
   }
 
   toggleIn(set, value) {
-    if (set.has(value)) set.delete(value);
-    else set.add(value);
+    if (set.has(value)) {
+      set.delete(value);
+    } else {
+      set.add(value);
+    }
     this.plugin.refreshView(this.canvas);
   }
 
@@ -486,7 +519,9 @@ class FilterPane {
     this.foldedSection.toggle(folds.size > 0);
     for (const [id, direction] of folds) {
       const node = this.canvas.nodes.get(id);
-      if (node) this.renderFoldRow(node, direction);
+      if (node) {
+        this.renderFoldRow(node, direction);
+      }
     }
   }
 
@@ -547,7 +582,9 @@ function branchLevelsFrom(links, root) {
   let level = [root];
   while (level.length) {
     level = level.flatMap((id) => links.get(id) || []).filter(isNew);
-    if (level.length) levels.push(level);
+    if (level.length) {
+      levels.push(level);
+    }
   }
   return levels;
 }

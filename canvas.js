@@ -3235,14 +3235,19 @@ var VaultFileIndex = class {
     });
     for (const entry of entries) {
       const relativePath = import_path.default.posix.join(folder, entry.name);
-      if (!entry.isDirectory()) this.add(relativePath, entry.name);
-      else if (!this.skipped.has(entry.name)) this.walk(relativePath);
+      if (!entry.isDirectory()) {
+        this.add(relativePath, entry.name);
+      } else if (!this.skipped.has(entry.name)) {
+        this.walk(relativePath);
+      }
     }
   }
   // The first file found keeps a name shared by several.
   add(relativePath, name2) {
     const key = name2.endsWith(".md") ? name2.slice(0, -3) : name2;
-    if (!this.files.has(key)) this.files.set(key, relativePath);
+    if (!this.files.has(key)) {
+      this.files.set(key, relativePath);
+    }
     this.files.set(relativePath, relativePath);
     this.files.set(relativePath.replace(/\.md$/, ""), relativePath);
   }
@@ -3281,7 +3286,9 @@ function tryEval(binary, code) {
       stdio: ["ignore", "pipe", "pipe"]
     });
     const match = out.match(/=>\s?([\s\S]*)$/);
-    if (!match) throw new Error(out.trim());
+    if (!match) {
+      throw new Error(out.trim());
+    }
     return match[1].trim();
   } catch (error) {
     return error.code === "ENOENT" ? NOT_INSTALLED : null;
@@ -3291,7 +3298,9 @@ tryEval.NOT_INSTALLED = NOT_INSTALLED;
 function obsidianEval(code) {
   for (const binary of OBSIDIAN) {
     const result = tryEval(binary, code);
-    if (result !== NOT_INSTALLED) return result;
+    if (result !== NOT_INSTALLED) {
+      return result;
+    }
   }
   return null;
 }
@@ -3342,14 +3351,21 @@ function retype(node, type, value) {
   return isRetyped;
 }
 function setColor(node, color) {
-  if (color) node.color = color;
-  else delete node.color;
+  if (color) {
+    node.color = color;
+  } else {
+    delete node.color;
+  }
 }
 var GEOMETRY = ["x", "y", "width", "height"];
 function setNode(canvasData, operation) {
   const node = canvasData.nodes.find((node2) => node2.id === operation.id);
-  if (!node) throw new Error("no node " + operation.id);
-  if (operation.color !== void 0) setColor(node, operation.color);
+  if (!node) {
+    throw new Error("no node " + operation.id);
+  }
+  if (operation.color !== void 0) {
+    setColor(node, operation.color);
+  }
   const retyped = [];
   if (operation.file !== void 0 && retype(node, "file", operation.file)) {
     retyped.push(node.id);
@@ -3358,14 +3374,20 @@ function setNode(canvasData, operation) {
     retyped.push(node.id);
   }
   for (const field of GEOMETRY) {
-    if (operation[field] !== void 0) node[field] = operation[field];
+    if (operation[field] !== void 0) {
+      node[field] = operation[field];
+    }
   }
   return retyped;
 }
 function updateEdge(canvasData, operation, fields) {
   const edge = canvasData.edges.find((edge2) => edge2.id === operation.id);
-  if (!edge) return;
-  for (const field of fields) edge[field] = operation[field];
+  if (!edge) {
+    return;
+  }
+  for (const field of fields) {
+    edge[field] = operation[field];
+  }
 }
 var handlers = {
   set: setNode,
@@ -3391,13 +3413,17 @@ function applyOps(canvasData, operations) {
   for (const operation of operations) {
     const handler = OPERATION_HANDLERS[operation.op];
     const retypedIds = handler ? handler(canvasData, operation) : null;
-    if (retypedIds) retyped.push(...retypedIds);
+    if (retypedIds) {
+      retyped.push(...retypedIds);
+    }
   }
   return retyped;
 }
 function writeOps(board, operations) {
   const out = api("apply", board, operations);
-  if (out === "obsidian") return "obsidian";
+  if (out === "obsidian") {
+    return "obsidian";
+  }
   if (out !== null && out !== "closed") {
     throw new Error(`Obsidian edit failed: ${out}`);
   }
@@ -3425,7 +3451,9 @@ function freePath(folder, name2, extension) {
       folder,
       `${name2}${attempt > 1 ? " " + attempt : ""}${extension}`
     );
-    if (!import_fs.default.existsSync(vaultPath(candidate))) return candidate;
+    if (!import_fs.default.existsSync(vaultPath(candidate))) {
+      return candidate;
+    }
   }
 }
 
@@ -3471,7 +3499,9 @@ function centeredFreeOffset(nodes, card, others) {
     y: Math.round(card.y + (card.height - box.height) / 2) - box.y
   };
   for (let step = 0; step < CENTERED_MAX_STEPS; step++) {
-    if (!overlapsAny(nodes, others, offset)) break;
+    if (!overlapsAny(nodes, others, offset)) {
+      break;
+    }
     offset.x += STEP;
   }
   return offset;
@@ -3530,7 +3560,9 @@ function nearestFreeOffset(placed, { moving, fixed, direction }) {
   const axis = ACROSS_ROWS.has(direction) ? "y" : "x";
   const offset = { ...center };
   for (let attempt = 1; attempt <= MAX_STEPS; attempt++) {
-    if (!overlapsAny(placed, fixed, offset)) break;
+    if (!overlapsAny(placed, fixed, offset)) {
+      break;
+    }
     const side = attempt % 2 ? 1 : -1;
     offset[axis] = center[axis] + side * Math.ceil(attempt / 2) * STEP;
   }
@@ -3538,7 +3570,9 @@ function nearestFreeOffset(placed, { moving, fixed, direction }) {
 }
 function place(canvasData, { near, width, height }) {
   const nearNode = canvasData.nodes.find((node) => node.id === near);
-  if (!nearNode) throw new Error("no node " + near);
+  if (!nearNode) {
+    throw new Error("no node " + near);
+  }
   function overlaps(left, top) {
     return canvasData.nodes.some(
       (node) => left < node.x + node.width + 20 && left + width + 20 > node.x && top < node.y + node.height + 20 && top + height + 20 > node.y
@@ -3549,12 +3583,16 @@ function place(canvasData, { near, width, height }) {
       x: nearNode.x + nearNode.width + 40,
       y: nearNode.y + step * (height + 40)
     };
-    if (!overlaps(right.x, right.y)) return right;
+    if (!overlaps(right.x, right.y)) {
+      return right;
+    }
     const below = {
       x: nearNode.x + step * (width + 40),
       y: nearNode.y + nearNode.height + 40
     };
-    if (!overlaps(below.x, below.y)) return below;
+    if (!overlaps(below.x, below.y)) {
+      return below;
+    }
   }
   return { x: nearNode.x + nearNode.width + 40, y: nearNode.y };
 }
@@ -3567,7 +3605,9 @@ function withGroupMembers(canvasData, ids) {
     return node.x >= group.x && node.y >= group.y && node.x + node.width <= group.x + group.width && node.y + node.height <= group.y + group.height;
   }
   for (const node of canvasData.nodes) {
-    if (groups.some((group) => isInside(node, group))) pick.add(node.id);
+    if (groups.some((group) => isInside(node, group))) {
+      pick.add(node.id);
+    }
   }
   return pick;
 }
@@ -3604,7 +3644,9 @@ function layoutOps(canvasData, options) {
   const pick = new Set(ids && ids.length ? ids : cards.map((node) => node.id));
   const moving = cards.filter((node) => pick.has(node.id));
   const fixed = cards.filter((node) => !pick.has(node.id));
-  if (!moving.length) return [];
+  if (!moving.length) {
+    return [];
+  }
   const inner = canvasData.edges.filter(
     (edge) => pick.has(edge.fromNode) && pick.has(edge.toNode)
   );
@@ -3640,7 +3682,9 @@ var import_path2 = __toESM(require("path"), 1);
 function collapseOps(canvasData, { ids, file, label }) {
   const pick = withGroupMembers(canvasData, ids);
   const moving = canvasData.nodes.filter((node) => pick.has(node.id));
-  if (!moving.length) throw new Error("nothing to collapse");
+  if (!moving.length) {
+    throw new Error("nothing to collapse");
+  }
   const box = bounds(moving);
   const subcanvas = {
     nodes: moving.map((node) => ({
@@ -3674,7 +3718,9 @@ function collapseOps(canvasData, { ids, file, label }) {
       });
     }
   }
-  for (const node of moving) operations.push({ op: "remove", id: node.id });
+  for (const node of moving) {
+    operations.push({ op: "remove", id: node.id });
+  }
   return { operations, subcanvas, id: card.id };
 }
 function retargetOps(edges, fromId, toId) {
@@ -3687,8 +3733,12 @@ function retargetOps(edges, fromId, toId) {
 }
 function expandOps(canvasData, { id, subcanvas, group }) {
   const card = canvasData.nodes.find((node) => node.id === id);
-  if (!card) throw new Error("no node " + id);
-  if (!subcanvas.nodes.length) throw new Error("empty subcanvas");
+  if (!card) {
+    throw new Error("no node " + id);
+  }
+  if (!subcanvas.nodes.length) {
+    throw new Error("empty subcanvas");
+  }
   const taken = new Set(
     [...canvasData.nodes, ...canvasData.edges].map((item) => item.id)
   );
@@ -3729,7 +3779,9 @@ function extractOps(canvasData, { id, part, from }) {
     throw new Error("extract takes one text card");
   }
   const offset = from !== void 0 && card.text.slice(from, from + part.length) === part ? from : card.text.indexOf(part);
-  if (!part.trim() || offset < 0) throw new Error("text not found in the card");
+  if (!part.trim() || offset < 0) {
+    throw new Error("text not found in the card");
+  }
   const left = (card.text.slice(0, offset) + card.text.slice(offset + part.length)).replace(/\n{3,}/g, "\n\n").trim();
   const text = part.trim();
   const height = fitHeight(text, card.width);
@@ -3748,7 +3800,9 @@ function extractOps(canvasData, { id, part, from }) {
     width: card.width,
     height
   };
-  if (card.color) node.color = card.color;
+  if (card.color) {
+    node.color = card.color;
+  }
   return [
     { op: "set", id, text: left, height: fitHeight(left, card.width) },
     { op: "add", node }
@@ -3792,11 +3846,17 @@ function mergeEdgeOps(canvasData, { keep, gone }) {
     const isIncoming = merged.has(edge.toNode);
     const isInside = isOutgoing && isIncoming;
     const touchesGone = gone.has(edge.fromNode) || gone.has(edge.toNode);
-    if (isInside && touchesGone) operations.push({ op: "unedge", id: edge.id });
-    if (isInside || !isOutgoing && !isIncoming) continue;
+    if (isInside && touchesGone) {
+      operations.push({ op: "unedge", id: edge.id });
+    }
+    if (isInside || !isOutgoing && !isIncoming) {
+      continue;
+    }
     const [mine, other] = isOutgoing ? [edge.fromNode, edge.toNode] : [edge.toNode, edge.fromNode];
     const length = centerDistance(nodeById(mine), nodeById(other) || keep);
-    if (!linksByOther.has(other)) linksByOther.set(other, []);
+    if (!linksByOther.has(other)) {
+      linksByOther.set(other, []);
+    }
     linksByOther.get(other).push({ edge, isOutgoing, length });
   }
   for (const links of linksByOther.values()) {
@@ -3806,7 +3866,9 @@ function mergeEdgeOps(canvasData, { keep, gone }) {
 }
 function mergeOps(canvasData, ids) {
   const cards = canvasData.nodes.filter((node) => ids.includes(node.id)).sort(byReading);
-  if (cards.length < 2) throw new Error("merge needs 2+ cards");
+  if (cards.length < 2) {
+    throw new Error("merge needs 2+ cards");
+  }
   if (cards.some((node) => node.type !== "text")) {
     throw new Error("merge takes text cards only");
   }
@@ -3826,7 +3888,9 @@ function splitText(text, separator) {
   const headingMatch = /^h([1-6])$/.exec(separator);
   const starts = headingMatch ? new RegExp(`^#{${headingMatch[1]}} `) : separator === "bullet" ? /^([-*+]|\d+[.)]) / : null;
   const pieces = starts ? text.split("\n").reduce((pieces2, line) => {
-    if (starts.test(line) || !pieces2.length) pieces2.push([]);
+    if (starts.test(line) || !pieces2.length) {
+      pieces2.push([]);
+    }
     pieces2[pieces2.length - 1].push(line);
     return pieces2;
   }, []).map((pieceLines) => pieceLines.join("\n")) : text.split(/\n\s*\n/);
@@ -3838,7 +3902,9 @@ function splitOps(canvasData, id, separator = "paragraph") {
     throw new Error("split takes one text card");
   }
   const pieces = splitText(card.text || "", separator);
-  if (pieces.length < 2) throw new Error(`nothing to split by ${separator}`);
+  if (pieces.length < 2) {
+    throw new Error(`nothing to split by ${separator}`);
+  }
   let top = card.y;
   return pieces.map((text, index) => {
     const height = fitHeight(text, card.width);
@@ -3858,7 +3924,9 @@ function relinkText(text, hits, replace) {
     /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
     (link, ...groups) => {
       const [target, , alias] = groups;
-      if (!hits(target.trim())) return link;
+      if (!hits(target.trim())) {
+        return link;
+      }
       const name2 = import_path2.default.posix.basename(target.trim()).replace(/\.canvas$/, "");
       return replace(alias || name2);
     }
@@ -3888,26 +3956,36 @@ function linksTo(relativePath, board, skipId) {
     return node.type === "file" ? node.file === relativePath : isLinking(node.text);
   }
   function linksIn(file, source) {
-    if (file.endsWith(".md")) return isLinking(source) ? [file] : [];
+    if (file.endsWith(".md")) {
+      return isLinking(source) ? [file] : [];
+    }
     const nodes = (parseOrNull(source) || {}).nodes || [];
     return nodes.filter((node) => !(file === board && node.id === skipId)).filter(isLinkingCard).map((node) => `${file} (${node.id})`);
   }
   const name2 = import_path3.default.posix.basename(relativePath);
   const found = [];
   for (const file of vaultFileIndex.paths()) {
-    if (file === relativePath || !LINKABLE.test(file)) continue;
+    if (file === relativePath || !LINKABLE.test(file)) {
+      continue;
+    }
     const source = readOrNull(file);
-    if (source && source.includes(name2)) found.push(...linksIn(file, source));
+    if (source && source.includes(name2)) {
+      found.push(...linksIn(file, source));
+    }
   }
   return found;
 }
 function noteContexts(frontmatter) {
-  if (!frontmatter) return [];
+  if (!frontmatter) {
+    return [];
+  }
   function unquote(value) {
     return value.trim().replace(/^(["'])(.*)\1$/, "$2");
   }
   const match = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m.exec(frontmatter);
-  if (!match) return [];
+  if (!match) {
+    return [];
+  }
   return (match[1].trim() ? match[1].replace(/^\[|\]$/g, "").split(",") : match[2].split(/\r?\n/).filter((line) => line.trim()).map((line) => line.replace(/^\s+-\s*/, ""))).map(unquote).filter(Boolean);
 }
 function cardContexts(node) {
@@ -3969,7 +4047,9 @@ function archiveDir(board, options = {}) {
 }
 function archiveNote(canvasData, { id, board, date, contexts = [] }) {
   const node = canvasData.nodes.find((node2) => node2.id === id);
-  if (!node) throw new Error("no node " + id);
+  if (!node) {
+    throw new Error("no node " + id);
+  }
   const edges = canvasData.edges.filter((edge) => edge.fromNode === id || edge.toNode === id).map(
     (edge) => yamlStr(
       [
@@ -4018,7 +4098,9 @@ function restoreOps(canvasData, source) {
   }
   function get(field) {
     const match = new RegExp(`^${field}: (.*)$`, "m").exec(frontmatter);
-    if (!match) return void 0;
+    if (!match) {
+      return void 0;
+    }
     const value = match[1].trim();
     return value.startsWith('"') ? JSON.parse(value) : value;
   }
@@ -4035,28 +4117,53 @@ function restoreOps(canvasData, source) {
     width: Number(get("width")),
     height: Number(get("height"))
   };
-  if (type === "text") node.text = body;
-  if (type === "file") node.file = get("card-file");
-  if (type === "link") node.url = get("card-url");
-  if (get("color")) node.color = get("color");
-  const operations = [{ op: "add", node }];
-  const old = get("card-id");
+  if (type === "text") {
+    node.text = body;
+  }
+  if (type === "file") {
+    node.file = get("card-file");
+  }
+  if (type === "link") {
+    node.url = get("card-url");
+  }
+  if (get("color")) {
+    node.color = get("color");
+  }
+  const edges = restoredEdgeOps(canvasData, frontmatter, {
+    archivedId: get("card-id"),
+    restoredId: id
+  });
+  return { board, operations: [{ op: "add", node }, ...edges] };
+}
+function restoredEdgeOps(canvasData, frontmatter, { archivedId, restoredId }) {
+  const ids = new Set(canvasData.nodes.map((node) => node.id));
   const edgeIds = new Set(canvasData.edges.map((edge) => edge.id));
+  const operations = [];
   for (const edgeLine of frontmatter.matchAll(/^ {2}- (".*")$/gm)) {
     const [edgeId, from, fromSide, toId, toSide, label] = JSON.parse(
       edgeLine[1]
     ).split(" | ");
-    const fromNode = from === old ? id : from, toNode = toId === old ? id : toId;
-    if (edgeIds.has(edgeId) || !(fromNode === id || ids.has(fromNode)) || !(toNode === id || ids.has(toNode))) {
+    const fromNode = from === archivedId ? restoredId : from;
+    const toNode = toId === archivedId ? restoredId : toId;
+    const isEndMissing = [fromNode, toNode].some(
+      (end) => end !== restoredId && !ids.has(end)
+    );
+    if (edgeIds.has(edgeId) || isEndMissing) {
       continue;
     }
-    const edge = { id: edgeId, fromNode, toNode };
-    if (fromSide) edge.fromSide = fromSide;
-    if (toSide) edge.toSide = toSide;
-    if (label) edge.label = label;
+    const edge = Object.fromEntries(
+      Object.entries({
+        id: edgeId,
+        fromNode,
+        toNode,
+        fromSide,
+        toSide,
+        label
+      }).filter(([, value]) => value)
+    );
     operations.push({ op: "edge", edge });
   }
-  return { board, operations };
+  return operations;
 }
 
 // src/workflow/workflow.js
@@ -4073,12 +4180,18 @@ function activeNode(boardTree, total, active) {
   );
   const near = /* @__PURE__ */ new Set();
   for (const edge of boardTree.edges) {
-    if (ids.has(edge.from) && !ids.has(edge.to)) near.add(edge.to);
-    if (ids.has(edge.to) && !ids.has(edge.from)) near.add(edge.from);
+    if (ids.has(edge.from) && !ids.has(edge.to)) {
+      near.add(edge.to);
+    }
+    if (ids.has(edge.to) && !ids.has(edge.from)) {
+      near.add(edge.from);
+    }
   }
   const cards = [], context = [];
   for (const card of boardTree.cards) {
-    if (WAITING.has(card.color)) total.waiting++;
+    if (WAITING.has(card.color)) {
+      total.waiting++;
+    }
     const inside = card.inside && activeNode(card.inside, total, active);
     if (ids.has(card.id) || inside && inside.cards.length) {
       cards.push({
@@ -4132,7 +4245,9 @@ function activeTree(boardTree) {
 }
 function ageSuffixOperation(card, days) {
   const isAging = card.color === "3" && card.note && card.text !== void 0 && !card.inside;
-  if (!isAging) return null;
+  if (!isAging) {
+    return null;
+  }
   const base = card.text.replace(/ · \d+d$/, "");
   const isStale = days > 0 && card.note.ageDays >= days;
   const text = isStale ? `${base} \xB7 ${card.note.ageDays}d` : base;
@@ -4140,25 +4255,33 @@ function ageSuffixOperation(card, days) {
 }
 var WIKILINK = /\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g;
 function cardLinkTargets(node) {
-  if (node.type === "file") return [node.file];
+  if (node.type === "file") {
+    return [node.file];
+  }
   return [...(node.text || "").matchAll(WIKILINK)].map(
     (match) => match[1].trim()
   );
 }
 function cardTextOk(raw) {
   const text = raw.trim();
-  if (!text.includes("[[")) return text.split("\n").length <= 3;
+  if (!text.includes("[[")) {
+    return text.split("\n").length <= 3;
+  }
   return /^\[\[[^\]]+\]\]( · .+)?$/.test(text) || /^[^\n]+ · done · \[\[[^\]]+\]\]$/.test(text);
 }
 var TEXT_SHAPES = "card text is neither a wish (\u2264 3 lines), `[[Note]] \xB7 reason` nor `<recap> \xB7 done \xB7 [[Output]]`";
 function cardIssues(node, depth) {
   const issues = cardLinkTargets(node).filter((link) => !findFile(link)).map((link) => `broken link [[${link}]]`);
   const isTopText = node.type === "text" && depth === 0;
-  if (isTopText && !cardTextOk(node.text || "")) issues.push(TEXT_SHAPES);
+  if (isTopText && !cardTextOk(node.text || "")) {
+    issues.push(TEXT_SHAPES);
+  }
   return issues;
 }
 function isStaleOrange(node, note) {
-  if (node.color !== WORKING) return false;
+  if (node.color !== WORKING) {
+    return false;
+  }
   const age = Date.now() - import_fs3.default.statSync(vaultPath(note)).mtimeMs;
   return age > ORANGE_STALE_MS;
 }
@@ -4178,7 +4301,9 @@ function noteIssues(source, color) {
     issues.push("note does not have exactly one context");
   }
   for (const section of REQUIRED_SECTIONS) {
-    if (!hasHeading(`## ${section}`)) issues.push(`note has no ## ${section}`);
+    if (!hasHeading(`## ${section}`)) {
+      issues.push(`note has no ## ${section}`);
+    }
   }
   if (!hasHeading("### Done when")) {
     issues.push("note has no ### Done when (under Aim)");
@@ -4240,11 +4365,17 @@ function colorCounts(colors) {
   };
 }
 function desiredColor(card, inner, goColors2) {
-  if (goColors2.has(card.color)) return card.color;
+  if (goColors2.has(card.color)) {
+    return card.color;
+  }
   const rolled = card.text !== void 0 && / · \d+ inside/.test(card.text);
   const own = rolled ? null : card.color;
-  if (inner.red || own === "1") return "1";
-  if (inner.yellow || own === "3") return "3";
+  if (inner.red || own === "1") {
+    return "1";
+  }
+  if (inner.yellow || own === "3") {
+    return "3";
+  }
   if (rolled && (card.color === "1" || card.color === "3")) {
     return inner.allGreen ? "4" : null;
   }
@@ -4263,7 +4394,9 @@ function nestedCardUpdate(card, inner, goColorSet) {
     id: card.id,
     color: color === null ? "" : color
   };
-  if (isTextChanged) operation.text = text;
+  if (isTextChanged) {
+    operation.text = text;
+  }
   return { color, operation };
 }
 function noteState(relativePath) {
@@ -4293,9 +4426,13 @@ function rollup(board) {
   function walk(node) {
     const operations = [];
     const colors = node.cards.map((card) => {
-      if (!card.inside) return card.color;
+      if (!card.inside) {
+        return card.color;
+      }
       const update = nestedCardUpdate(card, walk(card.inside), goColorSet);
-      if (update.operation) operations.push(update.operation);
+      if (update.operation) {
+        operations.push(update.operation);
+      }
       return update.color;
     });
     const ages = node.cards.map((card) => ageSuffixOperation(card, days));
@@ -4334,7 +4471,9 @@ function addCommand(cli2) {
     height
   };
   const color = colorArg(cli2.option("--color"));
-  if (color) node.color = color;
+  if (color) {
+    node.color = color;
+  }
   writeOps(cli2.board, [{ op: "add", node }]);
   console.log(node.id);
 }
@@ -4369,7 +4508,9 @@ function edgeCommand(cli2) {
   const [fromSide, toSide] = isAgainstFlow ? [flowTo, flowFrom] : [flowFrom, flowTo];
   const [fromNode, toNode] = cli2.rest;
   const edge = { id: newId(), fromNode, fromSide, toNode, toSide };
-  if (label) edge.label = label;
+  if (label) {
+    edge.label = label;
+  }
   console.log(writeOps(cli2.board, [{ op: "edge", edge }]));
 }
 function extractCommand(cli2) {
@@ -4392,8 +4533,12 @@ function setCommand(cli2) {
     id: cli2.rest[0],
     color: colorArg(cli2.option("--color"))
   };
-  if (cli2.option("--text") !== void 0) operation.text = cli2.option("--text");
-  if (cli2.option("--file") !== void 0) operation.file = cli2.option("--file");
+  if (cli2.option("--text") !== void 0) {
+    operation.text = cli2.option("--text");
+  }
+  if (cli2.option("--file") !== void 0) {
+    operation.file = cli2.option("--file");
+  }
   console.log(writeOps(cli2.board, [operation]));
 }
 function removeCommand(cli2) {
@@ -4417,7 +4562,9 @@ function layoutCommand(cli2) {
 }
 function packCommand(cli2) {
   const name2 = cli2.option("--name");
-  if (!name2) throw new Error("collapse needs --name");
+  if (!name2) {
+    throw new Error("collapse needs --name");
+  }
   const file = freePath(import_path5.default.posix.dirname(cli2.board), name2, ".canvas");
   const { operations, subcanvas, id } = collapseOps(readBoard(cli2.board), {
     ids: cli2.list("--ids"),
@@ -4432,7 +4579,9 @@ function unpackCommand(cli2) {
   const [id] = cli2.rest;
   const card = readBoard(cli2.board).nodes.find((node) => node.id === id);
   const subcanvas = card && cardLinks(card).canvas;
-  if (!subcanvas) throw new Error("card links no canvas");
+  if (!subcanvas) {
+    throw new Error("card links no canvas");
+  }
   const isKept = cli2.hasFlag("--keep");
   const others = isKept ? [] : linksTo(subcanvas, cli2.board, id);
   const operations = expandOps(readBoard(cli2.board), {
@@ -4440,7 +4589,9 @@ function unpackCommand(cli2) {
     subcanvas: readBoard(subcanvas)
   });
   writeOps(cli2.board, operations);
-  if (isKept) return console.log("unpacked (copy), kept", subcanvas);
+  if (isKept) {
+    return console.log("unpacked (copy), kept", subcanvas);
+  }
   if (others.length) {
     const linking = others.join(", ");
     console.log("unpacked, kept", subcanvas, "- still linked from:", linking);
