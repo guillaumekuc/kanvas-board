@@ -1,6 +1,10 @@
 import { setIcon } from 'obsidian';
 import { branchLevelsFrom, emptyViewState, FilterPane } from './view.js';
 
+const INLINE_TAG = /(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g;
+const DIGITS_ONLY = /^\d+$/;
+const FIRST_WIKILINK_TARGET = /\[\[([^\]|#]+)/;
+
 // Mixin: the view state of each open canvas (filter, folds, tag branches,
 // stale badges), how it is painted, and the fold and unfold helpers the
 // commands use. mixBoardView copies these methods onto CanvasBoardPlugin, so
@@ -205,10 +209,8 @@ class BoardView {
   // notes it links. Exact match only: #tag1 is not #tag10.
   cardTagSet(node) {
     const tags = new Set();
-    for (const match of (node.getData().text || '').matchAll(
-      /(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g,
-    )) {
-      if (!/^\d+$/.test(match[1])) {
+    for (const match of (node.getData().text || '').matchAll(INLINE_TAG)) {
+      if (!DIGITS_ONLY.test(match[1])) {
         tags.add(match[1]);
       }
     }
@@ -359,7 +361,8 @@ class BoardView {
   // -1 without a note.
   noteAgeDays(nodeData, board) {
     const match =
-      nodeData.type === 'text' && /\[\[([^\]|#]+)/.exec(nodeData.text || '');
+      nodeData.type === 'text' &&
+      FIRST_WIKILINK_TARGET.exec(nodeData.text || '');
     const file =
       nodeData.type === 'file'
         ? this.app.vault.getAbstractFileByPath(nodeData.file)

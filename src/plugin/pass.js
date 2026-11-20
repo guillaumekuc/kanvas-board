@@ -5,6 +5,13 @@ import operatingSystem from 'os';
 import path from 'path';
 import { LINUX_TERMINALS, COLOR_NUM } from './shared.js';
 
+const COMMAND_WORDS = /"[^"]*"|\S+/g;
+const OUTER_QUOTES = /^"|"$/g;
+const PROMPT_PLACEHOLDER = /\{prompt\}/g;
+const VAULT_OR_BOARD_PLACEHOLDER = /\{(vault|board)\}/g;
+const LIST_SEPARATOR = /[\s,]+/;
+const CANVAS_COLOR_NUMBER = /^[1-6]$/;
+
 // Claude Code: the setting, else the native installer's
 // ~/.local/bin/claude(.exe), else `claude` on PATH.
 function claudeBin(setting) {
@@ -28,11 +35,11 @@ function agentWords(setting, prompt) {
   if (!template) {
     return [claudeBin(''), prompt];
   }
-  const words = (template.match(/"[^"]*"|\S+/g) || []).map((word) =>
-    word.replace(/^"|"$/g, ''),
+  const words = (template.match(COMMAND_WORDS) || []).map((word) =>
+    word.replace(OUTER_QUOTES, ''),
   );
   const hasPrompt = words.some((word) => word.includes('{prompt}'));
-  const filled = words.map((word) => word.replace(/\{prompt\}/g, prompt));
+  const filled = words.map((word) => word.replace(PROMPT_PLACEHOLDER, prompt));
   return hasPrompt ? filled : [...filled, prompt];
 }
 
@@ -97,12 +104,14 @@ function terminalLaunch(template, { vault, board, agent }) {
     return defaultLaunch({ vault, board, agent });
   }
   const values = { vault, board };
-  const words = (template.match(/"[^"]*"|\S+/g) || []).flatMap((word) => {
-    const bare = word.replace(/^"|"$/g, '');
+  const words = (template.match(COMMAND_WORDS) || []).flatMap((word) => {
+    const bare = word.replace(OUTER_QUOTES, '');
     if (bare === '{agent}' || bare === '{claude}') {
       return agent;
     }
-    return [bare.replace(/\{(vault|board)\}/g, (match, name) => values[name])];
+    return [
+      bare.replace(VAULT_OR_BOARD_PLACEHOLDER, (match, name) => values[name]),
+    ];
   });
   const [command, ...commandArguments] = words;
   return [command, commandArguments];
@@ -123,10 +132,10 @@ function nextTurn(current, target) {
 function parseColors(value) {
   return new Set(
     String(value || '')
-      .split(/[\s,]+/)
+      .split(LIST_SEPARATOR)
       .filter(Boolean)
       .map((color) => COLOR_NUM[color.toLowerCase()] || color)
-      .filter((color) => /^[1-6]$/.test(color)),
+      .filter((color) => CANVAS_COLOR_NUMBER.test(color)),
   );
 }
 

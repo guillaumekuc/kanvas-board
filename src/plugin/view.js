@@ -1,6 +1,8 @@
 import { Notice, Scope, setIcon } from 'obsidian';
 import { COLORS } from './shared.js';
 
+const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
+
 const EVENTS = ['pointerdown', 'mousedown', 'wheel', 'dblclick', 'contextmenu'];
 
 // Clicks and scrolls stay in the element: no canvas pan, no deselect.
@@ -20,10 +22,7 @@ function clearFrames(root) {
 
 // Offsets of `query` in `text`, ignoring case.
 function matchOffsets(text, query) {
-  const pattern = new RegExp(
-    query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-    'gi',
-  );
+  const pattern = new RegExp(query.replace(REGEX_SPECIAL_CHARS, '\\$&'), 'gi');
   return Array.from(text.matchAll(pattern), (match) => match.index);
 }
 

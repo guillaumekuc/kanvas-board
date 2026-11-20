@@ -3,6 +3,9 @@ import path from 'path';
 import fileSystem from 'fs';
 import { fileURLToPath } from 'url';
 
+const MARKDOWN_FILE = /\.md$/;
+const EVAL_RESULT = /=>\s?([\s\S]*)$/;
+
 // The plugin folder: __dirname of the built bundles (main.js and canvas.js
 // are CommonJS). Unbundled (tests import src/ directly) it is the repo root.
 const PLUGIN_DIR =
@@ -109,7 +112,7 @@ class VaultFileIndex {
       this.files.set(key, relativePath);
     }
     this.files.set(relativePath, relativePath);
-    this.files.set(relativePath.replace(/\.md$/, ''), relativePath);
+    this.files.set(relativePath.replace(MARKDOWN_FILE, ''), relativePath);
   }
 }
 
@@ -155,7 +158,7 @@ function tryEval(binary, code) {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const match = out.match(/=>\s?([\s\S]*)$/);
+    const match = out.match(EVAL_RESULT);
     if (!match) {
       throw new Error(out.trim());
     }

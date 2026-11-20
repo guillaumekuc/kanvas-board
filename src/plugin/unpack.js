@@ -1,5 +1,7 @@
 import { newId, parseOrNull, applyOps } from '../board/store.js';
 
+const WIKILINK_ALIAS = /\|([^\]]+)\]\]/;
+
 // Cards on this canvas that linked the subcanvas keep their text without the
 // link (a file card shows the label) and get an edge to the new group.
 function groupLinkOperations(plugin, canvas, unpacked) {
@@ -106,7 +108,7 @@ async function unpackSubcanvas(plugin, canvas, request) {
   const subcanvas = { nodes: parsed.nodes || [], edges: parsed.edges || [] };
   const content = JSON.stringify(subcanvas, null, '\t');
   // The card's alias, else the file name.
-  const alias = ((node.getData().text || '').match(/\|([^\]]+)\]\]/) || [])[1];
+  const alias = ((node.getData().text || '').match(WIKILINK_ALIAS) || [])[1];
   const label = (alias || file.basename).trim();
   const operations = plugin.boardLibrary.expandOps(canvas.getData(), {
     id: node.id,
