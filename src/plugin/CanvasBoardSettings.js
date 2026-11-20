@@ -2,6 +2,11 @@ const { COLORS, COLOR_NUM, DEFAULTS, WORKFLOW } = require('./shared.js');
 const { Notice, PluginSettingTab, Setting } = require('obsidian');
 const fileSystem = require('fs');
 const { parseColors } = require('./pass.js');
+const {
+  joinInstructions,
+  sectionTitle,
+  splitInstructions,
+} = require('./agentInstructions.js');
 const path = require('path');
 
 class CanvasBoardSettings extends PluginSettingTab {
@@ -216,9 +221,11 @@ class CanvasBoardSettings extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Agent instructions')
       .setDesc(
-        'What the agent does on a pass. Saved when the field loses ' +
-          `focus, to ${this.plugin.skillRelativePath()} (the pass ` +
-          'prompt points any agent at it). Written once from the ' +
+        'What the agent does on a pass: a general part, then one ' +
+          'part per color (the agent reads them all; the Workflow ' +
+          'toggles decide which cards it works). Saved when a field ' +
+          `loses focus, to ${this.plugin.skillRelativePath()} (the ` +
+          'pass prompt points any agent at it). Written once from the ' +
           'plugin, then yours: plugin updates never overwrite it. ' +
           "Reset brings back the plugin's version.",
       )
@@ -236,32 +243,89 @@ class CanvasBoardSettings extends PluginSettingTab {
             this.display();
           }),
       );
-    this.addSkillEditor(skillFile);
+    this.addSkillEditors(skillFile);
   }
 
-  addSkillEditor(skillFile) {
-    const editor = this.containerEl.createEl('textarea', {
-      cls: 'kanvas-board-skill-editor',
-      attr: { spellcheck: 'false', rows: '24' },
-    });
-    try {
-      editor.value = fileSystem.readFileSync(skillFile, 'utf8');
-    } catch (error) {
-      editor.placeholder =
+  // One field for the general part and one per color; any of them saves the
+  // whole file (see agentInstructions.js).
+  addSkillEditors(skillFile) {
+    const colorNames = WORKFLOW.map(([colorName]) => colorName);
+    const text = this.readSkill(skillFile);
+    const parts = splitInstructions(text, colorNames);
+    const general = this.addSkillField(parts.general, '16');
+    if (text === null) {
+      general.placeholder =
         "No instructions file yet: Reset writes the plugin's version.";
     }
-    editor.addEventListener('change', () => {
-      try {
-        fileSystem.mkdirSync(path.dirname(skillFile), { recursive: true });
-        fileSystem.writeFileSync(skillFile, editor.value);
-        new Notice('Kanvas board: agent instructions saved');
-      } catch (error) {
-        new Notice(
-          `Kanvas board: could not save the agent instructions ` +
-            `(${error.message})`,
+    const colorFields = {};
+    for (const colorName of colorNames) {
+      this.addColorSkillHeading(colorName);
+      colorFields[colorName] = this.addSkillField(parts.colors[colorName], '6');
+    }
+    const fields = [general, ...Object.values(colorFields)];
+    for (const field of fields) {
+      field.addEventListener('change', () => {
+        const colors = {};
+        for (const colorName of colorNames) {
+          colors[colorName] = colorFields[colorName].value;
+        }
+        const joined = joinInstructions(
+          { general: general.value, colors },
+          colorNames,
         );
-      }
+        this.saveSkill(skillFile, joined);
+      });
+    }
+  }
+
+  readSkill(skillFile) {
+    try {
+      return fileSystem.readFileSync(skillFile, 'utf8');
+    } catch (error) {
+      return null;
+    }
+  }
+
+  addSkillField(value, rows) {
+    const field = this.containerEl.createEl('textarea', {
+      cls: 'kanvas-board-skill-editor',
+      attr: { spellcheck: 'false', rows },
     });
+    field.value = value;
+    return field;
+  }
+
+  addColorSkillHeading(colorName) {
+    const colorNumber = COLOR_NUM[colorName];
+    const goColors = parseColors(this.plugin.settings.passColors);
+    const isWorked = Boolean(colorNumber) && goColors.has(colorNumber);
+    const row = new Setting(this.containerEl)
+      .setName(sectionTitle(colorName))
+      .setDesc(
+        isWorked
+          ? 'A pass works these cards (Workflow toggle on).'
+          : 'Context: what these cards are to the agent (Workflow ' +
+              'toggle off).',
+      );
+    row.nameEl.prepend(
+      createSpan({
+        cls: 'kanvas-board-dot kanvas-board-workflow-dot',
+        attr: { style: this.plugin.dotStyle(colorNumber) },
+      }),
+    );
+  }
+
+  saveSkill(skillFile, text) {
+    try {
+      fileSystem.mkdirSync(path.dirname(skillFile), { recursive: true });
+      fileSystem.writeFileSync(skillFile, text);
+      new Notice('Kanvas board: agent instructions saved');
+    } catch (error) {
+      new Notice(
+        `Kanvas board: could not save the agent instructions ` +
+          `(${error.message})`,
+      );
+    }
   }
 
   displayApm() {
