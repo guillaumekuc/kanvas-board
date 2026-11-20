@@ -36,7 +36,7 @@ function parseArguments(args) {
 const USAGE =
   'Usage: node .obsidian/plugins/kanvas-board/canvas.js ' +
   'read|tree|set|add|remove|edge|layout|pack|unpack|merge|split|extract|' +
-  'archive|restore|rollup|check <board> ... (see header)';
+  'archive|restore|rollup|check|workflow|instructions <board> ... (see header)';
 
 const cli = parseArguments(process.argv.slice(2));
 const name = cli.commandName || '';
