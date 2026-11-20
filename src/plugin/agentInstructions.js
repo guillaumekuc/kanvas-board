@@ -17,7 +17,9 @@ function headingColor(line, colorNames) {
 
 // Blank lines around a part are layout, not content.
 function trimBlankLines(text) {
-  return String(text || '').replace(/^(?:[ \t]*\n)+/, '').trimEnd();
+  return String(text || '')
+    .replace(/^(?:[ \t]*\n)+/, '')
+    .trimEnd();
 }
 
 function splitInstructions(text, colorNames) {
@@ -49,4 +51,4 @@ function joinInstructions(parts, colorNames) {
   return `${blocks.join('\n\n')}\n`;
 }
 
-module.exports = { sectionTitle, splitInstructions, joinInstructions };
+export { sectionTitle, splitInstructions, joinInstructions };

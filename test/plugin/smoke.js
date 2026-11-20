@@ -50,7 +50,7 @@ global.createEl = stub.anything;
 global.createFragment = stub.anything;
 
 async function main() {
-  const PluginClass = require(mainFile);
+  const PluginClass = require(mainFile).default;
   const app = stub.anything();
   app.vault = stub.anything();
   app.vault.adapter = { basePath: path.resolve(pluginDir, '..', '..', '..') };

@@ -1,13 +1,13 @@
-const { COLORS, COLOR_NUM, DEFAULTS, WORKFLOW } = require('./shared.js');
-const { Notice, PluginSettingTab, Setting } = require('obsidian');
-const fileSystem = require('fs');
-const { parseColors } = require('./pass.js');
-const {
+import { COLORS, COLOR_NUM, DEFAULTS, WORKFLOW } from './shared.js';
+import { Notice, PluginSettingTab, Setting } from 'obsidian';
+import fileSystem from 'fs';
+import { parseColors } from './pass.js';
+import {
   joinInstructions,
   sectionTitle,
   splitInstructions,
-} = require('./agentInstructions.js');
-const path = require('path');
+} from './agentInstructions.js';
+import path from 'path';
 
 class CanvasBoardSettings extends PluginSettingTab {
   constructor(app, plugin) {
@@ -471,4 +471,4 @@ class CanvasBoardSettings extends PluginSettingTab {
   }
 }
 
-module.exports = CanvasBoardSettings;
+export default CanvasBoardSettings;

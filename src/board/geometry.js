@@ -1,4 +1,4 @@
-const { newId, SIDES, settings } = require('./store.js');
+import { newId, SIDES, settings } from './store.js';
 
 function bounds(nodes) {
   const left = Math.min(...nodes.map((node) => node.x)),
@@ -259,7 +259,7 @@ function defaultDir() {
   return SIDES[settings().layoutDirection] ? settings().layoutDirection : 'TB';
 }
 
-module.exports = {
+export {
   bounds,
   byReading,
   centerDistance,

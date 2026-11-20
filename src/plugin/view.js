@@ -1,5 +1,5 @@
-const { Notice, Scope, setIcon } = require('obsidian');
-const { COLORS } = require('./shared.js');
+import { Notice, Scope, setIcon } from 'obsidian';
+import { COLORS } from './shared.js';
 
 const EVENTS = ['pointerdown', 'mousedown', 'wheel', 'dblclick', 'contextmenu'];
 
@@ -569,7 +569,7 @@ function emptyViewState() {
   return { xcolors: new Set(), xtags: new Set(), hidden: new Set() };
 }
 
-module.exports = {
+export {
   stopCanvasEvents,
   clearFrames,
   matchOffsets,

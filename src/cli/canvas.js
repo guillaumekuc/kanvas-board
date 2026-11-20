@@ -1,5 +1,5 @@
-const { DEFAULT_BOARD, settings } = require('../board/store.js');
-const { commands: COMMANDS } = require('./commands.js');
+import { DEFAULT_BOARD, settings } from '../board/store.js';
+import { commands as COMMANDS } from './commands.js';
 
 // `canvas.js <command> <board> [values] [--option value] [--flag]`: what the
 // commands read from it.

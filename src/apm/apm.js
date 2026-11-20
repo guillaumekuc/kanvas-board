@@ -265,7 +265,7 @@ function loadSettings(stored, legacy) {
   return settings;
 }
 
-module.exports = {
+export {
   MINUTE_MS,
   INPUT_MS,
   MIN_PB,

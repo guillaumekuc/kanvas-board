@@ -57,4 +57,9 @@ module.exports = [
       semi: ['error', 'always'],
     },
   },
+  // src/ is ES modules: imports at the top of the file, no require
+  {
+    files: ['src/**/*.js'],
+    languageOptions: { sourceType: 'module' },
+  },
 ];

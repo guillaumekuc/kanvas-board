@@ -1,4 +1,4 @@
-const {
+import {
   COLORS,
   COLOR_NUM,
   DEFAULTS,
@@ -6,24 +6,24 @@ const {
   boardLibrary,
   createApi,
   startApmCounter,
-} = require('./shared.js');
-const { Notice, Plugin, setIcon } = require('obsidian');
-const { commands: COMMAND_GROUPS } = require('./commands.js');
-const { createStarterBoard } = require('./starterBoard.js');
-const {
+} from './shared.js';
+import { Notice, Plugin, setIcon } from 'obsidian';
+import { commands as COMMAND_GROUPS } from './commands.js';
+import { createStarterBoard } from './starterBoard.js';
+import {
   startPass,
   terminalLaunch,
   agentWords,
   passPrompt,
   nextTurn,
   parseColors,
-} = require('./pass.js');
-const { parseOrNull } = require('../board/store.js');
-const { subcanvasLinks, unpackSubcanvas } = require('./unpack.js');
-const CanvasBoardSettings = require('./CanvasBoardSettings.js');
-const fileSystem = require('fs');
-const path = require('path');
-const { mixBoardView } = require('./boardView.js');
+} from './pass.js';
+import { parseOrNull } from '../board/store.js';
+import { subcanvasLinks, unpackSubcanvas } from './unpack.js';
+import CanvasBoardSettings from './CanvasBoardSettings.js';
+import fileSystem from 'fs';
+import path from 'path';
+import { mixBoardView } from './boardView.js';
 
 const CONTROL_BUTTONS = [
   ['find', 'Search current canvas', 'search'],
@@ -883,4 +883,4 @@ class CanvasBoardPlugin extends Plugin {
 
 mixBoardView(CanvasBoardPlugin);
 
-module.exports = CanvasBoardPlugin;
+export default CanvasBoardPlugin;

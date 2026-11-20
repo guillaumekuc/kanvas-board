@@ -1,10 +1,10 @@
-const {
+import {
   AbstractInputSuggest,
   FuzzySuggestModal,
   Modal,
   Notice,
   Setting,
-} = require('obsidian');
+} from 'obsidian';
 
 // Names under a text field that contain what is typed (all of them when it is
 // empty); picking one calls `onPick`.
@@ -209,4 +209,4 @@ class UnpackChoice extends Modal {
   }
 }
 
-module.exports = { NameSuggest, NamePrompt, Picker, UnpackChoice };
+export { NameSuggest, NamePrompt, Picker, UnpackChoice };

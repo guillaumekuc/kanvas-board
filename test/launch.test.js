@@ -1,14 +1,19 @@
 const assert = require('assert');
 const Module = require('module');
 
-// pass.js also holds startPass, which needs Obsidian: stub it.
-const resolve = Module._resolveFilename;
-Module._resolveFilename = function resolveStub(request, ...rest) {
-  if (request === 'obsidian') {
-    return require.resolve('./plugin/obsidianStub.js');
-  }
-  return resolve.call(this, request, ...rest);
-};
+// pass.js also holds startPass, which needs Obsidian: stub it. src/ is ES
+// modules, so the stub goes through the module resolve hook.
+const { pathToFileURL } = require('url');
+
+const STUB_URL = pathToFileURL(
+  require.resolve('./plugin/obsidianStub.mjs'),
+).href;
+Module.registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === 'obsidian') return { url: STUB_URL, shortCircuit: true };
+    return nextResolve(specifier, context);
+  },
+});
 const { agentWords, terminalLaunch } = require('../src/plugin/pass.js');
 
 const prompt = 'Run a Kanvas board pass on B.canvas: follow skill.md';
