@@ -25,6 +25,11 @@ import fileSystem from 'fs';
 import path from 'path';
 import { mixBoardView } from './boardView.js';
 
+const CANVAS_COLOR_CLASS = /mod-canvas-color-(\d)/;
+const CANVAS_WIKILINKS = /\[\[([^\]|#]+\.canvas)/g;
+const CANVAS_WIKILINK = /\[\[([^\]|#]+\.canvas)/;
+const FIRST_WIKILINK_TARGET = /\[\[([^\]|#]+)/;
+
 const CONTROL_BUTTONS = [
   { id: 'find', label: 'Search current canvas', icon: 'search' },
   { id: 'filter', label: 'Filter cards', icon: 'filter' },
@@ -481,8 +486,7 @@ class CanvasBoardPlugin extends Plugin {
       '.canvas-color-picker-item:not(.canvas-color-picker-custom)',
     );
     for (const item of swatches) {
-      const color =
-        (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || '';
+      const color = (item.className.match(CANVAS_COLOR_CLASS) || [])[1] || '';
       const row = COLORS.find((colorRow) => colorRow.canvasColor === color);
       if (!row) {
         continue;
@@ -766,7 +770,7 @@ class CanvasBoardPlugin extends Plugin {
     const target =
       nodeData.type === 'file'
         ? nodeData.file
-        : ((nodeData.text || '').match(/\[\[([^\]|#]+\.canvas)/) || [])[1];
+        : ((nodeData.text || '').match(CANVAS_WIKILINK) || [])[1];
     if (!target || !target.endsWith('.canvas')) {
       return null;
     }
@@ -791,7 +795,7 @@ class CanvasBoardPlugin extends Plugin {
     const target =
       nodeData.type === 'file'
         ? nodeData.file
-        : ((nodeData.text || '').match(/\[\[([^\]|#]+)/) || [])[1];
+        : ((nodeData.text || '').match(FIRST_WIKILINK_TARGET) || [])[1];
     const file =
       target &&
       this.app.metadataCache.getFirstLinkpathDest(target.trim(), board);
@@ -869,7 +873,7 @@ class CanvasBoardPlugin extends Plugin {
       return true;
     }
     const linkedCanvases = nodes.flatMap((node) => [
-      ...(node.text || '').matchAll(/\[\[([^\]|#]+\.canvas)/g),
+      ...(node.text || '').matchAll(CANVAS_WIKILINKS),
     ]);
     for (const match of linkedCanvases) {
       const linkedFile = this.app.metadataCache.getFirstLinkpathDest(

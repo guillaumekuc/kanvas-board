@@ -1,4 +1,6 @@
 const path = require('path');
+
+const ERROR_LINE = /^(\w*Error|Usage)/;
 const { spawnSync } = require('child_process');
 
 // Runs canvas.js offline and deterministic (see preload.js); keeps only the
@@ -20,7 +22,7 @@ function runCommand(vaultRoot, commandArguments) {
   const errors = result.stderr
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => /^(\w*Error|Usage)/.test(line));
+    .filter((line) => ERROR_LINE.test(line));
   return {
     args: commandArguments.join(' '),
     status: result.status,

@@ -3415,6 +3415,8 @@ var import_path = __toESM(require("path"), 1);
 var import_fs = __toESM(require("fs"), 1);
 var import_url = require("url");
 var import_meta = {};
+var MARKDOWN_FILE = /\.md$/;
+var EVAL_RESULT = /=>\s?([\s\S]*)$/;
 var PLUGIN_DIR = typeof __dirname === "string" ? __dirname : import_path.default.resolve((0, import_url.fileURLToPath)(import_meta.url), "..", "..", "..");
 var ROOT = import_path.default.resolve(PLUGIN_DIR, "..", "..", "..");
 var SKIP_DIRS = /* @__PURE__ */ new Set([".git", ".obsidian", ".trash", "node_modules"]);
@@ -3480,7 +3482,7 @@ var VaultFileIndex = class {
       this.files.set(key, relativePath);
     }
     this.files.set(relativePath, relativePath);
-    this.files.set(relativePath.replace(/\.md$/, ""), relativePath);
+    this.files.set(relativePath.replace(MARKDOWN_FILE, ""), relativePath);
   }
 };
 var vaultFileIndex = new VaultFileIndex();
@@ -3498,7 +3500,7 @@ function tryEval(binary, code) {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
-    const match = out.match(/=>\s?([\s\S]*)$/);
+    const match = out.match(EVAL_RESULT);
     if (!match) {
       throw new Error(out.trim());
     }
@@ -3604,6 +3606,8 @@ var import_path3 = __toESM(require("path"), 1);
 var import_path2 = __toESM(require("path"), 1);
 
 // src/board/geometry.js
+var WIKILINK_SHOWN_TEXT = /\[\[([^\]|]*\|)?([^\]]*)\]\]/g;
+var DEPENDS_ON_LABEL = /depends on/i;
 function bounds(nodes) {
   const left = Math.min(...nodes.map((node) => node.x)), top = Math.min(...nodes.map((node) => node.y));
   return {
@@ -3655,9 +3659,7 @@ function fitHeight(text, width) {
   const lines = String(text || "").split("\n").reduce(
     (lines2, line) => lines2 + Math.max(
       1,
-      Math.ceil(
-        line.replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").length / perLine
-      )
+      Math.ceil(line.replace(WIKILINK_SHOWN_TEXT, "$2").length / perLine)
     ),
     0
   );
@@ -3680,7 +3682,7 @@ function groupAround(nodes, label) {
   };
 }
 function isBackEdge(edge, flow) {
-  return flow === "in" || /depends on/i.test(edge.label || "");
+  return flow === "in" || DEPENDS_ON_LABEL.test(edge.label || "");
 }
 function isTwoWay(edge) {
   return edge.fromEnd === "arrow" && edge.toEnd !== "none";
@@ -3784,6 +3786,21 @@ function layoutOps(canvasData, options) {
 }
 
 // src/board/refactor.js
+var EXTRA_BLANK_LINES = /\n{3,}/g;
+var HEADING_SEPARATOR = /^h([1-6])$/;
+var TOP_LEVEL_BULLET = /^([-*+]|\d+[.)]) /;
+var BLANK_LINE = /\n\s*\n/;
+var NOTE_OR_CANVAS_FILE = /\.(md|canvas)$/;
+var ALIASED_WIKILINK = /!?\[\[([^\]|]+)\|([^\]]+)\]\]/g;
+var HEADING_OR_BLOCK_WIKILINK = /!?\[\[([^\]#]*)#\^?([^\]]+)\]\]/g;
+var WIKILINK_PARTS = /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g;
+var PLAIN_WIKILINK = /!?\[\[([^\]]+)\]\]/g;
+var MARKDOWN_LINK = /!?\[([^\]]*)\]\([^)]*\)/g;
+var LINE_MARKUP_PREFIX = /^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/;
+var INLINE_MARKS = /\*\*|__|~~|==|`/g;
+var ITALIC = /(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g;
+var WHITESPACE_RUN = /\s+/g;
+var CANVAS_FILE = /\.canvas$/;
 function collapseOps(canvasData, { ids, file, label }) {
   const pick = withGroupMembers(canvasData, ids);
   const moving = canvasData.nodes.filter((node) => pick.has(node.id));
@@ -3887,7 +3904,7 @@ function extractOps(canvasData, { id, part, from }) {
   if (!part.trim() || offset < 0) {
     throw new Error("text not found in the card");
   }
-  const left = (card.text.slice(0, offset) + card.text.slice(offset + part.length)).replace(/\n{3,}/g, "\n\n").trim();
+  const left = (card.text.slice(0, offset) + card.text.slice(offset + part.length)).replace(EXTRA_BLANK_LINES, "\n\n").trim();
   const text = part.trim();
   const height = fitHeight(text, card.width);
   let top = card.y;
@@ -3989,16 +4006,23 @@ function mergeOps(canvasData, ids) {
     ...rest.map((node) => ({ op: "remove", id: node.id }))
   ];
 }
+function pieceStart(separator) {
+  const headingMatch = HEADING_SEPARATOR.exec(separator);
+  if (headingMatch) {
+    const headingOfLevel = new RegExp(`^#{${headingMatch[1]}} `);
+    return headingOfLevel;
+  }
+  return separator === "bullet" ? TOP_LEVEL_BULLET : null;
+}
 function splitText(text, separator) {
-  const headingMatch = /^h([1-6])$/.exec(separator);
-  const starts = headingMatch ? new RegExp(`^#{${headingMatch[1]}} `) : separator === "bullet" ? /^([-*+]|\d+[.)]) / : null;
+  const starts = pieceStart(separator);
   const pieces = starts ? text.split("\n").reduce((pieces2, line) => {
     if (starts.test(line) || !pieces2.length) {
       pieces2.push([]);
     }
     pieces2[pieces2.length - 1].push(line);
     return pieces2;
-  }, []).map((pieceLines) => pieceLines.join("\n")) : text.split(/\n\s*\n/);
+  }, []).map((pieceLines) => pieceLines.join("\n")) : text.split(BLANK_LINE);
   return pieces.map((piece) => piece.trim()).filter(Boolean);
 }
 function splitOps(canvasData, id, separator = "paragraph") {
@@ -4026,27 +4050,24 @@ function splitOps(canvasData, id, separator = "paragraph") {
 }
 function plainLines(text) {
   function name(linkTarget) {
-    return linkTarget.replace(/\.(md|canvas)$/, "").split("/").pop();
+    return linkTarget.replace(NOTE_OR_CANVAS_FILE, "").split("/").pop();
   }
   return String(text || "").split("\n").map(
-    (line) => line.replace(/!?\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(
-      /!?\[\[([^\]#]*)#\^?([^\]]+)\]\]/g,
+    (line) => line.replace(ALIASED_WIKILINK, "$2").replace(
+      HEADING_OR_BLOCK_WIKILINK,
       (match, linkTarget, heading) => linkTarget ? `${name(linkTarget)} \u203A ${heading}` : heading
-    ).replace(/!?\[\[([^\]]+)\]\]/g, (match, linkTarget) => name(linkTarget)).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/, "").replace(/\*\*|__|~~|==|`/g, "").replace(/(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g, "$1$2").replace(/\s+/g, " ").trim()
+    ).replace(PLAIN_WIKILINK, (match, linkTarget) => name(linkTarget)).replace(MARKDOWN_LINK, "$1").replace(LINE_MARKUP_PREFIX, "").replace(INLINE_MARKS, "").replace(ITALIC, "$1$2").replace(WHITESPACE_RUN, " ").trim()
   ).filter(Boolean);
 }
 function relinkText(text, hits, replace) {
-  return (text || "").replace(
-    /!?\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
-    (link, ...groups) => {
-      const [target, , alias] = groups;
-      if (!hits(target.trim())) {
-        return link;
-      }
-      const name = import_path2.default.posix.basename(target.trim()).replace(/\.canvas$/, "");
-      return replace(alias || name);
+  return (text || "").replace(WIKILINK_PARTS, (link, ...groups) => {
+    const [target, , alias] = groups;
+    if (!hits(target.trim())) {
+      return link;
     }
-  );
+    const name = import_path2.default.posix.basename(target.trim()).replace(CANVAS_FILE, "");
+    return replace(alias || name);
+  });
 }
 function templateOps(template, origin) {
   const nodes = template.nodes || [];
@@ -4081,17 +4102,29 @@ function templateOps(template, origin) {
 }
 
 // src/board/notes.js
+var FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+var LINE_MARKUP_PREFIX2 = /^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/;
+var WIKILINK_SHOWN_TEXT2 = /\[\[([^\]|]*\|)?([^\]]*)\]\]/g;
+var NOTE_NAME_FORBIDDEN = /[#^|[\]*_`>:\\/"?<]/g;
+var LEADING_LINE_BREAK = /^\r?\n/;
+var WHITESPACE_RUN2 = /\s+/g;
+var TRAILING_SLASHES = /[/\\]+$/;
+var BACKSLASH = /\\/g;
+var ARCHIVED_FROM_FIELD = /^archived-from:/m;
+var OUTER_WIKILINK_BRACKETS = /^\[\[|\]\]$/g;
+var TRAILING_WHITESPACE = /\s+$/;
+var ARCHIVED_EDGE_LINE = /^ {2}- (".*")$/gm;
 function noteName(text) {
-  return (String(text).split("\n").find((line) => line.trim()) || "Card").replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, "").replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2").replace(/[#^|[\]*_`>:\\/"?<]/g, "").replace(/\s+/g, " ").trim().slice(0, 60).trim() || "Card";
+  return (String(text).split("\n").find((line) => line.trim()) || "Card").replace(LINE_MARKUP_PREFIX2, "").replace(WIKILINK_SHOWN_TEXT2, "$2").replace(NOTE_NAME_FORBIDDEN, "").replace(WHITESPACE_RUN2, " ").trim().slice(0, 60).trim() || "Card";
 }
 function yamlStr(value) {
   return JSON.stringify(String(value));
 }
 function archiveDir(board, options = {}) {
   if (options.archiveMode === "global") {
-    return String(options.archiveFolder || ARCHIVE_DIR).trim().replace(/[/\\]+$/, "") || ARCHIVE_DIR;
+    return String(options.archiveFolder || ARCHIVE_DIR).trim().replace(TRAILING_SLASHES, "") || ARCHIVE_DIR;
   }
-  const boardPath = String(board).replace(/\\/g, "/"), folder = import_path3.default.posix.dirname(boardPath);
+  const boardPath = String(board).replace(BACKSLASH, "/"), folder = import_path3.default.posix.dirname(boardPath);
   return (folder === "." ? "" : folder + "/") + import_path3.default.posix.basename(boardPath, ".canvas") + " archive";
 }
 function archiveNote(canvasData, { id, board, date, contexts = [] }) {
@@ -4141,20 +4174,21 @@ function archiveNote(canvasData, { id, board, date, contexts = [] }) {
   };
 }
 function restoreOps(canvasData, source) {
-  const frontmatter = (source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) || [])[1];
-  if (!frontmatter || !/^archived-from:/m.test(frontmatter)) {
+  const frontmatter = (source.match(FRONTMATTER_BLOCK) || [])[1];
+  if (!frontmatter || !ARCHIVED_FROM_FIELD.test(frontmatter)) {
     throw new Error("not an archived card note");
   }
   function get(field) {
-    const match = new RegExp(`^${field}: (.*)$`, "m").exec(frontmatter);
+    const fieldLine = new RegExp(`^${field}: (.*)$`, "m");
+    const match = fieldLine.exec(frontmatter);
     if (!match) {
       return void 0;
     }
     const value = match[1].trim();
     return value.startsWith('"') ? JSON.parse(value) : value;
   }
-  const board = get("archived-from").replace(/^\[\[|\]\]$/g, "");
-  const body = source.slice(source.indexOf("---", 3) + 3).replace(/^\r?\n/, "").replace(/\s+$/, "");
+  const board = get("archived-from").replace(OUTER_WIKILINK_BRACKETS, "");
+  const body = source.slice(source.indexOf("---", 3) + 3).replace(LEADING_LINE_BREAK, "").replace(TRAILING_WHITESPACE, "");
   const type = get("card-type") || "text";
   const ids = new Set(canvasData.nodes.map((node2) => node2.id));
   const id = ids.has(get("card-id")) ? newId() : get("card-id");
@@ -4188,7 +4222,7 @@ function restoredEdgeOps(canvasData, frontmatter, { archivedId, restoredId }) {
   const ids = new Set(canvasData.nodes.map((node) => node.id));
   const edgeIds = new Set(canvasData.edges.map((edge) => edge.id));
   const operations = [];
-  for (const edgeLine of frontmatter.matchAll(/^ {2}- (".*")$/gm)) {
+  for (const edgeLine of frontmatter.matchAll(ARCHIVED_EDGE_LINE)) {
     const [edgeId, from, fromSide, toId, toSide, label] = JSON.parse(
       edgeLine[1]
     ).split(" | ");
@@ -4216,6 +4250,7 @@ function restoredEdgeOps(canvasData, frontmatter, { archivedId, restoredId }) {
 }
 
 // src/plugin/unpack.js
+var WIKILINK_ALIAS = /\|([^\]]+)\]\]/;
 function groupLinkOperations(plugin, canvas, unpacked) {
   const { here, label, isSubcanvas, links, groupId } = unpacked;
   const library = plugin.boardLibrary;
@@ -4302,7 +4337,7 @@ async function unpackSubcanvas(plugin, canvas, request) {
   const parsed = JSON.parse(await plugin.app.vault.read(file) || "{}");
   const subcanvas = { nodes: parsed.nodes || [], edges: parsed.edges || [] };
   const content = JSON.stringify(subcanvas, null, "	");
-  const alias = ((node.getData().text || "").match(/\|([^\]]+)\]\]/) || [])[1];
+  const alias = ((node.getData().text || "").match(WIKILINK_ALIAS) || [])[1];
   const label = (alias || file.basename).trim();
   const operations = plugin.boardLibrary.expandOps(canvas.getData(), {
     id: node.id,
@@ -4752,6 +4787,7 @@ var UnpackChoice = class extends import_obsidian.Modal {
 
 // src/plugin/view.js
 var import_obsidian2 = require("obsidian");
+var REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
 var EVENTS = ["pointerdown", "mousedown", "wheel", "dblclick", "contextmenu"];
 function stopCanvasEvents(element) {
   for (const eventName of EVENTS) {
@@ -4766,10 +4802,7 @@ function clearFrames(root) {
   }
 }
 function matchOffsets(text, query) {
-  const pattern = new RegExp(
-    query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-    "gi"
-  );
+  const pattern = new RegExp(query.replace(REGEX_SPECIAL_CHARS, "\\$&"), "gi");
   return Array.from(text.matchAll(pattern), (match) => match.index);
 }
 function frameText(root, query) {
@@ -5998,6 +6031,12 @@ var import_child_process2 = require("child_process");
 var import_fs3 = __toESM(require("fs"), 1);
 var import_os = __toESM(require("os"), 1);
 var import_path6 = __toESM(require("path"), 1);
+var COMMAND_WORDS = /"[^"]*"|\S+/g;
+var OUTER_QUOTES = /^"|"$/g;
+var PROMPT_PLACEHOLDER = /\{prompt\}/g;
+var VAULT_OR_BOARD_PLACEHOLDER = /\{(vault|board)\}/g;
+var LIST_SEPARATOR = /[\s,]+/;
+var CANVAS_COLOR_NUMBER = /^[1-6]$/;
 function claudeBin(setting) {
   if (setting) {
     return setting;
@@ -6015,11 +6054,11 @@ function agentWords(setting, prompt) {
   if (!template) {
     return [claudeBin(""), prompt];
   }
-  const words = (template.match(/"[^"]*"|\S+/g) || []).map(
-    (word) => word.replace(/^"|"$/g, "")
+  const words = (template.match(COMMAND_WORDS) || []).map(
+    (word) => word.replace(OUTER_QUOTES, "")
   );
   const hasPrompt = words.some((word) => word.includes("{prompt}"));
-  const filled = words.map((word) => word.replace(/\{prompt\}/g, prompt));
+  const filled = words.map((word) => word.replace(PROMPT_PLACEHOLDER, prompt));
   return hasPrompt ? filled : [...filled, prompt];
 }
 function onPath(binary) {
@@ -6067,12 +6106,14 @@ function terminalLaunch(template, { vault, board, agent }) {
     return defaultLaunch({ vault, board, agent });
   }
   const values = { vault, board };
-  const words = (template.match(/"[^"]*"|\S+/g) || []).flatMap((word) => {
-    const bare = word.replace(/^"|"$/g, "");
+  const words = (template.match(COMMAND_WORDS) || []).flatMap((word) => {
+    const bare = word.replace(OUTER_QUOTES, "");
     if (bare === "{agent}" || bare === "{claude}") {
       return agent;
     }
-    return [bare.replace(/\{(vault|board)\}/g, (match, name) => values[name])];
+    return [
+      bare.replace(VAULT_OR_BOARD_PLACEHOLDER, (match, name) => values[name])
+    ];
   });
   const [command, ...commandArguments] = words;
   return [command, commandArguments];
@@ -6085,7 +6126,7 @@ function nextTurn(current, target) {
 }
 function parseColors(value) {
   return new Set(
-    String(value || "").split(/[\s,]+/).filter(Boolean).map((color) => COLOR_NUM[color.toLowerCase()] || color).filter((color) => /^[1-6]$/.test(color))
+    String(value || "").split(LIST_SEPARATOR).filter(Boolean).map((color) => COLOR_NUM[color.toLowerCase()] || color).filter((color) => CANVAS_COLOR_NUMBER.test(color))
   );
 }
 function startPass([command, commandArguments], { vault, board }) {
@@ -6113,6 +6154,8 @@ var import_obsidian6 = require("obsidian");
 var import_fs4 = __toESM(require("fs"), 1);
 
 // src/plugin/agentInstructions.js
+var LEADING_BLANK_LINES = /^(?:[ \t]*\n)+/;
+var LINE_BREAK = /\r?\n/;
 function sectionTitle(colorName) {
   const word = colorName === "none" ? "uncolored" : colorName;
   return `${word[0].toUpperCase()}${word.slice(1)} cards`;
@@ -6124,13 +6167,13 @@ function headingColor(line, colorNames) {
   );
 }
 function trimBlankLines(text) {
-  return String(text || "").replace(/^(?:[ \t]*\n)+/, "").trimEnd();
+  return String(text || "").replace(LEADING_BLANK_LINES, "").trimEnd();
 }
 function splitInstructions(text, colorNames) {
   const general = [];
   const sections = {};
   let current = general;
-  for (const line of String(text || "").split(/\r?\n/)) {
+  for (const line of String(text || "").split(LINE_BREAK)) {
     const colorName = headingColor(line, colorNames);
     if (!colorName) {
       current.push(line);
@@ -6489,6 +6532,9 @@ var import_path8 = __toESM(require("path"), 1);
 
 // src/plugin/boardView.js
 var import_obsidian7 = require("obsidian");
+var INLINE_TAG = /(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g;
+var DIGITS_ONLY = /^\d+$/;
+var FIRST_WIKILINK_TARGET = /\[\[([^\]|#]+)/;
 var BoardView = class {
   // The view state if the canvas has one yet, else an empty one (not kept).
   peekViewState(canvas) {
@@ -6665,10 +6711,8 @@ var BoardView = class {
   // notes it links. Exact match only: #tag1 is not #tag10.
   cardTagSet(node) {
     const tags = /* @__PURE__ */ new Set();
-    for (const match of (node.getData().text || "").matchAll(
-      /(?:^|\s)#([^\s#.,;:!?()[\]{}"'`]+)/g
-    )) {
-      if (!/^\d+$/.test(match[1])) {
+    for (const match of (node.getData().text || "").matchAll(INLINE_TAG)) {
+      if (!DIGITS_ONLY.test(match[1])) {
         tags.add(match[1]);
       }
     }
@@ -6802,7 +6846,7 @@ var BoardView = class {
   // Days since the card's note (its file, or its first link) last changed;
   // -1 without a note.
   noteAgeDays(nodeData, board) {
-    const match = nodeData.type === "text" && /\[\[([^\]|#]+)/.exec(nodeData.text || "");
+    const match = nodeData.type === "text" && FIRST_WIKILINK_TARGET.exec(nodeData.text || "");
     const file = nodeData.type === "file" ? this.app.vault.getAbstractFileByPath(nodeData.file) : match && this.app.metadataCache.getFirstLinkpathDest(match[1].trim(), board);
     if (!file || !file.stat) {
       return -1;
@@ -6877,6 +6921,10 @@ function mixBoardView(targetClass) {
 }
 
 // src/plugin/CanvasBoardPlugin.js
+var CANVAS_COLOR_CLASS = /mod-canvas-color-(\d)/;
+var CANVAS_WIKILINKS = /\[\[([^\]|#]+\.canvas)/g;
+var CANVAS_WIKILINK = /\[\[([^\]|#]+\.canvas)/;
+var FIRST_WIKILINK_TARGET2 = /\[\[([^\]|#]+)/;
 var CONTROL_BUTTONS = [
   { id: "find", label: "Search current canvas", icon: "search" },
   { id: "filter", label: "Filter cards", icon: "filter" },
@@ -7279,7 +7327,7 @@ Shift-click: next direction`,
       ".canvas-color-picker-item:not(.canvas-color-picker-custom)"
     );
     for (const item of swatches) {
-      const color = (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || "";
+      const color = (item.className.match(CANVAS_COLOR_CLASS) || [])[1] || "";
       const row = COLORS2.find((colorRow) => colorRow.canvasColor === color);
       if (!row) {
         continue;
@@ -7516,7 +7564,7 @@ Shift-click: next direction`,
   }
   linkedCanvas(node) {
     const nodeData = node.getData();
-    const target = nodeData.type === "file" ? nodeData.file : ((nodeData.text || "").match(/\[\[([^\]|#]+\.canvas)/) || [])[1];
+    const target = nodeData.type === "file" ? nodeData.file : ((nodeData.text || "").match(CANVAS_WIKILINK) || [])[1];
     if (!target || !target.endsWith(".canvas")) {
       return null;
     }
@@ -7530,7 +7578,7 @@ Shift-click: next direction`,
   // keeps the same context.
   cardContexts(node, board) {
     const nodeData = node.getData();
-    const target = nodeData.type === "file" ? nodeData.file : ((nodeData.text || "").match(/\[\[([^\]|#]+)/) || [])[1];
+    const target = nodeData.type === "file" ? nodeData.file : ((nodeData.text || "").match(FIRST_WIKILINK_TARGET2) || [])[1];
     const file = target && this.app.metadataCache.getFirstLinkpathDest(target.trim(), board);
     const frontmatter = file && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
     const contexts = frontmatter && frontmatter.context ? [].concat(frontmatter.context).map(String) : [];
@@ -7592,7 +7640,7 @@ Shift-click: next direction`,
       return true;
     }
     const linkedCanvases = nodes.flatMap((node) => [
-      ...(node.text || "").matchAll(/\[\[([^\]|#]+\.canvas)/g)
+      ...(node.text || "").matchAll(CANVAS_WIKILINKS)
     ]);
     for (const match of linkedCanvases) {
       const linkedFile = this.app.metadataCache.getFirstLinkpathDest(

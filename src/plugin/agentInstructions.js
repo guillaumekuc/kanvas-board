@@ -3,6 +3,9 @@
 // only the file); Settings shows each part in its own field and joins them
 // back on save. A file without sections is all general, so nothing is lost.
 
+const LEADING_BLANK_LINES = /^(?:[ \t]*\n)+/;
+const LINE_BREAK = /\r?\n/;
+
 function sectionTitle(colorName) {
   const word = colorName === 'none' ? 'uncolored' : colorName;
   return `${word[0].toUpperCase()}${word.slice(1)} cards`;
@@ -18,7 +21,7 @@ function headingColor(line, colorNames) {
 // Blank lines around a part are layout, not content.
 function trimBlankLines(text) {
   return String(text || '')
-    .replace(/^(?:[ \t]*\n)+/, '')
+    .replace(LEADING_BLANK_LINES, '')
     .trimEnd();
 }
 
@@ -26,7 +29,7 @@ function splitInstructions(text, colorNames) {
   const general = [];
   const sections = {};
   let current = general;
-  for (const line of String(text || '').split(/\r?\n/)) {
+  for (const line of String(text || '').split(LINE_BREAK)) {
     const colorName = headingColor(line, colorNames);
     if (!colorName) {
       current.push(line);

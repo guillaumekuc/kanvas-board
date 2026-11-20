@@ -13,13 +13,33 @@ import {
   newId,
 } from './store.js';
 
+const WIKILINK_TARGET = /\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g;
+const QUOTED_VALUE = /^(["'])(.*)\1$/;
+const CONTEXT_FIELD = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m;
+const OUTER_BRACKETS = /^\[|\]$/g;
+const FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/;
+const LINE_MARKUP_PREFIX = /^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/;
+const WIKILINK_SHOWN_TEXT = /\[\[([^\]|]*\|)?([^\]]*)\]\]/g;
+const NOTE_NAME_FORBIDDEN = /[#^|[\]*_`>:\\/"?<]/g;
+const LEADING_LINE_BREAK = /^\r?\n/;
+const LINE_BREAK = /\r?\n/;
+const LIST_ITEM_DASH = /^\s+-\s*/;
+const WHITESPACE_RUN = /\s+/g;
+const TRAILING_SLASHES = /[/\\]+$/;
+const BACKSLASH = /\\/g;
+const ARCHIVED_FROM_FIELD = /^archived-from:/m;
+const OUTER_WIKILINK_BRACKETS = /^\[\[|\]\]$/g;
+const TRAILING_WHITESPACE = /\s+$/;
+const ARCHIVED_EDGE_LINE = /^ {2}- (".*")$/gm;
+
 function cardLinks(node) {
   const targets =
     node.type === 'file'
       ? [node.file]
-      : [
-          ...(node.text || '').matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g),
-        ].map((match) => findFile(match[1].trim()));
+      : [...(node.text || '').matchAll(WIKILINK_TARGET)].map((match) =>
+          findFile(match[1].trim()),
+        );
   const found = targets.filter(Boolean);
   return {
     note: found.find((file) => file.endsWith('.md')) || null,
@@ -74,19 +94,19 @@ function noteContexts(frontmatter) {
     return [];
   }
   function unquote(value) {
-    return value.trim().replace(/^(["'])(.*)\1$/, '$2');
+    return value.trim().replace(QUOTED_VALUE, '$2');
   }
-  const match = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m.exec(frontmatter);
+  const match = CONTEXT_FIELD.exec(frontmatter);
   if (!match) {
     return [];
   }
   return (
     match[1].trim()
-      ? match[1].replace(/^\[|\]$/g, '').split(',')
+      ? match[1].replace(OUTER_BRACKETS, '').split(',')
       : match[2]
-          .split(/\r?\n/)
+          .split(LINE_BREAK)
           .filter((line) => line.trim())
-          .map((line) => line.replace(/^\s+-\s*/, ''))
+          .map((line) => line.replace(LIST_ITEM_DASH, ''))
   )
     .map(unquote)
     .filter(Boolean);
@@ -98,9 +118,8 @@ function cardContexts(node) {
   const { note } = cardLinks(node);
   const frontmatter =
     note &&
-    (fileSystem
-      .readFileSync(vaultPath(note), 'utf8')
-      .match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1];
+    (fileSystem.readFileSync(vaultPath(note), 'utf8').match(FRONTMATTER) ||
+      [])[1];
   const contexts = noteContexts(frontmatter);
   return contexts.length ? contexts : undefined;
 }
@@ -112,10 +131,10 @@ function noteName(text) {
         .split('\n')
         .find((line) => line.trim()) || 'Card'
     )
-      .replace(/^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/, '')
-      .replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2')
-      .replace(/[#^|[\]*_`>:\\/"?<]/g, '')
-      .replace(/\s+/g, ' ')
+      .replace(LINE_MARKUP_PREFIX, '')
+      .replace(WIKILINK_SHOWN_TEXT, '$2')
+      .replace(NOTE_NAME_FORBIDDEN, '')
+      .replace(WHITESPACE_RUN, ' ')
       .trim()
       .slice(0, 60)
       .trim() || 'Card'
@@ -183,10 +202,10 @@ function archiveDir(board, options = {}) {
     return (
       String(options.archiveFolder || ARCHIVE_DIR)
         .trim()
-        .replace(/[/\\]+$/, '') || ARCHIVE_DIR
+        .replace(TRAILING_SLASHES, '') || ARCHIVE_DIR
     );
   }
-  const boardPath = String(board).replace(/\\/g, '/'),
+  const boardPath = String(board).replace(BACKSLASH, '/'),
     folder = path.posix.dirname(boardPath);
   return (
     (folder === '.' ? '' : folder + '/') +
@@ -259,24 +278,24 @@ function archiveNote(canvasData, { id, board, date, contexts = [] }) {
 // Parses an archive note; returns { board, operations } that put the card back
 // (same id if free) with the edges whose other end is still on the board.
 function restoreOps(canvasData, source) {
-  const frontmatter = (source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) ||
-    [])[1];
-  if (!frontmatter || !/^archived-from:/m.test(frontmatter)) {
+  const frontmatter = (source.match(FRONTMATTER_BLOCK) || [])[1];
+  if (!frontmatter || !ARCHIVED_FROM_FIELD.test(frontmatter)) {
     throw new Error('not an archived card note');
   }
   function get(field) {
-    const match = new RegExp(`^${field}: (.*)$`, 'm').exec(frontmatter);
+    const fieldLine = new RegExp(`^${field}: (.*)$`, 'm');
+    const match = fieldLine.exec(frontmatter);
     if (!match) {
       return undefined;
     }
     const value = match[1].trim();
     return value.startsWith('"') ? JSON.parse(value) : value;
   }
-  const board = get('archived-from').replace(/^\[\[|\]\]$/g, '');
+  const board = get('archived-from').replace(OUTER_WIKILINK_BRACKETS, '');
   const body = source
     .slice(source.indexOf('---', 3) + 3)
-    .replace(/^\r?\n/, '')
-    .replace(/\s+$/, '');
+    .replace(LEADING_LINE_BREAK, '')
+    .replace(TRAILING_WHITESPACE, '');
   const type = get('card-type') || 'text';
   const ids = new Set(canvasData.nodes.map((node) => node.id));
   const id = ids.has(get('card-id')) ? newId() : get('card-id');
@@ -313,7 +332,7 @@ function restoredEdgeOps(canvasData, frontmatter, { archivedId, restoredId }) {
   const ids = new Set(canvasData.nodes.map((node) => node.id));
   const edgeIds = new Set(canvasData.edges.map((edge) => edge.id));
   const operations = [];
-  for (const edgeLine of frontmatter.matchAll(/^ {2}- (".*")$/gm)) {
+  for (const edgeLine of frontmatter.matchAll(ARCHIVED_EDGE_LINE)) {
     const [edgeId, from, fromSide, toId, toSide, label] = JSON.parse(
       edgeLine[1],
     ).split(' | ');

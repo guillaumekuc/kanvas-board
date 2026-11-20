@@ -11,6 +11,20 @@ import {
   writeOps,
 } from '../board/store.js';
 
+const LIST_SEPARATOR = /[\s,]+/;
+const CANVAS_COLOR_NUMBER = /^[1-6]$/;
+const ROLLUP_SUFFIXES = / · \d+ inside| · \d+d$/g;
+const STALE_SUFFIX = / · \d+d$/;
+const INSIDE_SUFFIX = / · \d+ inside/;
+const NOTE_CARD_TEXT = /^\[\[[^\]]+\]\]( · .+)?$/;
+const DONE_CARD_TEXT = /^[^\n]+ · done · \[\[[^\]]+\]\]$/;
+const FRONTMATTER = /^---\n([\s\S]*?)\n---/;
+const FRONTMATTER_KEY = /^(\w[\w-]*):/gm;
+const TRAILING_SLASHES = /[/]+$/;
+const PART_CHECKBOX = /^\s*- \[([ xX])\] /gm;
+const DECISIONS_RECORD_HEADING = /^## Decisions Record/m;
+const OPEN_QUESTION = /^\s*- \[\?\] /gm;
+
 const ORANGE_STALE_MS = 3600000;
 const DEFAULT_PASS_COLORS = 'cyan purple';
 const DEFAULT_NOTES_FOLDER = 'Board notes';
@@ -65,10 +79,10 @@ function activeNode(boardTree, total, active) {
 function parseColors(value) {
   return new Set(
     String(value || '')
-      .split(/[\s,]+/)
+      .split(LIST_SEPARATOR)
       .filter(Boolean)
       .map((color) => COLORS[color.toLowerCase()] || color)
-      .filter((color) => /^[1-6]$/.test(color)),
+      .filter((color) => CANVAS_COLOR_NUMBER.test(color)),
   );
 }
 
@@ -110,7 +124,7 @@ function ageSuffixOperation(card, days) {
   if (!isAging) {
     return null;
   }
-  const base = card.text.replace(/ · \d+d$/, '');
+  const base = card.text.replace(STALE_SUFFIX, '');
   const isStale = days > 0 && card.note.ageDays >= days;
   const text = isStale ? `${base} · ${card.note.ageDays}d` : base;
   return text === card.text ? null : { op: 'set', id: card.id, text };
@@ -137,10 +151,7 @@ function cardTextOk(raw) {
   if (!text.includes('[[')) {
     return text.split('\n').length <= 3;
   }
-  return (
-    /^\[\[[^\]]+\]\]( · .+)?$/.test(text) ||
-    /^[^\n]+ · done · \[\[[^\]]+\]\]$/.test(text)
-  );
+  return NOTE_CARD_TEXT.test(text) || DONE_CARD_TEXT.test(text);
 }
 
 const TEXT_SHAPES =
@@ -174,12 +185,13 @@ const REQUIRED_SECTIONS = ['Aim', 'Design'];
 // A plan note's shape: `context` as the only property, one context, the
 // required sections, and ## Output once the card is green.
 function noteIssues(source, color) {
-  const frontmatter = (source.match(/^---\n([\s\S]*?)\n---/) || [])[1];
+  const frontmatter = (source.match(FRONTMATTER) || [])[1];
   const keys = frontmatter
-    ? [...frontmatter.matchAll(/^(\w[\w-]*):/gm)].map((match) => match[1])
+    ? [...frontmatter.matchAll(FRONTMATTER_KEY)].map((match) => match[1])
     : [];
   function hasHeading(heading) {
-    return new RegExp(`^${heading}\s*$`, 'm').test(source);
+    const headingLine = new RegExp(`^${heading}\s*$`, 'm');
+    return headingLine.test(source);
   }
   const issues = [];
   if (keys.join() !== 'context') {
@@ -206,7 +218,7 @@ function noteIssues(source, color) {
 function notesFolder() {
   return (
     String(settings().notesFolder || DEFAULT_NOTES_FOLDER).replace(
-      /[/]+$/,
+      TRAILING_SLASHES,
       '',
     ) + '/'
   );
@@ -272,7 +284,7 @@ function desiredColor(card, inner, goColors) {
   if (goColors.has(card.color)) {
     return card.color;
   }
-  const rolled = card.text !== undefined && / · \d+ inside/.test(card.text);
+  const rolled = card.text !== undefined && INSIDE_SUFFIX.test(card.text);
   const own = rolled ? null : card.color;
   if (inner.red || own === '1') {
     return '1';
@@ -294,7 +306,7 @@ function nestedCardUpdate(card, inner, goColorSet) {
   const text =
     card.text === undefined
       ? undefined
-      : card.text.replace(/ · \d+ inside| · \d+d$/g, '') +
+      : card.text.replace(ROLLUP_SUFFIXES, '') +
         (waiting ? ` · ${waiting} inside` : '');
   const isTextChanged = text !== card.text;
   if (color === card.color && !isTextChanged) {
@@ -316,10 +328,10 @@ function nestedCardUpdate(card, inner, goColorSet) {
 // rounds).
 function noteState(relativePath) {
   const text = fileSystem.readFileSync(vaultPath(relativePath), 'utf8');
-  const parts = [...text.matchAll(/^\s*- \[([ xX])\] /gm)];
+  const parts = [...text.matchAll(PART_CHECKBOX)];
   const done = parts.filter((match) => match[1] !== ' ').length;
   const questions = [
-    ...text.split(/^## Decisions Record/m)[0].matchAll(/^\s*- \[\?\] /gm),
+    ...text.split(DECISIONS_RECORD_HEADING)[0].matchAll(OPEN_QUESTION),
   ].length; // answered rounds don't count
   return {
     level: parts.length ? 'plan' : 'brief',

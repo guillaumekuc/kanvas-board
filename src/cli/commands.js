@@ -37,6 +37,8 @@ import {
   tree as workflowTree,
 } from '../workflow/workflow.js';
 
+const DEPENDS_ON_LABEL = /depends on/i;
+
 const DEFAULT_WIDTH = 320;
 
 function addCommand(cli) {
@@ -98,7 +100,7 @@ function checkCommand(cli) {
 function edgeCommand(cli) {
   const label = cli.option('--label');
   const [flowFrom, flowTo] = SIDES[defaultDir()];
-  const isAgainstFlow = /depends on/i.test(label || '');
+  const isAgainstFlow = DEPENDS_ON_LABEL.test(label || '');
   const [fromSide, toSide] = isAgainstFlow
     ? [flowTo, flowFrom]
     : [flowFrom, flowTo];
