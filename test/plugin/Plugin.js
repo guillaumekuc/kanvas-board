@@ -10,11 +10,13 @@ class Plugin extends Component {
 
   addCommand(command) {
     this.recorded.commands.push(`${command.id}: ${command.name}`);
+
     return command;
   }
 
   addRibbonIcon(icon, title) {
     this.recorded.ribbonIcons.push(`${icon}: ${title}`);
+
     return anything();
   }
 

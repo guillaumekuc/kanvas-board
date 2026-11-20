@@ -13,6 +13,7 @@ Module.registerHooks({
     if (specifier === 'obsidian') {
       return { url: STUB_URL, shortCircuit: true };
     }
+
     return nextResolve(specifier, context);
   },
 });

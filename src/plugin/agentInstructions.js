@@ -8,11 +8,13 @@ const LINE_BREAK = /\r?\n/;
 
 function sectionTitle(colorName) {
   const word = colorName === 'none' ? 'uncolored' : colorName;
+
   return `${word[0].toUpperCase()}${word.slice(1)} cards`;
 }
 
 function headingColor(line, colorNames) {
   const heading = line.trim();
+
   return colorNames.find(
     (colorName) => heading === `## ${sectionTitle(colorName)}`,
   );
@@ -42,6 +44,7 @@ function splitInstructions(text, colorNames) {
   for (const colorName of colorNames) {
     colors[colorName] = trimBlankLines((sections[colorName] || []).join('\n'));
   }
+
   return { general: trimBlankLines(general.join('\n')), colors };
 }
 
@@ -51,6 +54,7 @@ function joinInstructions(parts, colorNames) {
     .filter(([, body]) => body)
     .map(([colorName, body]) => `## ${sectionTitle(colorName)}\n\n${body}`);
   const blocks = [trimBlankLines(parts.general), ...sections].filter(Boolean);
+
   return `${blocks.join('\n\n')}\n`;
 }
 

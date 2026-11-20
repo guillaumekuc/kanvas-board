@@ -35,6 +35,7 @@ Module._resolveFilename = function resolveStub(request, ...rest) {
   if (request === 'obsidian') {
     return require.resolve('./obsidianStub.js');
   }
+
   return resolve.call(this, request, ...rest);
 };
 global.window = {
@@ -73,12 +74,14 @@ async function main() {
     createFolder: async () => {},
     create: async (file, content) => {
       created[file] = JSON.parse(content);
+
       return { path: file };
     },
   };
   const seeded = { seed: 7 };
   Math.random = () => {
     seeded.seed = (seeded.seed * 1103515245 + 12345) % 2147483648;
+
     return seeded.seed / 2147483648;
   };
   await plugin.createStarterBoard();

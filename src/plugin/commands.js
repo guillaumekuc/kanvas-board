@@ -22,6 +22,7 @@ function registerColorCommands(plugin) {
           }
           canvas.requestSave();
         }
+
         return true;
       },
     });
@@ -60,6 +61,7 @@ function registerTidyCommands(plugin) {
           canvasData,
         );
       }
+
       return true;
     },
   });
@@ -76,9 +78,11 @@ function registerTidyCommands(plugin) {
         if (plugin.settings.layoutDirection === direction) {
           return false;
         }
+
         if (!checking) {
           plugin.setLayoutDirection(direction);
         }
+
         return true;
       },
     });
@@ -366,11 +370,13 @@ function registerFoldDirectionCommands(plugin) {
         if (plugin.settings.foldDirection === direction) {
           return false;
         }
+
         if (!checking) {
           plugin.settings.foldDirection = direction;
           plugin.saveData(plugin.settings);
           new obsidian.Notice(`Kanvas board: fold direction ${label}`);
         }
+
         return true;
       },
     });
@@ -533,6 +539,7 @@ function registerTemplateInsertCommand(plugin) {
           }).open();
         }
       }
+
       return true;
     },
   });
@@ -555,6 +562,7 @@ function registerViewCommands(plugin) {
         }
         findBar.open();
       }
+
       return true;
     },
   });
@@ -569,6 +577,7 @@ function registerViewCommands(plugin) {
       if (!checking) {
         plugin.pane(canvas).toggle();
       }
+
       return true;
     },
   });
@@ -583,6 +592,7 @@ function registerViewCommands(plugin) {
       if (!checking) {
         plugin.showAll(canvas);
       }
+
       return true;
     },
   });
@@ -604,6 +614,7 @@ function registerRestoreCommands(plugin) {
             (error) => new obsidian.Notice(`Kanvas board: ${error.message}`),
           );
       }
+
       return true;
     },
   });

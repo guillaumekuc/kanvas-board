@@ -82,6 +82,7 @@ function firstStepsCanvas() {
     ...card(TRY_IT, STEPS.length),
     y: STEPS.length * STEP_HEIGHT + 20,
   };
+
   return { nodes: [group, ...steps, tryIt], edges };
 }
 
@@ -98,6 +99,7 @@ function legendNodes(colorLabel) {
   };
   const cards = shared.WORKFLOW.map(({ name, meaning }, index) => {
     const colorName = shared.COLOR_NUM[name] ? name : 'uncolored';
+
     return {
       id: store.newId(),
       type: 'text',
@@ -108,6 +110,7 @@ function legendNodes(colorLabel) {
       height: 80,
     };
   });
+
   return [group, ...cards];
 }
 
@@ -117,6 +120,7 @@ function starterBoardPath(vault, defaultBoard) {
   if (!vault.getAbstractFileByPath(defaultBoard)) {
     return defaultBoard;
   }
+
   const parent = path.posix.dirname(defaultBoard);
   const folder = parent === '.' ? '' : `${parent}/`;
   for (let suffix = 1; ; suffix++) {

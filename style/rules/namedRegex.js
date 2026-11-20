@@ -10,6 +10,7 @@ function isRegExpCall(node) {
 
 function isNamed(node) {
   const parent = node.parent;
+
   return (
     parent.type === 'VariableDeclarator' &&
     parent.init === node &&
@@ -32,6 +33,7 @@ module.exports = {
         });
       }
     }
+
     return {
       Literal(node) {
         if (node.regex) {

@@ -76,6 +76,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
         if (!checking) {
           this.runAction(run, canvas, [...canvas.selection]);
         }
+
         return true;
       },
     });
@@ -117,6 +118,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
         canvas.selection.add(node);
       }
     });
+
     return added.length;
   }
 
@@ -239,6 +241,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
   // selection\n(Shift + 2)").
   keyedLabel(label, id) {
     const hotkey = this.hotkey(id);
+
     return hotkey ? `${label}\n(${hotkey})` : label;
   }
 
@@ -248,6 +251,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
     if (!hotkey) {
       return label;
     }
+
     return createFragment((fragment) => {
       fragment.appendText(label);
       fragment.createSpan({ cls: 'kanvas-board-key', text: hotkey });
@@ -274,6 +278,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
           );
           return;
         }
+
         canvas.undo();
         for (const filePath of files) {
           const file = this.app.vault.getAbstractFileByPath(filePath);
@@ -335,6 +340,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
 
   cycleLayoutDirection() {
     const dirs = Object.keys(shared.LAYOUT_DIRS);
+
     return this.setLayoutDirection(
       dirs[(dirs.indexOf(this.settings.layoutDirection) + 1) % dirs.length],
     );
@@ -422,6 +428,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
         }
       });
     }
+
     return group;
   }
 
@@ -462,6 +469,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
       } catch (error) {
         console.error('kanvas-board: selection toolbar', error);
       }
+
       return result;
     };
     // The color picker opens on click: its swatches get the state as tooltip.
@@ -635,6 +643,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
     if (!('claudePath' in this.settings)) {
       return;
     }
+
     if (this.settings.claudePath && !this.settings.agentCommand) {
       this.settings.agentCommand = `"${this.settings.claudePath}"`;
     }
@@ -656,6 +665,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
   legacySkillPath() {
     const vaultRoot = this.app.vault.adapter.basePath;
     const skills = path.join(vaultRoot, '.claude', 'skills');
+
     return ['kanvas-board', 'canvas-board']
       .map((name) => path.join(skills, name, 'SKILL.md'))
       .find((candidate) => fileSystem.existsSync(candidate));
@@ -732,6 +742,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
   activeFile() {
     const view =
       this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
+
     return view && view.file;
   }
 
@@ -753,6 +764,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
     const leaf = this.app.workspace
       .getLeavesOfType('canvas')
       .find((leaf) => leaf.view.canvas === canvas);
+
     return leaf && leaf.view.file ? leaf.view.file.path : null;
   }
 
@@ -773,6 +785,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
     if (!target || !target.endsWith('.canvas')) {
       return null;
     }
+
     return (
       this.app.vault.getAbstractFileByPath(target) ||
       this.app.metadataCache.getFirstLinkpathDest(target.trim(), '')
@@ -781,6 +794,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
 
   cardEditor(node) {
     const child = node.child;
+
     return (
       (child && ((child.editMode && child.editMode.editor) || child.editor)) ||
       null
@@ -804,6 +818,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
       frontmatter && frontmatter.context
         ? [].concat(frontmatter.context).map(String)
         : [];
+
     return contexts.length ? contexts : undefined;
   }
 
@@ -834,6 +849,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
           canvasData,
           this.boardLibrary.restoreOps(canvasData, source).operations,
         );
+
         return JSON.stringify(canvasData, null, '\t');
       });
     }
@@ -845,12 +861,14 @@ class CanvasBoardPlugin extends obsidian.Plugin {
     const leaf = this.app.workspace
       .getLeavesOfType('canvas')
       .find((leaf) => leaf.view.file && leaf.view.file.path === board);
+
     return leaf ? leaf.view.canvas : null;
   }
 
   activeCanvas() {
     const view =
       this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
+
     return view && view.getViewType() === 'canvas' ? view.canvas : null;
   }
 
@@ -861,6 +879,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
       const file = this.app.vault.getAbstractFileByPath(filePath);
       const canvasData =
         file && store.parseOrNull(await this.app.vault.cachedRead(file));
+
       return (canvasData && canvasData.nodes) || [];
     };
     function isGo(node) {
@@ -883,6 +902,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
         return true;
       }
     }
+
     return false;
   }
 

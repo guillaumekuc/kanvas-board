@@ -23,6 +23,7 @@ function clearFrames(root) {
 // Offsets of `query` in `text`, ignoring case.
 function matchOffsets(text, query) {
   const pattern = new RegExp(query.replace(REGEX_SPECIAL_CHARS, '\\$&'), 'gi');
+
   return Array.from(text.matchAll(pattern), (match) => match.index);
 }
 
@@ -53,6 +54,7 @@ function frameText(root, query) {
     }
     frames.push(...here);
   }
+
   return frames;
 }
 
@@ -180,6 +182,7 @@ class FindBar {
     if (!this.matches.length) {
       return;
     }
+
     this.index =
       (this.index + step + this.matches.length) % this.matches.length;
     this.show();
@@ -370,6 +373,7 @@ class FilterPane {
       reset();
       this.plugin.refreshView(this.canvas);
     });
+
     return sectionEl;
   }
 
@@ -390,6 +394,7 @@ class FilterPane {
         tags.add(tag);
       }
     }
+
     return tags;
   }
 
@@ -409,6 +414,7 @@ class FilterPane {
       }
       counts[data.color || ''] = (counts[data.color || ''] || 0) + 1;
     }
+
     return counts;
   }
 
@@ -589,6 +595,7 @@ function branchLevelsFrom(links, root) {
       levels.push(level);
     }
   }
+
   return levels;
 }
 

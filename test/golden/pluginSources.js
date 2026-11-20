@@ -8,6 +8,7 @@ function pluginSources() {
   const entries = fileSystem
     .readdirSync(REPO)
     .filter((name) => !SKIPPED.has(name));
+
   return Object.fromEntries(
     entries.map((name) => [name, path.join(REPO, name)]),
   );
