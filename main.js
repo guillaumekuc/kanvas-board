@@ -4400,13 +4400,13 @@ async function applyToOpenCanvas(canvas, operations) {
 
 // src/plugin/shared.js
 var COLORS2 = [
-  ["none", "", "0", "Inbox"],
-  ["red", "1", "1", "Blocked"],
-  ["orange", "2", "2", "In Progress"],
-  ["yellow", "3", "3", "Review"],
-  ["green", "4", "4", "Done"],
-  ["cyan", "5", "5", "Do"],
-  ["purple", "6", "6", "Clarify"]
+  { name: "none", canvasColor: "", commandKey: "0", label: "Inbox" },
+  { name: "red", canvasColor: "1", commandKey: "1", label: "Blocked" },
+  { name: "orange", canvasColor: "2", commandKey: "2", label: "In Progress" },
+  { name: "yellow", canvasColor: "3", commandKey: "3", label: "Review" },
+  { name: "green", canvasColor: "4", commandKey: "4", label: "Done" },
+  { name: "cyan", canvasColor: "5", commandKey: "5", label: "Do" },
+  { name: "purple", canvasColor: "6", commandKey: "6", label: "Clarify" }
 ];
 var DEFAULTS2 = {
   defaultBoard: "Board.canvas",
@@ -4448,13 +4448,16 @@ var COLOR_NUM = {
   purple: "6"
 };
 var WORKFLOW = [
-  ["cyan", "The agent carries the card to done."],
-  ["purple", "The agent takes one step, then hands back."],
-  ["orange", "A pass is on the card."],
-  ["yellow", "A question or a review for you."],
-  ["red", "Nothing moves until it is unblocked."],
-  ["green", "Finished. Remove the card when it no longer helps."],
-  ["none", "No state. The agent never touches it."]
+  { name: "cyan", meaning: "The agent carries the card to done." },
+  { name: "purple", meaning: "The agent takes one step, then hands back." },
+  { name: "orange", meaning: "A pass is on the card." },
+  { name: "yellow", meaning: "A question or a review for you." },
+  { name: "red", meaning: "Nothing moves until it is unblocked." },
+  {
+    name: "green",
+    meaning: "Finished. Remove the card when it no longer helps."
+  },
+  { name: "none", meaning: "No state. The agent never touches it." }
 ];
 var LAYOUT_DIRS = {
   TB: { name: "top to bottom", turn: 0 },
@@ -4463,25 +4466,44 @@ var LAYOUT_DIRS = {
   RL: { name: "right to left", turn: 90 }
 };
 var LINUX_TERMINALS = [
-  // [binary, (vault, command) => args]
-  [
-    "gnome-terminal",
-    (vault, command) => [`--working-directory=${vault}`, "--", ...command]
-  ],
-  ["konsole", (vault, command) => ["--workdir", vault, "-e", ...command]],
-  [
-    "xfce4-terminal",
-    (vault, command) => ["--working-directory", vault, "-x", ...command]
-  ],
-  ["kitty", (vault, command) => ["--directory", vault, ...command]],
-  [
-    "alacritty",
-    (vault, command) => ["--working-directory", vault, "-e", ...command]
-  ],
-  ["wezterm", (vault, command) => ["start", "--cwd", vault, "--", ...command]],
-  ["foot", (vault, command) => [`--working-directory=${vault}`, ...command]],
-  ["x-terminal-emulator", (vault, command) => ["-e", ...command]],
-  ["xterm", (vault, command) => ["-e", ...command]]
+  // args: (vault, command) => the terminal's arguments
+  {
+    binary: "gnome-terminal",
+    args: (vault, command) => [
+      `--working-directory=${vault}`,
+      "--",
+      ...command
+    ]
+  },
+  {
+    binary: "konsole",
+    args: (vault, command) => ["--workdir", vault, "-e", ...command]
+  },
+  {
+    binary: "xfce4-terminal",
+    args: (vault, command) => ["--working-directory", vault, "-x", ...command]
+  },
+  {
+    binary: "kitty",
+    args: (vault, command) => ["--directory", vault, ...command]
+  },
+  {
+    binary: "alacritty",
+    args: (vault, command) => ["--working-directory", vault, "-e", ...command]
+  },
+  {
+    binary: "wezterm",
+    args: (vault, command) => ["start", "--cwd", vault, "--", ...command]
+  },
+  {
+    binary: "foot",
+    args: (vault, command) => [`--working-directory=${vault}`, ...command]
+  },
+  {
+    binary: "x-terminal-emulator",
+    args: (vault, command) => ["-e", ...command]
+  },
+  { binary: "xterm", args: (vault, command) => ["-e", ...command] }
 ];
 var boardLibrary = {
   SIDES,
@@ -5127,7 +5149,7 @@ var FilterPane = class {
   // Dots only, on one line; the name and card count are in the tooltip.
   renderColors(state, counts) {
     this.colorsEl.empty();
-    for (const [name, color] of COLORS2) {
+    for (const { name, canvasColor: color } of COLORS2) {
       const isOut = state.xcolors.has(color);
       const label = this.plugin.colorLabel(name);
       const count = counts[color] || 0;
@@ -5250,7 +5272,7 @@ function emptyViewState() {
 
 // src/plugin/commands.js
 function registerColorCommands(plugin) {
-  for (const [name, color, key] of COLORS2) {
+  for (const { name, canvasColor: color, commandKey: key } of COLORS2) {
     plugin.addCommand({
       id: `color-${key}`,
       name: plugin.colorCommandName(name),
@@ -5325,7 +5347,7 @@ function registerTidyCommands(plugin) {
 }
 function registerPackCommands(plugin) {
   plugin.addCanvasCommand("collapse", "Pack into subcanvas", {
-    menu: ["Pack into subcanvas", "package"],
+    menu: { title: "Pack into subcanvas", icon: "package" },
     test: (canvas, selection) => selection.length > 0,
     run: (canvas, selection) => new NamePrompt(plugin.app, {
       title: "Subcanvas name",
@@ -5360,7 +5382,7 @@ function registerUnpackCommands(plugin) {
     return selection.length === 1 && !!plugin.linkedCanvas(selection[0]);
   }
   plugin.addCanvasCommand("expand", "Unpack subcanvas (dissolve)", {
-    menu: ["Unpack subcanvas (dissolve)", "package-open"],
+    menu: { title: "Unpack subcanvas (dissolve)", icon: "package-open" },
     test: linked,
     run: async (canvas, [node]) => {
       const file = plugin.linkedCanvas(node);
@@ -5375,7 +5397,7 @@ function registerUnpackCommands(plugin) {
     }
   });
   plugin.addCanvasCommand("unpack-copy", "Unpack subcanvas (copy)", {
-    menu: ["Unpack subcanvas (copy)", "copy"],
+    menu: { title: "Unpack subcanvas (copy)", icon: "copy" },
     test: linked,
     run: (canvas, [node]) => plugin.unpack(canvas, node, {
       file: plugin.linkedCanvas(node),
@@ -5385,7 +5407,7 @@ function registerUnpackCommands(plugin) {
 }
 function registerMergeSplitCommands(plugin) {
   plugin.addCanvasCommand("merge", "Merge selected cards", {
-    menu: ["Merge cards", "merge"],
+    menu: { title: "Merge cards", icon: "merge" },
     test: (canvas, selection) => selection.length > 1 && selection.every(isTextNode),
     run: (canvas, selection) => plugin.edit(
       canvas,
@@ -5395,15 +5417,15 @@ function registerMergeSplitCommands(plugin) {
       )
     )
   });
-  for (const [separator, label] of [
-    ["paragraph", "paragraph"],
-    ["bullet", "top-level bullet"],
-    ["h1", "heading 1"],
-    ["h2", "heading 2"],
-    ["h3", "heading 3"]
+  for (const { separator, label } of [
+    { separator: "paragraph", label: "paragraph" },
+    { separator: "bullet", label: "top-level bullet" },
+    { separator: "h1", label: "heading 1" },
+    { separator: "h2", label: "heading 2" },
+    { separator: "h3", label: "heading 3" }
   ]) {
     plugin.addCanvasCommand(`split-${separator}`, `Split card by ${label}`, {
-      menu: separator === "bullet" ? ["Split by top-level bullet", "split"] : null,
+      menu: separator === "bullet" ? { title: "Split by top-level bullet", icon: "split" } : null,
       test: (canvas, selection) => selection.length === 1 && isTextNode(selection[0]) && !selection[0].isEditing,
       run: (canvas, [node]) => plugin.edit(
         canvas,
@@ -5417,7 +5439,10 @@ function registerExtractCommand(plugin) {
     "extract",
     "Extract current selection to a new card",
     {
-      menu: ["Extract current selection to a new card", "text-select"],
+      menu: {
+        title: "Extract current selection to a new card",
+        icon: "text-select"
+      },
       test: (canvas, selection) => selection.length === 1 && selection[0].isEditing && !!plugin.cardEditor(selection[0]),
       run: (canvas, [node]) => {
         const editor = plugin.cardEditor(node);
@@ -5451,7 +5476,7 @@ function registerExtractCommand(plugin) {
 }
 function registerArchiveCommand(plugin) {
   plugin.addCanvasCommand("archive", "Archive selected cards", {
-    menu: ["Archive", "archive"],
+    menu: { title: "Archive", icon: "archive" },
     test: (canvas, selection) => selection.length > 0,
     run: async (canvas, selection) => {
       const board = plugin.activeFile().path;
@@ -5491,7 +5516,7 @@ function registerFoldCommand(plugin) {
     return !plugin.foldOf(node) && plugin.branchLinks(canvas, plugin.settings.foldDirection).has(node.id);
   }
   plugin.addCanvasCommand("fold", "Fold branch", {
-    menu: ["Fold branch", "chevrons-down-up"],
+    menu: { title: "Fold branch", icon: "chevrons-down-up" },
     test: (canvas, selection) => selection.some((node) => canFold(canvas, node)),
     run: (canvas, selection) => plugin.setFolds(
       canvas,
@@ -5502,16 +5527,21 @@ function registerFoldCommand(plugin) {
   });
 }
 function registerUnfoldCommands(plugin) {
-  for (const [levels, id, name, menu] of [
-    [1, "unfold", "Unfold branch 1 level", ["Unfold 1 level", "chevron-down"]],
-    [2, "unfold-2", "Unfold branch 2 levels", null],
-    [3, "unfold-3", "Unfold branch 3 levels", null],
-    [
-      Infinity,
-      "unfold-all",
-      "Unfold whole branch",
-      ["Unfold whole branch", "chevrons-up-down"]
-    ]
+  for (const { levels, id, name, menu } of [
+    {
+      levels: 1,
+      id: "unfold",
+      name: "Unfold branch 1 level",
+      menu: { title: "Unfold 1 level", icon: "chevron-down" }
+    },
+    { levels: 2, id: "unfold-2", name: "Unfold branch 2 levels", menu: null },
+    { levels: 3, id: "unfold-3", name: "Unfold branch 3 levels", menu: null },
+    {
+      levels: Infinity,
+      id: "unfold-all",
+      name: "Unfold whole branch",
+      menu: { title: "Unfold whole branch", icon: "chevrons-up-down" }
+    }
   ]) {
     plugin.addCanvasCommand(id, name, {
       menu,
@@ -5531,9 +5561,9 @@ function registerUnfoldCommands(plugin) {
   }
 }
 function registerFoldDirectionCommands(plugin) {
-  for (const [direction, label] of [
-    ["out", "outgoing (cards it points to)"],
-    ["in", "incoming (cards pointing to it)"]
+  for (const { direction, label } of [
+    { direction: "out", label: "outgoing (cards it points to)" },
+    { direction: "in", label: "incoming (cards pointing to it)" }
   ]) {
     plugin.addCommand({
       id: `fold-direction-${direction}`,
@@ -5557,7 +5587,7 @@ function registerTemplateSaveCommand(plugin) {
     "template-save",
     "Save selected cards as a template",
     {
-      menu: ["Save as template", "layout-template"],
+      menu: { title: "Save as template", icon: "layout-template" },
       test: (canvas, selection) => selection.length > 0,
       run: (canvas) => {
         const existing = new Map(
@@ -5608,7 +5638,7 @@ function registerSelectChildrenCommand(plugin) {
     "select-children",
     "Select children (all levels down, in the fold direction)",
     {
-      menu: ["Select children", "list-tree"],
+      menu: { title: "Select children", icon: "list-tree" },
       test: (canvas, selection) => [...childIds(canvas, selection)].some(
         (id) => canvas.nodes.get(id) && !plugin.isHidden(canvas, canvas.nodes.get(id)) && !canvas.selection.has(canvas.nodes.get(id))
       ),
@@ -5626,7 +5656,7 @@ function registerSelectSameTagCommand(plugin) {
     );
   }
   plugin.addCanvasCommand("select-same-tag", "Select cards with the same tag", {
-    menu: ["Select same tag", "tag"],
+    menu: { title: "Select same tag", icon: "tag" },
     test: (canvas, selection) => tagsOf(selection).size > 0,
     run: (canvas, selection) => {
       const tags = tagsOf(selection);
@@ -5643,7 +5673,7 @@ function registerSelectSameColorCommand(plugin) {
     "select-same-color",
     "Select cards with the same color",
     {
-      menu: ["Select same color", "palette"],
+      menu: { title: "Select same color", icon: "palette" },
       test: (canvas, selection) => selectedCards(selection).length > 0,
       run: (canvas, selection) => {
         const colors = new Set(
@@ -5909,7 +5939,7 @@ function legendNodes(colorLabel) {
     width: COLUMN_WIDTH + 80,
     height: WORKFLOW.length * 100 + 100
   };
-  const cards = WORKFLOW.map(([name, meaning], index) => {
+  const cards = WORKFLOW.map(({ name, meaning }, index) => {
     const colorName = COLOR_NUM[name] ? name : "uncolored";
     return {
       id: newId(),
@@ -6029,8 +6059,8 @@ function defaultLaunch({ vault, board, agent }) {
     const script = MAC_SCRIPT.flatMap((line) => ["-e", line]);
     return ["osascript", [...script, vault, ...agent]];
   }
-  const found = LINUX_TERMINALS.find(([binary]) => onPath(binary));
-  return found ? [found[0], found[1](vault, agent)] : null;
+  const found = LINUX_TERMINALS.find(({ binary }) => onPath(binary));
+  return found ? [found.binary, found.args(vault, agent)] : null;
 }
 function terminalLaunch(template, { vault, board, agent }) {
   if (!template) {
@@ -6224,7 +6254,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
       'What each color does and its label, shown in tooltips, the filter pane and the color commands. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.'
     );
     const goColors = parseColors(this.plugin.settings.passColors);
-    for (const [name, meaning] of WORKFLOW) {
+    for (const { name, meaning } of WORKFLOW) {
       const colorNumber = COLOR_NUM[name];
       const row = new import_obsidian6.Setting(containerEl).setName(colorNumber ? name : "uncolored").setDesc(meaning);
       row.nameEl.prepend(
@@ -6234,7 +6264,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
         })
       );
       row.addText(
-        (component) => component.setPlaceholder(COLORS2.find((color) => color[0] === name)[3]).setValue((this.plugin.settings.colorLabels || {})[name] || "").onChange((value) => this.plugin.setColorLabel(name, value.trim()))
+        (component) => component.setPlaceholder(COLORS2.find((color) => color.name === name).label).setValue((this.plugin.settings.colorLabels || {})[name] || "").onChange((value) => this.plugin.setColorLabel(name, value.trim()))
       );
       if (!colorNumber) {
         row.addToggle(
@@ -6253,7 +6283,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
               goColors.delete(colorNumber);
             }
             this.plugin.settings.passColors = WORKFLOW.map(
-              ([colorName]) => colorName
+              ({ name: colorName }) => colorName
             ).filter((colorName) => goColors.has(COLOR_NUM[colorName])).join(" ");
             await this.plugin.saveData(this.plugin.settings);
           })
@@ -6293,7 +6323,7 @@ var CanvasBoardSettings = class extends import_obsidian6.PluginSettingTab {
   // One field for the general part and one per color; any of them saves the
   // whole file (see agentInstructions.js).
   addSkillEditors(skillFile) {
-    const colorNames = WORKFLOW.map(([colorName]) => colorName);
+    const colorNames = WORKFLOW.map(({ name: colorName }) => colorName);
     const text = this.readSkill(skillFile);
     const parts = splitInstructions(text, colorNames);
     const general = this.addSkillField(parts.general, "16");
@@ -6848,9 +6878,9 @@ function mixBoardView(targetClass) {
 
 // src/plugin/CanvasBoardPlugin.js
 var CONTROL_BUTTONS = [
-  ["find", "Search current canvas", "search"],
-  ["filter", "Filter cards", "filter"],
-  ["tidy-layout", "Tidy layout", "network"]
+  { id: "find", label: "Search current canvas", icon: "search" },
+  { id: "filter", label: "Filter cards", icon: "filter" },
+  { id: "tidy-layout", label: "Tidy layout", icon: "network" }
 ];
 var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
   async onload() {
@@ -6889,7 +6919,7 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
   // palette, a hotkey, a right-click item or a toolbar button.
   // Refactor and archive commands: one undo step each (Ctrl+Z), same code as
   // canvas.js for agents. Each is also a right-click item on the cards it
-  // applies to: `menu` is [title, Lucide icon], or null for none.
+  // applies to: `menu` is { title, icon } (Lucide), or null for none.
   addCanvasCommand(id, name, { menu, test, run }) {
     this.actions.push({ id, menu, test, run });
     this.addCommand({
@@ -6918,7 +6948,7 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
     );
     for (const action of shown) {
       menu.addItem(
-        (item) => item.setTitle(this.keyedTitle(action.menu[0], action.id)).setIcon(action.menu[1]).setSection("kanvas-board").onClick(() => this.runAction(action.run, canvas, selection))
+        (item) => item.setTitle(this.keyedTitle(action.menu.title, action.id)).setIcon(action.menu.icon).setSection("kanvas-board").onClick(() => this.runAction(action.run, canvas, selection))
       );
     }
   }
@@ -6997,7 +7027,7 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
   // and ribbon icon are documented API. See "Obsidian internals" in README.md.
   // Label of a color: the one edited in Settings > Workflow, else the default.
   colorLabel(name) {
-    return (this.settings.colorLabels || {})[name] || COLORS2.find((colorRow) => colorRow[0] === name)[3];
+    return (this.settings.colorLabels || {})[name] || COLORS2.find((colorRow) => colorRow.name === name).label;
   }
   colorCommandName(name) {
     return `Color selected cards: ${name} (${this.colorLabel(name)})`;
@@ -7014,8 +7044,8 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
       delete labels[name];
     }
     await this.saveData(this.settings);
-    const row = COLORS2.find((colorRow) => colorRow[0] === name);
-    const colorCommand = this.app.commands && this.app.commands.commands[`${this.manifest.id}:color-${row[2]}`];
+    const row = COLORS2.find((colorRow) => colorRow.name === name);
+    const colorCommand = this.app.commands && this.app.commands.commands[`${this.manifest.id}:color-${row.commandKey}`];
     const commandName = this.colorCommandName(name);
     if (colorCommand) {
       colorCommand.name = `${this.manifest.name}: ${commandName}`;
@@ -7181,7 +7211,7 @@ var CanvasBoardPlugin = class extends import_obsidian8.Plugin {
       cls: "canvas-control-group mod-raised kanvas-board-controls"
     });
     controls.insertBefore(group, controls.lastElementChild);
-    for (const [id, label, icon] of CONTROL_BUTTONS) {
+    for (const { id, label, icon } of CONTROL_BUTTONS) {
       const button = group.createDiv({
         cls: "canvas-control-item",
         attr: {
@@ -7250,14 +7280,14 @@ Shift-click: next direction`,
     );
     for (const item of swatches) {
       const color = (item.className.match(/mod-canvas-color-(\d)/) || [])[1] || "";
-      const row = COLORS2.find((colorRow) => colorRow[1] === color);
+      const row = COLORS2.find((colorRow) => colorRow.canvasColor === color);
       if (!row) {
         continue;
       }
       item.setAttrs({
         "aria-label": this.keyedLabel(
-          this.colorLabel(row[0]),
-          `color-${row[2]}`
+          this.colorLabel(row.name),
+          `color-${row.commandKey}`
         ),
         "data-tooltip-position": "top"
       });
@@ -7277,11 +7307,11 @@ Shift-click: next direction`,
       const button = element.createEl("button", {
         cls: "clickable-icon kanvas-board-menu-btn",
         attr: {
-          "aria-label": this.keyedLabel(action.menu[0], id),
+          "aria-label": this.keyedLabel(action.menu.title, id),
           "data-tooltip-position": "top"
         }
       });
-      (0, import_obsidian8.setIcon)(button, action.menu[1]);
+      (0, import_obsidian8.setIcon)(button, action.menu.icon);
       button.addEventListener(
         "click",
         () => this.runAction(action.run, canvas, [...canvas.selection])

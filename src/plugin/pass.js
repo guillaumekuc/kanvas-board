@@ -84,8 +84,8 @@ function defaultLaunch({ vault, board, agent }) {
     const script = MAC_SCRIPT.flatMap((line) => ['-e', line]);
     return ['osascript', [...script, vault, ...agent]];
   }
-  const found = LINUX_TERMINALS.find(([binary]) => onPath(binary));
-  return found ? [found[0], found[1](vault, agent)] : null;
+  const found = LINUX_TERMINALS.find(({ binary }) => onPath(binary));
+  return found ? [found.binary, found.args(vault, agent)] : null;
 }
 
 // [command, arguments] from the "Terminal command" setting, quotes allowed,

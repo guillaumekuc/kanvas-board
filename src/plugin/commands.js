@@ -13,7 +13,7 @@ import {
 import { isTextNode, selectedCards, FindBar } from './view.js';
 
 function registerColorCommands(plugin) {
-  for (const [name, color, key] of COLORS) {
+  for (const { name, canvasColor: color, commandKey: key } of COLORS) {
     plugin.addCommand({
       id: `color-${key}`,
       name: plugin.colorCommandName(name),
@@ -95,7 +95,7 @@ function registerPackCommands(plugin) {
   // Pack / unpack (ids stay collapse / expand so hotkeys keep working). Pack
   // moves cards into a new subcanvas.
   plugin.addCanvasCommand('collapse', 'Pack into subcanvas', {
-    menu: ['Pack into subcanvas', 'package'],
+    menu: { title: 'Pack into subcanvas', icon: 'package' },
     test: (canvas, selection) => selection.length > 0,
     run: (canvas, selection) =>
       new NamePrompt(plugin.app, {
@@ -139,7 +139,7 @@ function registerUnpackCommands(plugin) {
     return selection.length === 1 && !!plugin.linkedCanvas(selection[0]);
   }
   plugin.addCanvasCommand('expand', 'Unpack subcanvas (dissolve)', {
-    menu: ['Unpack subcanvas (dissolve)', 'package-open'],
+    menu: { title: 'Unpack subcanvas (dissolve)', icon: 'package-open' },
     test: linked,
     run: async (canvas, [node]) => {
       const file = plugin.linkedCanvas(node);
@@ -157,7 +157,7 @@ function registerUnpackCommands(plugin) {
     },
   });
   plugin.addCanvasCommand('unpack-copy', 'Unpack subcanvas (copy)', {
-    menu: ['Unpack subcanvas (copy)', 'copy'],
+    menu: { title: 'Unpack subcanvas (copy)', icon: 'copy' },
     test: linked,
     run: (canvas, [node]) =>
       plugin.unpack(canvas, node, {
@@ -169,7 +169,7 @@ function registerUnpackCommands(plugin) {
 
 function registerMergeSplitCommands(plugin) {
   plugin.addCanvasCommand('merge', 'Merge selected cards', {
-    menu: ['Merge cards', 'merge'],
+    menu: { title: 'Merge cards', icon: 'merge' },
     test: (canvas, selection) =>
       selection.length > 1 && selection.every(isTextNode),
     run: (canvas, selection) =>
@@ -183,16 +183,18 @@ function registerMergeSplitCommands(plugin) {
   });
 
   // Only the top-level split is a menu item; the others stay commands.
-  for (const [separator, label] of [
-    ['paragraph', 'paragraph'],
-    ['bullet', 'top-level bullet'],
-    ['h1', 'heading 1'],
-    ['h2', 'heading 2'],
-    ['h3', 'heading 3'],
+  for (const { separator, label } of [
+    { separator: 'paragraph', label: 'paragraph' },
+    { separator: 'bullet', label: 'top-level bullet' },
+    { separator: 'h1', label: 'heading 1' },
+    { separator: 'h2', label: 'heading 2' },
+    { separator: 'h3', label: 'heading 3' },
   ]) {
     plugin.addCanvasCommand(`split-${separator}`, `Split card by ${label}`, {
       menu:
-        separator === 'bullet' ? ['Split by top-level bullet', 'split'] : null,
+        separator === 'bullet'
+          ? { title: 'Split by top-level bullet', icon: 'split' }
+          : null,
       test: (canvas, selection) =>
         selection.length === 1 &&
         isTextNode(selection[0]) &&
@@ -211,7 +213,10 @@ function registerExtractCommand(plugin) {
     'extract',
     'Extract current selection to a new card',
     {
-      menu: ['Extract current selection to a new card', 'text-select'],
+      menu: {
+        title: 'Extract current selection to a new card',
+        icon: 'text-select',
+      },
       test: (canvas, selection) =>
         selection.length === 1 &&
         selection[0].isEditing &&
@@ -250,7 +255,7 @@ function registerExtractCommand(plugin) {
 
 function registerArchiveCommand(plugin) {
   plugin.addCanvasCommand('archive', 'Archive selected cards', {
-    menu: ['Archive', 'archive'],
+    menu: { title: 'Archive', icon: 'archive' },
     test: (canvas, selection) => selection.length > 0,
     run: async (canvas, selection) => {
       const board = plugin.activeFile().path;
@@ -301,7 +306,7 @@ function registerFoldCommand(plugin) {
     );
   }
   plugin.addCanvasCommand('fold', 'Fold branch', {
-    menu: ['Fold branch', 'chevrons-down-up'],
+    menu: { title: 'Fold branch', icon: 'chevrons-down-up' },
     test: (canvas, selection) =>
       selection.some((node) => canFold(canvas, node)),
     run: (canvas, selection) =>
@@ -317,19 +322,24 @@ function registerFoldCommand(plugin) {
 }
 
 function registerUnfoldCommands(plugin) {
-  for (const [levels, id, name, menu] of [
-    [1, 'unfold', 'Unfold branch 1 level', ['Unfold 1 level', 'chevron-down']],
-    [2, 'unfold-2', 'Unfold branch 2 levels', null],
-    [3, 'unfold-3', 'Unfold branch 3 levels', null],
-    [
-      Infinity,
-      'unfold-all',
-      'Unfold whole branch',
-      ['Unfold whole branch', 'chevrons-up-down'],
-    ],
+  for (const { levels, id, name, menu } of [
+    {
+      levels: 1,
+      id: 'unfold',
+      name: 'Unfold branch 1 level',
+      menu: { title: 'Unfold 1 level', icon: 'chevron-down' },
+    },
+    { levels: 2, id: 'unfold-2', name: 'Unfold branch 2 levels', menu: null },
+    { levels: 3, id: 'unfold-3', name: 'Unfold branch 3 levels', menu: null },
+    {
+      levels: Infinity,
+      id: 'unfold-all',
+      name: 'Unfold whole branch',
+      menu: { title: 'Unfold whole branch', icon: 'chevrons-up-down' },
+    },
   ]) {
     plugin.addCanvasCommand(id, name, {
-      menu: menu,
+      menu,
       test: (canvas, selection) =>
         selection.some((node) => plugin.unfoldTargets(canvas, node.id).length),
       run: (canvas, selection) =>
@@ -349,9 +359,9 @@ function registerUnfoldCommands(plugin) {
 }
 
 function registerFoldDirectionCommands(plugin) {
-  for (const [direction, label] of [
-    ['out', 'outgoing (cards it points to)'],
-    ['in', 'incoming (cards pointing to it)'],
+  for (const { direction, label } of [
+    { direction: 'out', label: 'outgoing (cards it points to)' },
+    { direction: 'in', label: 'incoming (cards pointing to it)' },
   ]) {
     plugin.addCommand({
       id: `fold-direction-${direction}`,
@@ -380,7 +390,7 @@ function registerTemplateSaveCommand(plugin) {
     'template-save',
     'Save selected cards as a template',
     {
-      menu: ['Save as template', 'layout-template'],
+      menu: { title: 'Save as template', icon: 'layout-template' },
       test: (canvas, selection) => selection.length > 0,
       run: (canvas) => {
         const existing = new Map(
@@ -436,7 +446,7 @@ function registerSelectChildrenCommand(plugin) {
     'select-children',
     'Select children (all levels down, in the fold direction)',
     {
-      menu: ['Select children', 'list-tree'],
+      menu: { title: 'Select children', icon: 'list-tree' },
       test: (canvas, selection) =>
         [...childIds(canvas, selection)].some(
           (id) =>
@@ -459,7 +469,7 @@ function registerSelectSameTagCommand(plugin) {
     );
   }
   plugin.addCanvasCommand('select-same-tag', 'Select cards with the same tag', {
-    menu: ['Select same tag', 'tag'],
+    menu: { title: 'Select same tag', icon: 'tag' },
     test: (canvas, selection) => tagsOf(selection).size > 0,
     run: (canvas, selection) => {
       const tags = tagsOf(selection);
@@ -475,7 +485,7 @@ function registerSelectSameColorCommand(plugin) {
     'select-same-color',
     'Select cards with the same color',
     {
-      menu: ['Select same color', 'palette'],
+      menu: { title: 'Select same color', icon: 'palette' },
       test: (canvas, selection) => selectedCards(selection).length > 0,
       run: (canvas, selection) => {
         const colors = new Set(

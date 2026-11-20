@@ -466,7 +466,7 @@ class FilterPane {
   // Dots only, on one line; the name and card count are in the tooltip.
   renderColors(state, counts) {
     this.colorsEl.empty();
-    for (const [name, color] of COLORS) {
+    for (const { name, canvasColor: color } of COLORS) {
       const isOut = state.xcolors.has(color);
       const label = this.plugin.colorLabel(name);
       const count = counts[color] || 0;
