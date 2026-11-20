@@ -96,7 +96,7 @@ function legendNodes(colorLabel) {
     width: COLUMN_WIDTH + 80,
     height: WORKFLOW.length * 100 + 100,
   };
-  const cards = WORKFLOW.map(([name, meaning], index) => {
+  const cards = WORKFLOW.map(({ name, meaning }, index) => {
     const colorName = COLOR_NUM[name] ? name : 'uncolored';
     return {
       id: newId(),

@@ -150,7 +150,7 @@ class CanvasBoardSettings extends PluginSettingTab {
         'agent never starts.',
     );
     const goColors = parseColors(this.plugin.settings.passColors);
-    for (const [name, meaning] of WORKFLOW) {
+    for (const { name, meaning } of WORKFLOW) {
       const colorNumber = COLOR_NUM[name];
       const row = new Setting(containerEl)
         .setName(colorNumber ? name : 'uncolored')
@@ -163,7 +163,7 @@ class CanvasBoardSettings extends PluginSettingTab {
       );
       row.addText((component) =>
         component
-          .setPlaceholder(COLORS.find((color) => color[0] === name)[3])
+          .setPlaceholder(COLORS.find((color) => color.name === name).label)
           .setValue((this.plugin.settings.colorLabels || {})[name] || '')
           .onChange((value) => this.plugin.setColorLabel(name, value.trim())),
       );
@@ -188,7 +188,7 @@ class CanvasBoardSettings extends PluginSettingTab {
                 goColors.delete(colorNumber);
               }
               this.plugin.settings.passColors = WORKFLOW.map(
-                ([colorName]) => colorName,
+                ({ name: colorName }) => colorName,
               )
                 .filter((colorName) => goColors.has(COLOR_NUM[colorName]))
                 .join(' ');
@@ -254,7 +254,7 @@ class CanvasBoardSettings extends PluginSettingTab {
   // One field for the general part and one per color; any of them saves the
   // whole file (see agentInstructions.js).
   addSkillEditors(skillFile) {
-    const colorNames = WORKFLOW.map(([colorName]) => colorName);
+    const colorNames = WORKFLOW.map(({ name: colorName }) => colorName);
     const text = this.readSkill(skillFile);
     const parts = splitInstructions(text, colorNames);
     const general = this.addSkillField(parts.general, '16');

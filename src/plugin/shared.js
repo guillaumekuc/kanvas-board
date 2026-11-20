@@ -16,16 +16,16 @@ import {
 } from '../board/refactor.js';
 import { applyToOpenCanvas } from './unpack.js';
 
-// [color name, canvas color, command key, default label]. Labels can be edited
-// in Settings > Workflow.
+// canvasColor: the canvas color number; commandKey: the color-<key> command
+// id. Labels can be edited in Settings > Workflow.
 const COLORS = [
-  ['none', '', '0', 'Inbox'],
-  ['red', '1', '1', 'Blocked'],
-  ['orange', '2', '2', 'In Progress'],
-  ['yellow', '3', '3', 'Review'],
-  ['green', '4', '4', 'Done'],
-  ['cyan', '5', '5', 'Do'],
-  ['purple', '6', '6', 'Clarify'],
+  { name: 'none', canvasColor: '', commandKey: '0', label: 'Inbox' },
+  { name: 'red', canvasColor: '1', commandKey: '1', label: 'Blocked' },
+  { name: 'orange', canvasColor: '2', commandKey: '2', label: 'In Progress' },
+  { name: 'yellow', canvasColor: '3', commandKey: '3', label: 'Review' },
+  { name: 'green', canvasColor: '4', commandKey: '4', label: 'Done' },
+  { name: 'cyan', canvasColor: '5', commandKey: '5', label: 'Do' },
+  { name: 'purple', canvasColor: '6', commandKey: '6', label: 'Clarify' },
 ];
 // Terminal command: empty = the platform's terminal (defaultLaunch); else
 // {vault} {board} are replaced, a {agent} word becomes the agent command with
@@ -70,13 +70,16 @@ const COLOR_NUM = {
 // Settings > Workflow: what each color does (as in the skill). Fixed: the label
 // above is only how it reads.
 const WORKFLOW = [
-  ['cyan', 'The agent carries the card to done.'],
-  ['purple', 'The agent takes one step, then hands back.'],
-  ['orange', 'A pass is on the card.'],
-  ['yellow', 'A question or a review for you.'],
-  ['red', 'Nothing moves until it is unblocked.'],
-  ['green', 'Finished. Remove the card when it no longer helps.'],
-  ['none', 'No state. The agent never touches it.'],
+  { name: 'cyan', meaning: 'The agent carries the card to done.' },
+  { name: 'purple', meaning: 'The agent takes one step, then hands back.' },
+  { name: 'orange', meaning: 'A pass is on the card.' },
+  { name: 'yellow', meaning: 'A question or a review for you.' },
+  { name: 'red', meaning: 'Nothing moves until it is unblocked.' },
+  {
+    name: 'green',
+    meaning: 'Finished. Remove the card when it no longer helps.',
+  },
+  { name: 'none', meaning: 'No state. The agent never touches it.' },
 ];
 // Tidy layout directions, in the order shift-click cycles them. `turn`: how far
 // the button's icon rotates.
@@ -87,25 +90,44 @@ const LAYOUT_DIRS = {
   RL: { name: 'right to left', turn: 90 },
 };
 const LINUX_TERMINALS = [
-  // [binary, (vault, command) => args]
-  [
-    'gnome-terminal',
-    (vault, command) => [`--working-directory=${vault}`, '--', ...command],
-  ],
-  ['konsole', (vault, command) => ['--workdir', vault, '-e', ...command]],
-  [
-    'xfce4-terminal',
-    (vault, command) => ['--working-directory', vault, '-x', ...command],
-  ],
-  ['kitty', (vault, command) => ['--directory', vault, ...command]],
-  [
-    'alacritty',
-    (vault, command) => ['--working-directory', vault, '-e', ...command],
-  ],
-  ['wezterm', (vault, command) => ['start', '--cwd', vault, '--', ...command]],
-  ['foot', (vault, command) => [`--working-directory=${vault}`, ...command]],
-  ['x-terminal-emulator', (vault, command) => ['-e', ...command]],
-  ['xterm', (vault, command) => ['-e', ...command]],
+  // args: (vault, command) => the terminal's arguments
+  {
+    binary: 'gnome-terminal',
+    args: (vault, command) => [
+      `--working-directory=${vault}`,
+      '--',
+      ...command,
+    ],
+  },
+  {
+    binary: 'konsole',
+    args: (vault, command) => ['--workdir', vault, '-e', ...command],
+  },
+  {
+    binary: 'xfce4-terminal',
+    args: (vault, command) => ['--working-directory', vault, '-x', ...command],
+  },
+  {
+    binary: 'kitty',
+    args: (vault, command) => ['--directory', vault, ...command],
+  },
+  {
+    binary: 'alacritty',
+    args: (vault, command) => ['--working-directory', vault, '-e', ...command],
+  },
+  {
+    binary: 'wezterm',
+    args: (vault, command) => ['start', '--cwd', vault, '--', ...command],
+  },
+  {
+    binary: 'foot',
+    args: (vault, command) => [`--working-directory=${vault}`, ...command],
+  },
+  {
+    binary: 'x-terminal-emulator',
+    args: (vault, command) => ['-e', ...command],
+  },
+  { binary: 'xterm', args: (vault, command) => ['-e', ...command] },
 ];
 
 // Facade: the board operations the plugin shares with the canvas.js CLI.
