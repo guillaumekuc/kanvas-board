@@ -276,6 +276,26 @@
 .kanvas-board-pastilles .kanvas-board-swatch.is-active {
 	box-shadow: 0 0 0 2px var(--interactive-accent);
 }
+/* Last pastille: the native color input, for a custom color. */
+.kanvas-board-custom-color input[type="color"] {
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 50%;
+	background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
+	cursor: pointer;
+}
+.kanvas-board-custom-color input[type="color"]::-webkit-color-swatch-wrapper {
+	padding: 0;
+}
+.kanvas-board-custom-color input[type="color"]::-webkit-color-swatch {
+	border: none;
+	border-radius: 50%;
+}
+.kanvas-board-custom-color:not(.is-active) input[type="color"]::-webkit-color-swatch {
+	opacity: 0;
+}
 
 /* Tidy layout button: the icon points the way the layout flows. */
 .kanvas-board-controls [data-command="tidy-layout"] svg {

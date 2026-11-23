@@ -61,17 +61,21 @@ const COLOR_NUM = {
   purple: '6',
 };
 // Settings > Workflow and the starter legend: one row per role, in the
-// roles' order, with the color the user gave it; uncolored last. `name`: the
-// color name.
+// roles' order; uncolored last. `name`: the slot's color name (fixed),
+// `theme`: the color the user has it show.
 function workflowRows(settings) {
   const { colors } = config.resolve(settings);
-  const rows = config.ROLES.map(({ role, meaning }) => ({
+  const rows = config.ROLES.map(({ role, color, meaning }) => ({
     role,
-    name: colors[role],
+    name: color,
+    theme: colors[role],
     meaning,
   }));
 
-  return [...rows, { role: null, name: 'none', meaning: config.INBOX.meaning }];
+  return [
+    ...rows,
+    { role: null, name: 'none', theme: '', meaning: config.INBOX.meaning },
+  ];
 }
 // Tidy layout directions, in the order shift-click cycles them. `turn`: how far
 // the button's icon rotates.
