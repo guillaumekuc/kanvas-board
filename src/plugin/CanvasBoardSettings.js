@@ -18,6 +18,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
   }
 
   display() {
+    this.plugin.applyTheme(this.containerEl.ownerDocument);
     this.containerEl.empty();
     this.skillFields = { general: null, colors: {} };
     this.displayHotkeys();
@@ -203,10 +204,14 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     });
   }
 
+  // The popover lives in the dot's own window: Settings may open in a popout
+  // window, and a popover in the main one shows far away, misses outside
+  // clicks there and, once clicked, takes the focus and closes Settings.
   openPastilles(dot, role) {
     this.closePastilles();
+    const ownerDoc = dot.ownerDocument;
     const { colors } = config.resolve(this.plugin.settings);
-    const popover = document.body.createDiv({
+    const popover = ownerDoc.body.createDiv({
       cls: 'kanvas-board-pastilles',
     });
     // The presets in Obsidian's own colors (the slots may show others).
@@ -229,25 +234,29 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
       });
     }
     this.addCustomPastille(popover, role, colors[role]);
-    const box = dot.getBoundingClientRect();
-    popover.style.left = `${box.left}px`;
-    popover.style.top = `${box.bottom + 4}px`;
+    placeBelow(popover, dot);
+    // Outside pointerdown or Escape closes the popover only: Escape is
+    // consumed so the Settings window stays open.
     function close(event) {
-      const isOtherKey = event.type === 'keydown' && event.key !== 'Escape';
-      const isInside =
-        event.type === 'pointerdown' && popover.contains(event.target);
-      if (!isOtherKey && !isInside) {
-        this.closePastilles();
+      if (event.type === 'keydown') {
+        if (event.key !== 'Escape') {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+      } else if (popover.contains(event.target)) {
+        return;
       }
+      this.closePastilles();
     }
     const listener = close.bind(this);
-    document.addEventListener('pointerdown', listener, true);
-    document.addEventListener('keydown', listener, true);
+    ownerDoc.addEventListener('pointerdown', listener, true);
+    ownerDoc.addEventListener('keydown', listener, true);
     this.pastilles = {
       popover,
       unlisten() {
-        document.removeEventListener('pointerdown', listener, true);
-        document.removeEventListener('keydown', listener, true);
+        ownerDoc.removeEventListener('pointerdown', listener, true);
+        ownerDoc.removeEventListener('keydown', listener, true);
       },
     };
   }
@@ -691,6 +700,24 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
           }),
       );
   }
+}
+
+// Under the anchor, kept inside its window.
+function placeBelow(popover, anchor) {
+  const ownerWindow = anchor.ownerDocument.defaultView;
+  const box = anchor.getBoundingClientRect();
+  const margin = 4;
+  const left = Math.min(
+    box.left,
+    ownerWindow.innerWidth - popover.offsetWidth - margin,
+  );
+  const below = box.bottom + margin;
+  const top =
+    below + popover.offsetHeight > ownerWindow.innerHeight
+      ? box.top - popover.offsetHeight - margin
+      : below;
+  popover.style.left = `${Math.max(margin, left)}px`;
+  popover.style.top = `${Math.max(margin, top)}px`;
 }
 
 export default CanvasBoardSettings;
