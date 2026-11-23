@@ -1,22 +1,34 @@
-// The agent instructions file: a general part, then one `## <Color> cards`
-// section per color. The agent reads the whole file (the pass prompt names
-// only the file); Settings shows each part in its own field and joins them
-// back on save. A file without sections is all general, so nothing is lost.
+// The agent instructions file: a general part, then one `## <Role> cards`
+// section per role (`## Do cards`, `## In Progress cards`…, `## Uncolored
+// cards`). The agent reads the whole file (the pass prompt names only the
+// file); Settings shows each part in its own field and joins them back on
+// save. A file without sections is all general, so nothing is lost. Parts are
+// keyed by the slot's color name (fixed: `cyan` is Do's slot); the older
+// `## Cyan cards` headings still read as that slot's role.
+import * as config from '../workflow/config.js';
 
 const LEADING_BLANK_LINES = /^(?:[ \t]*\n)+/;
 const LINE_BREAK = /\r?\n/;
 
-function sectionTitle(colorName) {
-  const word = colorName === 'none' ? 'uncolored' : colorName;
+function capitalized(word) {
+  return `${word[0].toUpperCase()}${word.slice(1)}`;
+}
 
-  return `${word[0].toUpperCase()}${word.slice(1)} cards`;
+// A slot's heading text, from its color name: its role's default label.
+function sectionTitle(colorName) {
+  const role = config.ROLES.find(({ color }) => color === colorName);
+
+  return `${role ? role.label : 'Uncolored'} cards`;
 }
 
 function headingColor(line, colorNames) {
   const heading = line.trim();
 
-  return colorNames.find(
-    (colorName) => heading === `## ${sectionTitle(colorName)}`,
+  return colorNames.find((colorName) =>
+    [
+      sectionTitle(colorName),
+      `${capitalized(colorName === 'none' ? 'uncolored' : colorName)} cards`,
+    ].some((title) => heading === `## ${title}`),
   );
 }
 
