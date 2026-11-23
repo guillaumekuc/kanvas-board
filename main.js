@@ -4112,6 +4112,189 @@ function templateOps(template, origin) {
   return operations;
 }
 
+// src/workflow/config.js
+var ROLES = [
+  {
+    role: "do",
+    slot: "5",
+    color: "cyan",
+    label: "Do",
+    meaning: "The agent carries the card to done."
+  },
+  {
+    role: "plan",
+    slot: "6",
+    color: "purple",
+    label: "Plan",
+    meaning: "The agent takes one step, then hands back."
+  },
+  {
+    role: "inProgress",
+    slot: "2",
+    color: "orange",
+    label: "In Progress",
+    meaning: "A pass is on the card."
+  },
+  {
+    role: "review",
+    slot: "3",
+    color: "yellow",
+    label: "Review",
+    meaning: "A question or a review for you."
+  },
+  {
+    role: "blocked",
+    slot: "1",
+    color: "red",
+    label: "Blocked",
+    meaning: "Nothing moves until it is unblocked."
+  },
+  {
+    role: "done",
+    slot: "4",
+    color: "green",
+    label: "Done",
+    meaning: "Finished. Remove the card when it no longer helps."
+  }
+];
+var INBOX = {
+  label: "Inbox",
+  meaning: "No state. The agent never touches it."
+};
+var DEFAULT_WORKFLOW = {
+  // role → the color its slot shows: a preset name or a hex (#rgb, #rrggbb)
+  colors: Object.fromEntries(ROLES.map(({ role, color }) => [role, color])),
+  // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md,
+  // Agent instructions.md
+  cardTemplate: "",
+  noteTemplate: "",
+  instructions: ""
+};
+var DEFAULT_NOTES_FOLDER = "Board notes";
+var TRAILING_SLASHES = /[/]+$/;
+var PLACEHOLDER = /\{(\w+)\}/g;
+var HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+var CARD_COMMENT = "%% Card template: the shapes of the card text an agent writes, one per line. A {word} stands for any text. A card without a [[link]] is a wish (free text) and always passes. Comments like this one are ignored. %%";
+var NOTE_COMMENT = '%% Plan note template: the frontmatter keys and headings of a note an agent writes for a card. Every heading is required, except one followed by an "optional" comment line, or a "when done" one (required once the card has the done color). Comments are for this template only: leave them out of the notes. %%';
+var CARD_TEMPLATE = `${CARD_COMMENT}
+[[{note}]]
+[[{note}]] \xB7 {reason}
+{recap} \xB7 done \xB7 [[{output}]]
+`;
+var NOTE_TEMPLATE = `---
+context:
+  -
+---
+${NOTE_COMMENT}
+> [!info] Since last time
+
+## Aim
+
+### Done when
+
+## Output
+%% when done %%
+
+## Design
+
+## Open questions
+%% optional %%
+
+## Decisions Record
+%% optional %%
+`;
+function folderOf(settings2) {
+  return String(settings2.notesFolder || DEFAULT_NOTES_FOLDER).replace(
+    TRAILING_SLASHES,
+    ""
+  );
+}
+function templatePaths(settings2, workflow) {
+  const folder = `${folderOf(settings2)}/_templates`;
+  return {
+    cardTemplate: workflow.cardTemplate || `${folder}/Card.md`,
+    noteTemplate: workflow.noteTemplate || `${folder}/Plan note.md`,
+    instructions: workflow.instructions || `${folder}/Agent instructions.md`
+  };
+}
+function isTheme(color) {
+  return !!COLORS[color] || HEX_COLOR.test(String(color));
+}
+function roleColors(own = {}) {
+  return Object.fromEntries(
+    ROLES.map(({ role, color }) => [
+      role,
+      isTheme(own[role]) ? String(own[role]).toLowerCase() : color
+    ])
+  );
+}
+function slotOf(name) {
+  const key = String(name).toLowerCase();
+  const role = ROLES.find((each) => each.role.toLowerCase() === key);
+  return role ? role.slot : COLORS[key] || name;
+}
+function resolve(settings2 = {}) {
+  const own = settings2.workflow || {};
+  function number(role) {
+    return roleInfo(role).slot;
+  }
+  const blocked = [number("blocked")];
+  const review = [number("review")];
+  return {
+    colors: roleColors(own.colors),
+    roleOf: Object.fromEntries(ROLES.map(({ role, color }) => [color, role])),
+    working: number("inProgress"),
+    blocked,
+    review,
+    waiting: /* @__PURE__ */ new Set([...blocked, ...review]),
+    done: number("done"),
+    notesFolder: folderOf(settings2),
+    ...templatePaths(settings2, { ...DEFAULT_WORKFLOW, ...own })
+  };
+}
+function roleInfo(role) {
+  return ROLES.find((each) => each.role === role) || INBOX;
+}
+function roleOfSlot(number) {
+  const found = ROLES.find((each) => each.slot === number);
+  return found ? found.role : null;
+}
+function defaultLabel(colorName, workflow) {
+  return roleInfo(workflow.roleOf[colorName]).label;
+}
+function themeCss(colors) {
+  const lines = ROLES.filter(({ role, color }) => colors[role] !== color).map(
+    ({ role, slot }) => {
+      const theme = colors[role];
+      const value = theme.startsWith("#") ? theme : `var(--color-${theme})`;
+      return `  --canvas-color-${slot}: ${value};`;
+    }
+  );
+  return lines.length ? `body.theme-dark, body.theme-light {
+${lines.join("\n")}
+}
+` : "";
+}
+function placeholders(workflow) {
+  return {
+    notesFolder: workflow.notesFolder,
+    working: roleOfSlot(workflow.working),
+    done: roleOfSlot(workflow.done),
+    blocked: workflow.blocked.map(roleOfSlot).join(" "),
+    review: workflow.review.map(roleOfSlot).join(" "),
+    cardTemplate: workflow.cardTemplate,
+    noteTemplate: workflow.noteTemplate,
+    instructions: workflow.instructions
+  };
+}
+function fillPlaceholders(text, workflow) {
+  const values = placeholders(workflow);
+  return String(text).replace(
+    PLACEHOLDER,
+    (match, name) => name in values ? values[name] : match
+  );
+}
+
 // src/board/notes.js
 var FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 var LINE_MARKUP_PREFIX2 = /^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/;
@@ -4119,7 +4302,7 @@ var WIKILINK_SHOWN_TEXT2 = /\[\[([^\]|]*\|)?([^\]]*)\]\]/g;
 var NOTE_NAME_FORBIDDEN = /[#^|[\]*_`>:\\/"?<]/g;
 var LEADING_LINE_BREAK = /^\r?\n/;
 var WHITESPACE_RUN2 = /\s+/g;
-var TRAILING_SLASHES = /[/\\]+$/;
+var TRAILING_SLASHES2 = /[/\\]+$/;
 var BACKSLASH = /\\/g;
 var ARCHIVED_FROM_FIELD = /^archived-from:/m;
 var OUTER_WIKILINK_BRACKETS = /^\[\[|\]\]$/g;
@@ -4133,7 +4316,7 @@ function yamlStr(value) {
 }
 function archiveDir(board, options = {}) {
   if (options.archiveMode === "global") {
-    return String(options.archiveFolder || ARCHIVE_DIR).trim().replace(TRAILING_SLASHES, "") || ARCHIVE_DIR;
+    return String(options.archiveFolder || ARCHIVE_DIR).trim().replace(TRAILING_SLASHES2, "") || ARCHIVE_DIR;
   }
   const boardPath = String(board).replace(BACKSLASH, "/"), folder = import_path3.default.posix.dirname(boardPath);
   return (folder === "." ? "" : folder + "/") + import_path3.default.posix.basename(boardPath, ".canvas") + " archive";
@@ -4444,165 +4627,6 @@ async function applyToOpenCanvas(canvas, operations) {
   return "obsidian";
 }
 
-// src/workflow/config.js
-var ROLES = [
-  {
-    role: "do",
-    color: "cyan",
-    label: "Do",
-    meaning: "The agent carries the card to done."
-  },
-  {
-    role: "plan",
-    color: "purple",
-    label: "Plan",
-    meaning: "The agent takes one step, then hands back."
-  },
-  {
-    role: "inProgress",
-    color: "orange",
-    label: "In Progress",
-    meaning: "A pass is on the card."
-  },
-  {
-    role: "review",
-    color: "yellow",
-    label: "Review",
-    meaning: "A question or a review for you."
-  },
-  {
-    role: "blocked",
-    color: "red",
-    label: "Blocked",
-    meaning: "Nothing moves until it is unblocked."
-  },
-  {
-    role: "done",
-    color: "green",
-    label: "Done",
-    meaning: "Finished. Remove the card when it no longer helps."
-  }
-];
-var INBOX = {
-  label: "Inbox",
-  meaning: "No state. The agent never touches it."
-};
-var DEFAULT_WORKFLOW = {
-  // role → color name, when the user picked another color
-  colors: Object.fromEntries(ROLES.map(({ role, color }) => [role, color])),
-  // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md,
-  // Agent instructions.md
-  cardTemplate: "",
-  noteTemplate: "",
-  instructions: ""
-};
-var DEFAULT_NOTES_FOLDER = "Board notes";
-var TRAILING_SLASHES2 = /[/]+$/;
-var PLACEHOLDER = /\{(\w+)\}/g;
-var CARD_COMMENT = "%% Card template: the shapes of the card text an agent writes, one per line. A {word} stands for any text. A card without a [[link]] is a wish (free text) and always passes. Comments like this one are ignored. %%";
-var NOTE_COMMENT = '%% Plan note template: the frontmatter keys and headings of a note an agent writes for a card. Every heading is required, except one followed by an "optional" comment line, or a "when done" one (required once the card has the done color). Comments are for this template only: leave them out of the notes. %%';
-var CARD_TEMPLATE = `${CARD_COMMENT}
-[[{note}]]
-[[{note}]] \xB7 {reason}
-{recap} \xB7 done \xB7 [[{output}]]
-`;
-var NOTE_TEMPLATE = `---
-context:
-  -
----
-${NOTE_COMMENT}
-> [!info] Since last time
-
-## Aim
-
-### Done when
-
-## Output
-%% when done %%
-
-## Design
-
-## Open questions
-%% optional %%
-
-## Decisions Record
-%% optional %%
-`;
-function folderOf(settings2) {
-  return String(settings2.notesFolder || DEFAULT_NOTES_FOLDER).replace(
-    TRAILING_SLASHES2,
-    ""
-  );
-}
-function templatePaths(settings2, workflow) {
-  const folder = `${folderOf(settings2)}/_templates`;
-  return {
-    cardTemplate: workflow.cardTemplate || `${folder}/Card.md`,
-    noteTemplate: workflow.noteTemplate || `${folder}/Plan note.md`,
-    instructions: workflow.instructions || `${folder}/Agent instructions.md`
-  };
-}
-function roleColors(own = {}) {
-  const colors = { ...DEFAULT_WORKFLOW.colors, ...own };
-  const picked = Object.values(colors);
-  const isValid = picked.every((name) => COLORS[name]) && new Set(picked).size === picked.length;
-  return isValid ? colors : { ...DEFAULT_WORKFLOW.colors };
-}
-function resolve(settings2 = {}) {
-  const own = settings2.workflow || {};
-  const colors = roleColors(own.colors);
-  function number(role) {
-    return COLORS[colors[role]];
-  }
-  const blocked = [number("blocked")];
-  const review = [number("review")];
-  return {
-    colors,
-    roleOf: Object.fromEntries(
-      Object.entries(colors).map(([role, name]) => [name, role])
-    ),
-    working: number("inProgress"),
-    blocked,
-    review,
-    waiting: /* @__PURE__ */ new Set([...blocked, ...review]),
-    done: number("done"),
-    notesFolder: folderOf(settings2),
-    ...templatePaths(settings2, { ...DEFAULT_WORKFLOW, ...own })
-  };
-}
-function roleInfo(role) {
-  return ROLES.find((each) => each.role === role) || INBOX;
-}
-function defaultLabel(colorName2, workflow) {
-  return roleInfo(workflow.roleOf[colorName2]).label;
-}
-function swapColors(colors, role, colorName2) {
-  const other = Object.keys(colors).find((each) => colors[each] === colorName2);
-  return { ...colors, [other]: colors[role], [role]: colorName2 };
-}
-function colorName(number) {
-  return Object.keys(COLORS).find((name) => COLORS[name] === number) || "none";
-}
-function placeholders(workflow) {
-  return {
-    notesFolder: workflow.notesFolder,
-    working: colorName(workflow.working),
-    done: colorName(workflow.done),
-    blocked: workflow.blocked.map(colorName).join(" "),
-    review: workflow.review.map(colorName).join(" "),
-    cardTemplate: workflow.cardTemplate,
-    noteTemplate: workflow.noteTemplate,
-    instructions: workflow.instructions
-  };
-}
-function fillPlaceholders(text, workflow) {
-  const values = placeholders(workflow);
-  return String(text).replace(
-    PLACEHOLDER,
-    (match, name) => name in values ? values[name] : match
-  );
-}
-
 // src/plugin/shared.js
 var COLORS2 = [
   { name: "none", canvasColor: "", commandKey: "0" },
@@ -4654,12 +4678,16 @@ var COLOR_NUM = {
 };
 function workflowRows(settings2) {
   const { colors } = resolve(settings2);
-  const rows = ROLES.map(({ role, meaning }) => ({
+  const rows = ROLES.map(({ role, color, meaning }) => ({
     role,
-    name: colors[role],
+    name: color,
+    theme: colors[role],
     meaning
   }));
-  return [...rows, { role: null, name: "none", meaning: INBOX.meaning }];
+  return [
+    ...rows,
+    { role: null, name: "none", theme: "", meaning: INBOX.meaning }
+  ];
 }
 var LAYOUT_DIRS = {
   TB: { name: "top to bottom", turn: 0 },
@@ -6156,11 +6184,11 @@ function legendNodes(colorLabel, settings2) {
     height: rows.length * 100 + 100
   };
   const cards = rows.map(({ name, meaning }, index) => {
-    const colorName2 = COLOR_NUM[name] ? name : "uncolored";
+    const colorName = COLOR_NUM[name] ? name : "uncolored";
     return {
       id: newId(),
       type: "text",
-      text: `${DOT[name]} **${colorLabel(name)}** (${colorName2})
+      text: `${DOT[name]} **${colorLabel(name)}** (${colorName})
 ${meaning}`,
       x: 0,
       y: index * 100,
@@ -6312,7 +6340,7 @@ function nextTurn(current, target) {
 }
 function parseColors(value) {
   return new Set(
-    String(value || "").split(LIST_SEPARATOR).filter(Boolean).map((color) => COLOR_NUM[color.toLowerCase()] || color).filter((color) => CANVAS_COLOR_NUMBER.test(color))
+    String(value || "").split(LIST_SEPARATOR).filter(Boolean).map(slotOf).filter((color) => CANVAS_COLOR_NUMBER.test(color))
   );
 }
 function startPass([command, commandArguments], { vault, board }) {
@@ -6342,14 +6370,20 @@ var import_fs4 = __toESM(require("fs"), 1);
 // src/plugin/agentInstructions.js
 var LEADING_BLANK_LINES = /^(?:[ \t]*\n)+/;
 var LINE_BREAK = /\r?\n/;
-function sectionTitle(colorName2) {
-  const word = colorName2 === "none" ? "uncolored" : colorName2;
-  return `${word[0].toUpperCase()}${word.slice(1)} cards`;
+function capitalized(word) {
+  return `${word[0].toUpperCase()}${word.slice(1)}`;
+}
+function sectionTitle(colorName) {
+  const role = ROLES.find(({ color }) => color === colorName);
+  return `${role ? role.label : "Uncolored"} cards`;
 }
 function headingColor(line, colorNames) {
   const heading = line.trim();
   return colorNames.find(
-    (colorName2) => heading === `## ${sectionTitle(colorName2)}`
+    (colorName) => [
+      sectionTitle(colorName),
+      `${capitalized(colorName === "none" ? "uncolored" : colorName)} cards`
+    ].some((title) => heading === `## ${title}`)
   );
 }
 function trimBlankLines(text) {
@@ -6360,22 +6394,22 @@ function splitInstructions(text, colorNames) {
   const sections = {};
   let current = general;
   for (const line of String(text || "").split(LINE_BREAK)) {
-    const colorName2 = headingColor(line, colorNames);
-    if (!colorName2) {
+    const colorName = headingColor(line, colorNames);
+    if (!colorName) {
       current.push(line);
       continue;
     }
-    sections[colorName2] ||= [];
-    current = sections[colorName2];
+    sections[colorName] ||= [];
+    current = sections[colorName];
   }
   const colors = {};
-  for (const colorName2 of colorNames) {
-    colors[colorName2] = trimBlankLines((sections[colorName2] || []).join("\n"));
+  for (const colorName of colorNames) {
+    colors[colorName] = trimBlankLines((sections[colorName] || []).join("\n"));
   }
   return { general: trimBlankLines(general.join("\n")), colors };
 }
 function joinInstructions(parts, colorNames) {
-  const sections = colorNames.map((colorName2) => [colorName2, trimBlankLines(parts.colors[colorName2])]).filter(([, body]) => body).map(([colorName2, body]) => `## ${sectionTitle(colorName2)}
+  const sections = colorNames.map((colorName) => [colorName, trimBlankLines(parts.colors[colorName])]).filter(([, body]) => body).map(([colorName, body]) => `## ${sectionTitle(colorName)}
 
 ${body}`);
   const blocks = [trimBlankLines(parts.general), ...sections].filter(Boolean);
@@ -6485,7 +6519,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
   displayWorkflow() {
     const { containerEl } = this;
     this.addHeading("Workflow").setDesc(
-      'Six roles, each with its rules in the plugin: click a dot to give the role another color (a color already taken swaps), edit its label (tooltips, the filter pane, the color commands) and, under it, its part of the agent instructions. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.'
+      'Six roles, each with its rules in the plugin and its canvas color slot for good (the number cards store, the Alt+N hotkey): click a dot to pick the color the slot shows, a preset or a custom one (every canvas and the canvas color picker follow), edit its label (tooltips, the filter pane, the color commands) and, under it, its part of the agent instructions. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.'
     );
     this.displayAgentInstructions();
     const instructions = this.readSkillParts();
@@ -6494,7 +6528,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     const workflow = resolve(this.plugin.settings);
     for (const { role, name, meaning } of this.rows) {
       const colorNumber = COLOR_NUM[name];
-      const row = new obsidian6.Setting(containerEl).setName(colorNumber ? name : "uncolored").setDesc(meaning);
+      const row = new obsidian6.Setting(containerEl).setName(role ? roleInfo(role).label : "Uncolored").setDesc(meaning);
       const dot = createSpan({
         cls: "kanvas-board-dot kanvas-board-workflow-dot",
         attr: { style: this.plugin.dotStyle(colorNumber) }
@@ -6544,13 +6578,14 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
       pastille.toggleClass("is-active", colors[role] === name);
       pastille.createSpan({
         cls: "kanvas-board-dot",
-        attr: { style: this.plugin.dotStyle(canvasColor) }
+        attr: { style: `background: var(--color-${name})` }
       });
       pastille.addEventListener("click", () => {
         this.closePastilles();
         this.setRoleColor(role, name);
       });
     }
+    this.addCustomPastille(popover, role, colors[role]);
     const box = dot.getBoundingClientRect();
     popover.style.left = `${box.left}px`;
     popover.style.top = `${box.bottom + 4}px`;
@@ -6584,48 +6619,39 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     this.closePastilles();
     super.hide();
   }
-  // Another color for a role. The role that had it takes the old one, and
-  // what is keyed by color (label, toggle, instructions section) moves with
-  // its role.
-  async setRoleColor(role, name) {
-    const settings2 = this.plugin.settings;
-    const { colors } = resolve(settings2);
-    const old = colors[role];
-    if (old === name) {
+  // The last pastille: the native color input, for any color. Active when
+  // the role shows a custom one.
+  addCustomPastille(popover, role, current) {
+    const isCustom = current.startsWith("#");
+    const pastille = popover.createEl("label", {
+      cls: "kanvas-board-swatch kanvas-board-custom-color",
+      attr: { "aria-label": "Custom color" }
+    });
+    pastille.toggleClass("is-active", isCustom);
+    const input = pastille.createEl("input", {
+      type: "color",
+      value: isCustom && current.length === 7 ? current : "#888888"
+    });
+    input.addEventListener("change", () => {
+      this.closePastilles();
+      this.setRoleColor(role, input.value);
+    });
+  }
+  // The color a role's slot shows (a preset name or a hex). Cards, labels,
+  // toggles and instructions stay with the slot.
+  async setRoleColor(role, theme) {
+    const { colors } = resolve(this.plugin.settings);
+    if (colors[role] === theme) {
       return;
     }
-    function swap(each) {
-      if (each === old) {
-        return name;
-      }
-      return each === name ? old : each;
-    }
-    const labels = settings2.colorLabels || {};
-    const [oldLabel, newLabel] = [labels[old] || "", labels[name] || ""];
-    settings2.passColors = [...parseColors(settings2.passColors)].map((number) => swap(colorName(number))).join(" ");
-    await this.saveWorkflow({ colors: swapColors(colors, role, name) });
-    await this.plugin.setColorLabel(name, oldLabel);
-    await this.plugin.setColorLabel(old, newLabel);
-    if (this.skillText !== null) {
-      const parts = this.skillParts;
-      const moved = {};
-      for (const colorName2 of Object.keys(parts.colors)) {
-        moved[swap(colorName2)] = parts.colors[colorName2];
-      }
-      this.saveSkill(
-        this.plugin.skillPath(),
-        joinInstructions(
-          { general: parts.general, colors: moved },
-          this.rowColorNames()
-        )
-      );
-    }
+    await this.saveWorkflow({ colors: { ...colors, [role]: theme } });
     this.display();
   }
   async saveWorkflow(change) {
     const settings2 = this.plugin.settings;
     settings2.workflow = { ...settings2.workflow || {}, ...change };
     await this.plugin.saveData(settings2);
+    this.plugin.applyTheme();
   }
   // The templates: the notes that set the shapes of agent-written cards and
   // plan notes.
@@ -6652,6 +6678,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
       (button) => button.setButtonText("Reset").setWarning().onClick(async () => {
         delete this.plugin.settings.workflow;
         await this.plugin.saveData(this.plugin.settings);
+        this.plugin.applyTheme();
         this.display();
       })
     );
@@ -6700,7 +6727,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
           } else {
             goColors.delete(colorNumber);
           }
-          this.plugin.settings.passColors = this.rowColorNames().filter((colorName2) => goColors.has(COLOR_NUM[colorName2])).join(" ");
+          this.plugin.settings.passColors = this.rowColorNames().filter((colorName) => goColors.has(COLOR_NUM[colorName])).join(" ");
           await this.plugin.saveData(this.plugin.settings);
         })
       );
@@ -6756,8 +6783,8 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     for (const field of fields) {
       field.addEventListener("change", () => {
         const colors = {};
-        for (const colorName2 of colorNames) {
-          colors[colorName2] = colorFields[colorName2].value;
+        for (const colorName of colorNames) {
+          colors[colorName] = colorFields[colorName].value;
         }
         const joined = joinInstructions(
           { general: general.value, colors },
@@ -7299,6 +7326,8 @@ var CanvasBoardPlugin = class extends obsidian8.Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULTS2, await this.loadData());
     this.migrateClaudePath();
+    this.applyTheme();
+    this.register(() => this.themeEl && this.themeEl.remove());
     this.addSettingTab(new CanvasBoardSettings_default(this.app, this));
     const pluginDir = import_path8.default.join(
       this.app.vault.adapter.basePath,
@@ -7328,6 +7357,18 @@ var CanvasBoardPlugin = class extends obsidian8.Plugin {
     this.registerInterval(window.setInterval(() => this.tick(), 2e3));
     this.tick();
     this.register(() => this.clearScreens());
+  }
+  // The colors the roles' slots show (Settings > Workflow), vault-wide: a
+  // style overriding Obsidian's --canvas-color-N (config.themeCss), redone on
+  // each change. Cards keep their slot numbers.
+  applyTheme() {
+    const css = themeCss(resolve(this.settings).colors);
+    if (!this.themeEl) {
+      this.themeEl = document.head.createEl("style", {
+        attr: { id: "kanvas-board-theme" }
+      });
+    }
+    this.themeEl.textContent = css;
   }
   // Command pattern: each action is { id, menu, test, run }, run from the
   // palette, a hotkey, a right-click item or a toolbar button.
@@ -7804,8 +7845,8 @@ Shift-click: next direction`,
     };
     const byColor = {};
     for (const node of cards) {
-      const colorName2 = names[node.color || ""] || "custom";
-      byColor[colorName2] = (byColor[colorName2] || 0) + 1;
+      const colorName = names[node.color || ""] || "custom";
+      byColor[colorName] = (byColor[colorName] || 0) + 1;
     }
     const max = Number(this.settings.cardWarning) || 0;
     const isOverLimit = max > 0 && cards.length > max;
@@ -7822,7 +7863,7 @@ Shift-click: next direction`,
     }
     this.countEl.setAttr(
       "aria-label",
-      (isOverLimit ? `over ${max} \xB7 ` : "") + Object.entries(byColor).map(([colorName2, count]) => `${colorName2} ${count}`).join(" \xB7 ")
+      (isOverLimit ? `over ${max} \xB7 ` : "") + Object.entries(byColor).map(([colorName, count]) => `${colorName} ${count}`).join(" \xB7 ")
     );
     this.countEl.setAttr("data-tooltip-position", "top");
     this.countEl.show();
@@ -8096,7 +8137,7 @@ Shift-click: next direction`,
     }
     if (!await this.hasGoCards(board, goColorSet)) {
       const names = Object.keys(COLOR_NUM).filter(
-        (colorName2) => goColorSet.has(COLOR_NUM[colorName2])
+        (colorName) => goColorSet.has(COLOR_NUM[colorName])
       );
       new obsidian8.Notice(
         `Kanvas board: nothing to do on ${board} (no ${names.join(" or ")} card)`

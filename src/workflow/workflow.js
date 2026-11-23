@@ -72,14 +72,14 @@ function activeNode(boardTree, total, colors) {
   return { board: boardTree.board, cards, context, edges };
 }
 
-// "cyan purple" / "5,6" → Set of color numbers. Empty setting (all off): no go
-// colors, the agent takes nothing.
+// "do plan" / "cyan purple" / "5,6" → Set of slot numbers. Empty setting
+// (all off): no go colors, the agent takes nothing.
 function parseColors(value) {
   return new Set(
     String(value || '')
       .split(LIST_SEPARATOR)
       .filter(Boolean)
-      .map((color) => store.COLORS[color.toLowerCase()] || color)
+      .map(config.slotOf)
       .filter((color) => CANVAS_COLOR_NUMBER.test(color)),
   );
 }

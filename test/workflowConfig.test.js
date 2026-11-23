@@ -25,47 +25,76 @@ assert.strictEqual(
   'see Board notes/_templates/Agent instructions.md',
 );
 
-// Fixed roles, other colors: In Progress on purple, Plan on orange, Blocked
-// on cyan, Do on red.
+// Slots are fixed, roles show other colors (a theme): In Progress shows
+// purple, Plan orange, Do a custom hex, Blocked a typo (its default).
 const custom = config.resolve({
   notesFolder: 'Tasks/',
   workflow: {
     colors: {
       inProgress: 'purple',
       plan: 'orange',
-      blocked: 'cyan',
-      do: 'red',
+      do: '#8A5CF5',
+      blocked: 'pink',
     },
     cardTemplate: 'My card.md',
   },
 });
-assert.strictEqual(custom.working, '6');
-assert.deepStrictEqual(custom.blocked, ['5']);
+assert.strictEqual(custom.working, '2');
+assert.deepStrictEqual(custom.blocked, ['1']);
 assert.strictEqual(custom.done, '4');
-assert.strictEqual(custom.roleOf.red, 'do');
-assert.strictEqual(config.defaultLabel('orange', custom), 'Plan');
-assert.strictEqual(config.defaultLabel('purple', defaults), 'Plan');
+assert.deepStrictEqual(custom.colors, {
+  do: '#8a5cf5',
+  plan: 'orange',
+  inProgress: 'purple',
+  review: 'yellow',
+  blocked: 'red',
+  done: 'green',
+});
+assert.strictEqual(custom.roleOf.cyan, 'do');
+assert.strictEqual(config.defaultLabel('purple', custom), 'Plan');
 assert.strictEqual(custom.cardTemplate, 'My card.md');
 assert.strictEqual(custom.noteTemplate, 'Tasks/_templates/Plan note.md');
 
-// Two roles on one color, or an unknown color: the defaults.
-for (const colors of [{ inProgress: 'red' }, { done: 'pink' }]) {
-  assert.strictEqual(config.resolve({ workflow: { colors } }).working, '2');
-}
+// Two roles may show one color.
+assert.strictEqual(
+  config.resolve({ workflow: { colors: { do: 'purple' } } }).colors.plan,
+  'purple',
+);
 
-// Picking a taken color swaps.
-assert.deepStrictEqual(config.swapColors(defaults.colors, 'do', 'purple'), {
-  ...defaults.colors,
-  do: 'purple',
-  plan: 'cyan',
-});
+// Role names and slot color names, any case, as slot numbers.
+for (const [name, slot] of [
+  ['do', '5'],
+  ['inProgress', '2'],
+  ['INPROGRESS', '2'],
+  ['orange', '2'],
+  ['Cyan', '5'],
+  ['3', '3'],
+  ['#abc', '#abc'],
+]) {
+  assert.strictEqual(config.slotOf(name), slot, name);
+}
+assert.deepStrictEqual(
+  [...workflow.parseColors('do Plan,orange')],
+  ['5', '6', '2'],
+);
+
+// The theme overrides only the slots showing another color.
+assert.strictEqual(config.themeCss(defaults.colors), '');
+assert.strictEqual(
+  config.themeCss(custom.colors),
+  'body.theme-dark, body.theme-light {\n' +
+    '  --canvas-color-5: #8a5cf5;\n' +
+    '  --canvas-color-6: var(--color-orange);\n' +
+    '  --canvas-color-2: var(--color-purple);\n' +
+    '}\n',
+);
 
 assert.strictEqual(
   config.fillPlaceholders(
     'Notes in {notesFolder}, {working} works, {blocked} waits, {unknown}.',
     custom,
   ),
-  'Notes in Tasks, purple works, cyan waits, {unknown}.',
+  'Notes in Tasks, inProgress works, blocked waits, {unknown}.',
 );
 
 // Card shapes from the default template.
@@ -119,16 +148,16 @@ assert.deepStrictEqual(
   ],
 );
 
-// Roll-up with other colors: cyan (blocked) climbs over yellow (review); a
-// resolved rolled-up card takes the done color.
-const inner = workflow.colorCounts(['3', '5', '5'], custom);
+// Roll-up under a theme (slots unchanged): blocked climbs over review; a
+// resolved rolled-up card takes the done slot.
+const inner = workflow.colorCounts(['3', '1', '1'], custom);
 assert.strictEqual(inner.total, 3);
 assert.strictEqual(
   workflow.desiredColor({ text: 'Sub', color: '' }, inner, {
     goColors: new Set(),
     workflow: custom,
   }),
-  '5',
+  '1',
 );
 const resolved = workflow.colorCounts(['4', '4'], custom);
 assert.strictEqual(resolved.allDone, true);
