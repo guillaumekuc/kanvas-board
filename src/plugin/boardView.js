@@ -361,7 +361,7 @@ class BoardView {
     badge.setAttr('aria-label', this.keyedLabel('Unfold 1 level', 'unfold'));
   }
 
-  // Review cards (yellow by default, Settings > Workflow roles) whose note was
+  // Review cards (yellow by default, Settings > Workflow) whose note was
   // not touched for "Stale after" days:
   // a warning badge (the icon of `- [!]`) with the time since the note last
   // changed. Cards without a note have no date: no badge.

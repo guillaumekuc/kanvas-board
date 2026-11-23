@@ -87,7 +87,8 @@ function firstStepsCanvas() {
 }
 
 // One card per color: its label and what it does (Settings > Workflow).
-function legendNodes(colorLabel) {
+function legendNodes(colorLabel, settings) {
+  const rows = shared.workflowRows(settings);
   const group = {
     id: store.newId(),
     type: 'group',
@@ -95,9 +96,9 @@ function legendNodes(colorLabel) {
     x: -40,
     y: -80,
     width: COLUMN_WIDTH + 80,
-    height: shared.WORKFLOW.length * 100 + 100,
+    height: rows.length * 100 + 100,
   };
-  const cards = shared.WORKFLOW.map(({ name, meaning }, index) => {
+  const cards = rows.map(({ name, meaning }, index) => {
     const colorName = shared.COLOR_NUM[name] ? name : 'uncolored';
 
     return {
@@ -137,7 +138,10 @@ function starterBoardPath(vault, defaultBoard) {
 async function createStarterBoard(plugin) {
   const { vault } = plugin.app;
   const board = starterBoardPath(vault, plugin.settings.defaultBoard);
-  const legend = legendNodes((name) => plugin.colorLabel(name));
+  const legend = legendNodes(
+    (name) => plugin.colorLabel(name),
+    plugin.settings,
+  );
   const { nodes, edges } = firstStepsCanvas();
   const content = JSON.stringify(
     { nodes: [...legend, ...nodes], edges },

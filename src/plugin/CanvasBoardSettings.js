@@ -11,16 +11,6 @@ function fitToText(field) {
   field.style.height = `${field.scrollHeight + 2}px`;
 }
 
-// A color's description in Settings > Workflow: its role's meaning; an idle
-// color keeps its own (go colors explain what the agent does with them).
-function roleMeaning(name, role, meaning) {
-  const isOwnMeaning =
-    !role ||
-    (role === 'idle' && config.DEFAULT_WORKFLOW.roles[name] === 'idle');
-
-  return isOwnMeaning ? meaning : config.ROLE_MEANINGS[role];
-}
-
 class CanvasBoardSettings extends obsidian.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -156,10 +146,11 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
   displayWorkflow() {
     const { containerEl } = this;
     this.addHeading('Workflow').setDesc(
-      'What each color does and its label, shown in tooltips, the ' +
-        'filter pane and the color commands; under each, its part of ' +
-        'the agent instructions. Toggle on: the color ' +
-        'triggers the agent, so "Run pass" starts if the board has ' +
+      'Six roles, each with its rules in the plugin: click a dot to give ' +
+        'the role another color (a color already taken swaps), edit its ' +
+        'label (tooltips, the filter pane, the color commands) and, ' +
+        'under it, its part of the agent instructions. Toggle on: the ' +
+        'color triggers the agent, so "Run pass" starts if the board has ' +
         'such a card and the agent takes those cards. All off: the ' +
         'agent never starts.',
     );
@@ -168,28 +159,27 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     this.addGeneralSkillField();
     const goColors = pass.parseColors(this.plugin.settings.passColors);
     const workflow = config.resolve(this.plugin.settings);
-    for (const { name, meaning } of shared.WORKFLOW) {
+    for (const { role, name, meaning } of this.rows) {
       const colorNumber = shared.COLOR_NUM[name];
       const row = new obsidian.Setting(containerEl)
         .setName(colorNumber ? name : 'uncolored')
-        .setDesc(roleMeaning(name, workflow.roles[name], meaning));
-      row.nameEl.prepend(
-        createSpan({
-          cls: 'kanvas-board-dot kanvas-board-workflow-dot',
-          attr: { style: this.plugin.dotStyle(colorNumber) },
-        }),
-      );
+        .setDesc(meaning);
+      const dot = createSpan({
+        cls: 'kanvas-board-dot kanvas-board-workflow-dot',
+        attr: { style: this.plugin.dotStyle(colorNumber) },
+      });
+      row.nameEl.prepend(dot);
+      if (role) {
+        this.makeColorPicker(dot, role);
+      }
       row.addText((component) =>
         component
           .setPlaceholder(
-            shared.COLORS.find((color) => color.name === name).label,
+            role ? config.roleInfo(role).label : config.INBOX.label,
           )
           .setValue((this.plugin.settings.colorLabels || {})[name] || '')
           .onChange((value) => this.plugin.setColorLabel(name, value.trim())),
       );
-      if (colorNumber) {
-        this.addRoleDropdown(row, name, workflow.roles[name]);
-      }
       this.addWorkflowToggle(row, colorNumber, goColors);
       this.skillFields.colors[name] = this.addSkillField(
         instructions.colors[name],
@@ -200,35 +190,67 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     this.displayWorkflowRules(workflow);
   }
 
-  // A color's role (config.ROLES): exactly one color is working, so choosing
-  // working moves it here, and the working color cannot be left without one.
-  addRoleDropdown(row, name, role) {
-    row.addDropdown((dropdown) => {
-      for (const each of config.ROLES) {
-        dropdown.addOption(each, each);
+  // A role's dot opens a menu of the colors; the role's rules stay.
+  makeColorPicker(dot, role) {
+    dot.addClass('kanvas-board-color-picker');
+    dot.setAttr('aria-label', 'Pick a color for this role');
+    dot.addEventListener('click', (event) => {
+      const menu = new obsidian.Menu();
+      for (const { name, canvasColor } of shared.COLORS) {
+        if (!canvasColor) {
+          continue;
+        }
+        menu.addItem((item) =>
+          item
+            .setTitle(`${name} (${this.plugin.colorLabel(name)})`)
+            .onClick(() => this.setRoleColor(role, name)),
+        );
       }
-      dropdown.setValue(role).onChange(async (value) => {
-        if (role === 'working') {
-          new obsidian.Notice(
-            'Kanvas board: one color must mean working. Set another ' +
-              'color to working instead.',
-          );
-          dropdown.setValue(role);
-
-          return;
-        }
-
-        const roles = config.resolve(this.plugin.settings).roles;
-        if (value === 'working') {
-          for (const other of Object.keys(roles)) {
-            roles[other] = roles[other] === 'working' ? 'idle' : roles[other];
-          }
-        }
-        roles[name] = value;
-        await this.saveWorkflow({ roles });
-        this.display();
-      });
+      menu.showAtMouseEvent(event);
     });
+  }
+
+  // Another color for a role. The role that had it takes the old one, and
+  // what is keyed by color (label, toggle, instructions section) moves with
+  // its role.
+  async setRoleColor(role, name) {
+    const settings = this.plugin.settings;
+    const { colors } = config.resolve(settings);
+    const old = colors[role];
+    if (old === name) {
+      return;
+    }
+
+    function swap(each) {
+      if (each === old) {
+        return name;
+      }
+
+      return each === name ? old : each;
+    }
+    const labels = settings.colorLabels || {};
+    const [oldLabel, newLabel] = [labels[old] || '', labels[name] || ''];
+    settings.passColors = [...pass.parseColors(settings.passColors)]
+      .map((number) => swap(config.colorName(number)))
+      .join(' ');
+    await this.saveWorkflow({ colors: config.swapColors(colors, role, name) });
+    await this.plugin.setColorLabel(name, oldLabel);
+    await this.plugin.setColorLabel(old, newLabel);
+    if (this.skillText !== null) {
+      const parts = this.skillParts;
+      const moved = {};
+      for (const colorName of Object.keys(parts.colors)) {
+        moved[swap(colorName)] = parts.colors[colorName];
+      }
+      this.saveSkill(
+        this.plugin.skillPath(),
+        agentInstructions.joinInstructions(
+          { general: parts.general, colors: moved },
+          this.rowColorNames(),
+        ),
+      );
+    }
+    this.display();
   }
 
   async saveWorkflow(change) {
@@ -237,35 +259,10 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     await this.plugin.saveData(settings);
   }
 
-  // Markers and templates: what check and the level read in the notes, and
-  // the notes that set the shapes of agent-written cards and plan notes.
+  // The templates: the notes that set the shapes of agent-written cards and
+  // plan notes.
   displayWorkflowRules(workflow) {
     const { containerEl } = this;
-    const markerFields = [
-      ['question', 'Question marker', 'An open question: - [?] by default.'],
-      ['answer', 'Answer marker', "User's answer: - [i] by default."],
-      [
-        'decisionsRecord',
-        'Decisions Record heading',
-        'Questions below it are answered and no longer count.',
-      ],
-    ];
-    for (const [key, name, description] of markerFields) {
-      new obsidian.Setting(containerEl)
-        .setName(name)
-        .setDesc(description)
-        .addText((component) =>
-          component
-            .setPlaceholder(config.DEFAULT_WORKFLOW.markers[key])
-            .setValue(workflow.markers[key])
-            .onChange(async (value) => {
-              const markers = { ...workflow.markers };
-              markers[key] =
-                value.trim() || config.DEFAULT_WORKFLOW.markers[key];
-              await this.saveWorkflow({ markers });
-            }),
-        );
-    }
     this.addTemplateSetting(workflow, {
       key: 'cardTemplate',
       name: 'Card template',
@@ -283,8 +280,9 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     new obsidian.Setting(containerEl)
       .setName('Reset workflow')
       .setDesc(
-        'Roles, markers and template paths back to the defaults. The ' +
-          'template notes and the agent instructions are kept.',
+        "The roles' colors and the template paths back to the defaults. " +
+          'Labels, toggles, the template notes and the agent instructions ' +
+          'are kept.',
       )
       .addButton((button) =>
         button
@@ -373,9 +371,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
             } else {
               goColors.delete(colorNumber);
             }
-            this.plugin.settings.passColors = shared.WORKFLOW.map(
-              ({ name: colorName }) => colorName,
-            )
+            this.plugin.settings.passColors = this.rowColorNames()
               .filter((colorName) => goColors.has(shared.COLOR_NUM[colorName]))
               .join(' ');
             await this.plugin.saveData(this.plugin.settings);
@@ -410,7 +406,8 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
   // The skill file split into its general part and one part per color
   // (see agentInstructions.js); read once per display.
   readSkillParts() {
-    const colorNames = shared.WORKFLOW.map(({ name: colorName }) => colorName);
+    this.rows = shared.workflowRows(this.plugin.settings);
+    const colorNames = this.rowColorNames();
     this.skillText = this.readSkill(this.plugin.skillPath());
     this.skillParts = agentInstructions.splitInstructions(
       this.skillText,
@@ -418,6 +415,11 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     );
 
     return this.skillParts;
+  }
+
+  // The colors in the Workflow rows' order (the roles', uncolored last).
+  rowColorNames() {
+    return shared.workflowRows(this.plugin.settings).map(({ name }) => name);
   }
 
   // The general field, at the top of Workflow before the color rows.
@@ -435,7 +437,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
 
   // Any instructions field (general or a color's) saves the whole file.
   watchSkillFields(skillFile) {
-    const colorNames = shared.WORKFLOW.map(({ name: colorName }) => colorName);
+    const colorNames = this.rowColorNames();
     const general = this.skillFields.general;
     const colorFields = this.skillFields.colors;
     const fields = [general, ...Object.values(colorFields)];

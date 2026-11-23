@@ -230,7 +230,7 @@ function rollupCommand(cli) {
   cli.print(workflow.rollup(cli.board));
 }
 
-// The user's workflow (Settings > Workflow, data.json): color roles, markers,
+// The user's workflow (Settings > Workflow, data.json): each role's color,
 // template paths and the values {placeholders} take in the agent instructions.
 function workflowCommand(cli) {
   const resolved = workflow.workflowNow();

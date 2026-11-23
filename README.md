@@ -6,21 +6,21 @@ Desktop only. Tested on Windows with Obsidian 1.14.5 and Claude Code. The macOS 
 
 ## The colors
 
-| Color | Default label | Meaning |
+| Default color | Role (default label) | Meaning |
 |---|---|---|
 | cyan | Do | The agent carries the card to done. |
-| purple | Clarify | The agent takes one planning step (brief, then plan, then a refined plan), then hands back. It never does the work: color the card cyan for that. |
+| purple | Plan | The agent takes one planning step (brief, then plan, then a refined plan), then hands back. It never does the work: color the card cyan for that. |
 | orange | In Progress | A pass is on the card. |
 | yellow | Review | A question or a review for you. |
 | red | Blocked | Nothing moves until it is unblocked. |
 | green | Done | Finished. Remove the card when it no longer helps. |
 | uncolored | Inbox | An idea. The agent never touches it. |
 
-These are the defaults. Settings > Workflow lets you redefine the workflow:
+The six roles are fixed, each with its rules in the plugin: In Progress is always taken by the next pass (and flagged when its note goes untouched for an hour); Blocked and Review wait on you (counted, they climb to parent cards, Blocked first; Review cards age); a parent whose cards are all Done turns Done; Do and Plan share the same rules and differ only by their agent instructions. Settings > Workflow lets you shape the rest:
 
-- **Label** and **toggle** per color: how it reads, and whether it starts the agent.
-- **Role** per color: `working` (an agent is on the card; exactly one color, orange by default), `blocked` and `review` (waiting on you: counted, they climb to parent cards, blocked first; review cards age), `done` (a parent whose cards are all done takes it; optional) or `idle`.
-- **Markers**: the open question (`- [?]`) and answer (`- [i]`) markers, and the Decisions Record heading (questions below it are answered).
+- **Color** per role: click its dot to pick another color; a color already taken swaps, and its label, toggle and instructions section move with the role.
+- **Label** and **toggle** per role: how it reads, and whether its color starts the agent.
+- **Agent instructions** per role: what the agent does with those cards, including how it writes questions (`- [?]`), answers (`- [i]`) and the `## Decisions Record`. `tree` counts `- [?]` lines above `## Decisions Record` as open questions; a vault that wants other markers writes its own tooling.
 - **Templates**: two notes in `<agent notes folder>/_templates/`, written the first time, then yours. `Card.md` lists the card text shapes agents write (`[[{note}]] · {reason}`, `{recap} · done · [[{output}]]`); `Plan note.md` holds the frontmatter keys and headings of their notes (a heading followed by `%% optional %%` or `%% when done %%` is not always required). `canvas.js check` reads both, so it checks what your workflow asks for.
 - **Reset workflow** brings the defaults back.
 
@@ -52,7 +52,7 @@ Not in the community plugin directory yet.
 
 Command **Kanvas board: Run pass**: a terminal opens with the agent in the vault folder, prompted with "Run a Kanvas board pass on <board>: follow .obsidian/plugins/kanvas-board/pass-instructions.md" (the agent instructions with their placeholders filled in) for the active canvas (else the "Default board"). The agent first turns every card it takes orange, works, recolors them, then reports what needs you.
 
-The agent's instructions are `agent-instructions.md` in the plugin folder, written from the plugin's `skill/SKILL.md` the first time (git-ignored, so `git pull` never overwrites it). It has a general part, then one `## <Color> cards` section per color (`## Uncolored cards` for none): the agent reads them all, and the Workflow toggles decide which cards it works, so an untoggled color's section only tells it what those cards are. Settings > Workflow shows the general part and its "Reset" at the top, then each color's part under its label and toggle, all saved as that one file; fields fit their text; Reset brings back the plugin's version. The instructions can use `{notesFolder}`, `{noteTemplate}`, `{cardTemplate}`, `{working}`, `{done}`, `{blocked}`, `{review}`, `{question}`, `{answer}` and `{decisionsRecord}`: Run pass fills them in from Settings into `pass-instructions.md` (git-ignored) and points the agent there; `canvas.js workflow` prints the values, `canvas.js instructions` the filled text. `skill/SKILL.md` is also a valid [Agent Skill](https://agentskills.io): copy it into your agent's skills folder to run a pass by name.
+The agent's instructions are `agent-instructions.md` in the plugin folder, written from the plugin's `skill/SKILL.md` the first time (git-ignored, so `git pull` never overwrites it). It has a general part, then one `## <Color> cards` section per color (`## Uncolored cards` for none): the agent reads them all, and the Workflow toggles decide which cards it works, so an untoggled color's section only tells it what those cards are. Settings > Workflow shows the general part and its "Reset" at the top, then each color's part under its label and toggle, all saved as that one file; fields fit their text; Reset brings back the plugin's version. The instructions can use `{notesFolder}`, `{noteTemplate}`, `{cardTemplate}`, `{working}`, `{done}`, `{blocked}` and `{review}`: Run pass fills them in from Settings into `pass-instructions.md` (git-ignored) and points the agent there; `canvas.js workflow` prints the values, `canvas.js instructions` the filled text. `skill/SKILL.md` is also a valid [Agent Skill](https://agentskills.io): copy it into your agent's skills folder to run a pass by name.
 
 ## Board tools
 
