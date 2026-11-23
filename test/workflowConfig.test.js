@@ -16,6 +16,14 @@ assert.strictEqual(
   defaults.noteTemplate,
   'Board notes/_templates/Plan note.md',
 );
+assert.strictEqual(
+  defaults.instructions,
+  'Board notes/_templates/Agent instructions.md',
+);
+assert.strictEqual(
+  config.fillPlaceholders('see {instructions}', defaults),
+  'see Board notes/_templates/Agent instructions.md',
+);
 
 // Fixed roles, other colors: In Progress on purple, Plan on orange, Blocked
 // on cyan, Do on red.

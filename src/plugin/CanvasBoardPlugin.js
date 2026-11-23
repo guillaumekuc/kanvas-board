@@ -652,25 +652,31 @@ class CanvasBoardPlugin extends obsidian.Plugin {
     delete this.settings.claudePath;
   }
 
-  // The plugin folder holds the skill's default (skill/SKILL.md) and the user's
-  // copy (agent-instructions.md, git-ignored: a pull never overwrites it),
-  // written only when missing or on "Reset agent skill".
+  // The plugin folder holds the skill's default (skill/SKILL.md); the user's
+  // copy is a vault note (Settings > Workflow, default <notes
+  // folder>/_templates/Agent instructions.md), written only when missing or on
+  // "Reset agent skill".
   skillRelativePath() {
-    return `${this.manifest.dir}/agent-instructions.md`;
+    return config.resolve(this.settings).instructions;
   }
 
   skillPath() {
     return path.join(this.app.vault.adapter.basePath, this.skillRelativePath());
   }
 
-  // Older versions kept the user's copy in .claude/skills/<id>/SKILL.md.
+  // Older versions kept the user's copy in the plugin folder
+  // (agent-instructions.md), before that in .claude/skills/<id>/SKILL.md.
   legacySkillPath() {
     const vaultRoot = this.app.vault.adapter.basePath;
     const skills = path.join(vaultRoot, '.claude', 'skills');
+    const candidates = [
+      path.join(vaultRoot, this.manifest.dir, 'agent-instructions.md'),
+      ...['kanvas-board', 'canvas-board'].map((name) =>
+        path.join(skills, name, 'SKILL.md'),
+      ),
+    ];
 
-    return ['kanvas-board', 'canvas-board']
-      .map((name) => path.join(skills, name, 'SKILL.md'))
-      .find((candidate) => fileSystem.existsSync(candidate));
+    return candidates.find((candidate) => fileSystem.existsSync(candidate));
   }
 
   installSkill(pluginDir) {
@@ -680,6 +686,10 @@ class CanvasBoardPlugin extends obsidian.Plugin {
       }
       const legacy = this.legacySkillPath();
       if (legacy) {
+        fileSystem.mkdirSync(path.dirname(this.skillPath()), {
+          recursive: true,
+        });
+
         return fileSystem.copyFileSync(legacy, this.skillPath());
       }
       this.copySkill(pluginDir);

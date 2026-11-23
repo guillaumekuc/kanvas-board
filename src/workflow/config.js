@@ -53,9 +53,11 @@ const INBOX = {
 const DEFAULT_WORKFLOW = {
   // role → color name, when the user picked another color
   colors: Object.fromEntries(ROLES.map(({ role, color }) => [role, color])),
-  // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md
+  // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md,
+  // Agent instructions.md
   cardTemplate: '',
   noteTemplate: '',
+  instructions: '',
 };
 const DEFAULT_NOTES_FOLDER = 'Board notes';
 const TRAILING_SLASHES = /[/]+$/;
@@ -114,6 +116,7 @@ function templatePaths(settings, workflow) {
   return {
     cardTemplate: workflow.cardTemplate || `${folder}/Card.md`,
     noteTemplate: workflow.noteTemplate || `${folder}/Plan note.md`,
+    instructions: workflow.instructions || `${folder}/Agent instructions.md`,
   };
 }
 
@@ -198,6 +201,7 @@ function placeholders(workflow) {
     review: workflow.review.map(colorName).join(' '),
     cardTemplate: workflow.cardTemplate,
     noteTemplate: workflow.noteTemplate,
+    instructions: workflow.instructions,
   };
 }
 

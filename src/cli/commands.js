@@ -244,9 +244,12 @@ function workflowCommand(cli) {
 // The agent instructions with their {placeholders} filled in, as a pass reads
 // them.
 function instructionsCommand() {
-  const file = path.join(store.PLUGIN_DIR, 'agent-instructions.md');
-  const text = fileSystem.readFileSync(file, 'utf8');
-  process.stdout.write(config.fillPlaceholders(text, workflow.workflowNow()));
+  const resolved = workflow.workflowNow();
+  const text = fileSystem.readFileSync(
+    store.vaultPath(resolved.instructions),
+    'utf8',
+  );
+  process.stdout.write(config.fillPlaceholders(text, resolved));
 }
 
 // Command pattern: each canvas.js command name (and its alias) maps to the

@@ -4246,9 +4246,11 @@ var ROLES = [
 var DEFAULT_WORKFLOW = {
   // role → color name, when the user picked another color
   colors: Object.fromEntries(ROLES.map(({ role, color }) => [role, color])),
-  // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md
+  // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md,
+  // Agent instructions.md
   cardTemplate: "",
-  noteTemplate: ""
+  noteTemplate: "",
+  instructions: ""
 };
 var DEFAULT_NOTES_FOLDER = "Board notes";
 var TRAILING_SLASHES2 = /[/]+$/;
@@ -4292,7 +4294,8 @@ function templatePaths(settings3, workflow) {
   const folder = `${folderOf(settings3)}/_templates`;
   return {
     cardTemplate: workflow.cardTemplate || `${folder}/Card.md`,
-    noteTemplate: workflow.noteTemplate || `${folder}/Plan note.md`
+    noteTemplate: workflow.noteTemplate || `${folder}/Plan note.md`,
+    instructions: workflow.instructions || `${folder}/Agent instructions.md`
   };
 }
 function roleColors(own = {}) {
@@ -4339,7 +4342,8 @@ function placeholders(workflow) {
     blocked: workflow.blocked.map(colorName).join(" "),
     review: workflow.review.map(colorName).join(" "),
     cardTemplate: workflow.cardTemplate,
-    noteTemplate: workflow.noteTemplate
+    noteTemplate: workflow.noteTemplate,
+    instructions: workflow.instructions
   };
 }
 function fillPlaceholders(text, workflow) {
@@ -4951,9 +4955,12 @@ function workflowCommand(cli2) {
   });
 }
 function instructionsCommand() {
-  const file = import_path5.default.join(PLUGIN_DIR, "agent-instructions.md");
-  const text = import_fs4.default.readFileSync(file, "utf8");
-  process.stdout.write(fillPlaceholders(text, workflowNow()));
+  const resolved = workflowNow();
+  const text = import_fs4.default.readFileSync(
+    vaultPath(resolved.instructions),
+    "utf8"
+  );
+  process.stdout.write(fillPlaceholders(text, resolved));
 }
 var byName = {
   read: readCommand,
