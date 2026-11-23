@@ -14,6 +14,8 @@ const FRONTMATTER = /^---\n([\s\S]*?)\n---/;
 const FRONTMATTER_KEY = /^(\w[\w-]*):/gm;
 const PART_CHECKBOX = /^\s*- \[([ xX])\] /gm;
 const REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/g;
+const DECISIONS_RECORD = /^## Decisions Record/m;
+const OPEN_QUESTION = /^\s*- \[\?\] /gm;
 
 const ORANGE_STALE_MS = 3600000;
 const DEFAULT_PASS_COLORS = 'cyan purple';
@@ -24,7 +26,7 @@ function escapeRegex(text) {
 }
 
 // active: the go and working colors; waiting: the colors counted as waiting
-// on User (Settings > Workflow roles).
+// on User (the blocked and review roles).
 function activeNode(boardTree, total, colors) {
   const { active, waiting } = colors;
   const ids = new Set(
@@ -387,19 +389,16 @@ function nestedCardUpdate(card, inner, rules) {
 }
 
 // Level is derived from the note: `- [ ]` / `- [x]` parts make it a plan,
-// otherwise it is a brief. Questions: the question marker (`- [?]`) above the
-// Decisions Record heading (past rounds); both are workflow markers.
-function noteState(relativePath, markers = workflowNow().markers) {
+// otherwise it is a brief. Questions: `- [?]` lines above the Decisions
+// Record heading (past rounds). Built in: the agent instructions say how to
+// write them, a vault that wants other markers writes its own tooling.
+function noteState(relativePath) {
   const text = fileSystem.readFileSync(store.vaultPath(relativePath), 'utf8');
   const parts = [...text.matchAll(PART_CHECKBOX)];
   const done = parts.filter((match) => match[1] !== ' ').length;
-  const record = escapeRegex(markers.decisionsRecord);
-  const question = escapeRegex(markers.question);
-  const recordHeading = new RegExp(`^${record}`, 'm');
-  const openQuestion = new RegExp(`^\\s*- \\[${question}\\] `, 'gm');
   // answered rounds don't count
-  const open = text.split(recordHeading)[0];
-  const questions = [...open.matchAll(openQuestion)].length;
+  const open = text.split(DECISIONS_RECORD)[0];
+  const questions = [...open.matchAll(OPEN_QUESTION)].length;
 
   return {
     level: parts.length ? 'plan' : 'brief',
@@ -415,11 +414,7 @@ function staleDays() {
 } // plugin setting "Stale after"
 
 function tree(board) {
-  const { markers } = workflowNow();
-
-  return notes.tree(board, {
-    noteInfo: (relativePath) => noteState(relativePath, markers),
-  });
+  return notes.tree(board, { noteInfo: noteState });
 }
 
 // red > yellow are the "needs me" colors that climb to the parent card; go

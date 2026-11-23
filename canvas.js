@@ -32,7 +32,7 @@
 //   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
 //   CANVAS check [<board>] [--ids a,b]        read-only: broken links, card text and plan notes off the user's templates, stale working cards, as JSON. --ids: only
 //                                             the cards a pass wrote; without it, an audit of every colored card
-//   CANVAS workflow                           the user's workflow as JSON: color roles (working, blocked, review, done), markers,
+//   CANVAS workflow                           the user's workflow as JSON: color roles (working, blocked, review, done),
 //                                             template paths and the values of the {placeholders} in the agent instructions
 //   CANVAS instructions                       the agent instructions with their {placeholders} filled in
 // tree, rollup, check and workflow are the agent workflow: they live in src/workflow/ (plugin settings "Workflow").
@@ -4214,11 +4214,6 @@ var DEFAULT_WORKFLOW = {
     cyan: "idle",
     purple: "idle"
   },
-  markers: {
-    question: "?",
-    answer: "i",
-    decisionsRecord: "## Decisions Record"
-  },
   // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md
   cardTemplate: "",
   noteTemplate: ""
@@ -4274,13 +4269,11 @@ function colorsWith(roles, role) {
 function resolve(settings3 = {}) {
   const own = settings3.workflow || {};
   const roles = { ...DEFAULT_WORKFLOW.roles, ...own.roles || {} };
-  const markers = { ...DEFAULT_WORKFLOW.markers, ...own.markers || {} };
   const working = colorsWith(roles, "working")[0] || COLORS.orange;
   const blocked = colorsWith(roles, "blocked");
   const review = colorsWith(roles, "review");
   return {
     roles,
-    markers,
     working,
     blocked,
     review,
@@ -4306,10 +4299,7 @@ function placeholders(workflow) {
     blocked: workflow.blocked.map(colorName).join(" "),
     review: workflow.review.map(colorName).join(" "),
     cardTemplate: workflow.cardTemplate,
-    noteTemplate: workflow.noteTemplate,
-    question: `- [${workflow.markers.question}]`,
-    answer: `- [${workflow.markers.answer}]`,
-    decisionsRecord: workflow.markers.decisionsRecord
+    noteTemplate: workflow.noteTemplate
   };
 }
 function fillPlaceholders(text, workflow) {
@@ -4401,6 +4391,8 @@ var FRONTMATTER3 = /^---\n([\s\S]*?)\n---/;
 var FRONTMATTER_KEY2 = /^(\w[\w-]*):/gm;
 var PART_CHECKBOX = /^\s*- \[([ xX])\] /gm;
 var REGEX_SPECIAL2 = /[.*+?^${}()|[\]\\]/g;
+var DECISIONS_RECORD = /^## Decisions Record/m;
+var OPEN_QUESTION = /^\s*- \[\?\] /gm;
 var ORANGE_STALE_MS = 36e5;
 var DEFAULT_PASS_COLORS = "cyan purple";
 function escapeRegex2(text) {
@@ -4661,16 +4653,12 @@ function nestedCardUpdate(card, inner, rules) {
   }
   return { color, operation };
 }
-function noteState(relativePath, markers = workflowNow().markers) {
+function noteState(relativePath) {
   const text = import_fs3.default.readFileSync(vaultPath(relativePath), "utf8");
   const parts = [...text.matchAll(PART_CHECKBOX)];
   const done = parts.filter((match) => match[1] !== " ").length;
-  const record = escapeRegex2(markers.decisionsRecord);
-  const question = escapeRegex2(markers.question);
-  const recordHeading = new RegExp(`^${record}`, "m");
-  const openQuestion = new RegExp(`^\\s*- \\[${question}\\] `, "gm");
-  const open = text.split(recordHeading)[0];
-  const questions = [...open.matchAll(openQuestion)].length;
+  const open = text.split(DECISIONS_RECORD)[0];
+  const questions = [...open.matchAll(OPEN_QUESTION)].length;
   return {
     level: parts.length ? "plan" : "brief",
     parts: { done, total: parts.length },
@@ -4682,10 +4670,7 @@ function staleDays() {
   return Number.isFinite(days) && settings2().staleDays !== void 0 ? days : 7;
 }
 function tree2(board) {
-  const { markers } = workflowNow();
-  return tree(board, {
-    noteInfo: (relativePath) => noteState(relativePath, markers)
-  });
+  return tree(board, { noteInfo: noteState });
 }
 function rollup(board) {
   const workflow = workflowNow();

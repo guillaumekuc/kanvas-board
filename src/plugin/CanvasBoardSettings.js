@@ -237,35 +237,10 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     await this.plugin.saveData(settings);
   }
 
-  // Markers and templates: what check and the level read in the notes, and
-  // the notes that set the shapes of agent-written cards and plan notes.
+  // The templates: the notes that set the shapes of agent-written cards and
+  // plan notes.
   displayWorkflowRules(workflow) {
     const { containerEl } = this;
-    const markerFields = [
-      ['question', 'Question marker', 'An open question: - [?] by default.'],
-      ['answer', 'Answer marker', "User's answer: - [i] by default."],
-      [
-        'decisionsRecord',
-        'Decisions Record heading',
-        'Questions below it are answered and no longer count.',
-      ],
-    ];
-    for (const [key, name, description] of markerFields) {
-      new obsidian.Setting(containerEl)
-        .setName(name)
-        .setDesc(description)
-        .addText((component) =>
-          component
-            .setPlaceholder(config.DEFAULT_WORKFLOW.markers[key])
-            .setValue(workflow.markers[key])
-            .onChange(async (value) => {
-              const markers = { ...workflow.markers };
-              markers[key] =
-                value.trim() || config.DEFAULT_WORKFLOW.markers[key];
-              await this.saveWorkflow({ markers });
-            }),
-        );
-    }
     this.addTemplateSetting(workflow, {
       key: 'cardTemplate',
       name: 'Card template',
@@ -283,7 +258,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     new obsidian.Setting(containerEl)
       .setName('Reset workflow')
       .setDesc(
-        'Roles, markers and template paths back to the defaults. The ' +
+        'Roles and template paths back to the defaults. The ' +
           'template notes and the agent instructions are kept.',
       )
       .addButton((button) =>
