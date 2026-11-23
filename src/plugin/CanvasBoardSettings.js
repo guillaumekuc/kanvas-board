@@ -146,8 +146,10 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
   displayWorkflow() {
     const { containerEl } = this;
     this.addHeading('Workflow').setDesc(
-      'Six roles, each with its rules in the plugin: click a dot to give ' +
-        'the role another color (a color already taken swaps), edit its ' +
+      'Six roles, each with its rules in the plugin and its canvas color ' +
+        'slot for good (the number cards store, the Alt+N hotkey): click ' +
+        'a dot to pick the color the slot shows, a preset or a custom ' +
+        'one (every canvas and the canvas color picker follow), edit its ' +
         'label (tooltips, the filter pane, the color commands) and, ' +
         'under it, its part of the agent instructions. Toggle on: the ' +
         'color triggers the agent, so "Run pass" starts if the board has ' +
@@ -162,7 +164,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     for (const { role, name, meaning } of this.rows) {
       const colorNumber = shared.COLOR_NUM[name];
       const row = new obsidian.Setting(containerEl)
-        .setName(colorNumber ? name : 'uncolored')
+        .setName(role ? config.roleInfo(role).label : 'Uncolored')
         .setDesc(meaning);
       const dot = createSpan({
         cls: 'kanvas-board-dot kanvas-board-workflow-dot',
@@ -207,6 +209,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     const popover = document.body.createDiv({
       cls: 'kanvas-board-pastilles',
     });
+    // The presets in Obsidian's own colors (the slots may show others).
     for (const { name, canvasColor } of shared.COLORS) {
       if (!canvasColor) {
         continue;
@@ -218,13 +221,14 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
       pastille.toggleClass('is-active', colors[role] === name);
       pastille.createSpan({
         cls: 'kanvas-board-dot',
-        attr: { style: this.plugin.dotStyle(canvasColor) },
+        attr: { style: `background: var(--color-${name})` },
       });
       pastille.addEventListener('click', () => {
         this.closePastilles();
         this.setRoleColor(role, name);
       });
     }
+    this.addCustomPastille(popover, role, colors[role]);
     const box = dot.getBoundingClientRect();
     popover.style.left = `${box.left}px`;
     popover.style.top = `${box.bottom + 4}px`;
@@ -263,46 +267,34 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     super.hide();
   }
 
-  // Another color for a role. The role that had it takes the old one, and
-  // what is keyed by color (label, toggle, instructions section) moves with
-  // its role.
-  async setRoleColor(role, name) {
-    const settings = this.plugin.settings;
-    const { colors } = config.resolve(settings);
-    const old = colors[role];
-    if (old === name) {
+  // The last pastille: the native color input, for any color. Active when
+  // the role shows a custom one.
+  addCustomPastille(popover, role, current) {
+    const isCustom = current.startsWith('#');
+    const pastille = popover.createEl('label', {
+      cls: 'kanvas-board-swatch kanvas-board-custom-color',
+      attr: { 'aria-label': 'Custom color' },
+    });
+    pastille.toggleClass('is-active', isCustom);
+    const input = pastille.createEl('input', {
+      type: 'color',
+      value: isCustom && current.length === 7 ? current : '#888888',
+    });
+    input.addEventListener('change', () => {
+      this.closePastilles();
+      this.setRoleColor(role, input.value);
+    });
+  }
+
+  // The color a role's slot shows (a preset name or a hex). Cards, labels,
+  // toggles and instructions stay with the slot.
+  async setRoleColor(role, theme) {
+    const { colors } = config.resolve(this.plugin.settings);
+    if (colors[role] === theme) {
       return;
     }
 
-    function swap(each) {
-      if (each === old) {
-        return name;
-      }
-
-      return each === name ? old : each;
-    }
-    const labels = settings.colorLabels || {};
-    const [oldLabel, newLabel] = [labels[old] || '', labels[name] || ''];
-    settings.passColors = [...pass.parseColors(settings.passColors)]
-      .map((number) => swap(config.colorName(number)))
-      .join(' ');
-    await this.saveWorkflow({ colors: config.swapColors(colors, role, name) });
-    await this.plugin.setColorLabel(name, oldLabel);
-    await this.plugin.setColorLabel(old, newLabel);
-    if (this.skillText !== null) {
-      const parts = this.skillParts;
-      const moved = {};
-      for (const colorName of Object.keys(parts.colors)) {
-        moved[swap(colorName)] = parts.colors[colorName];
-      }
-      this.saveSkill(
-        this.plugin.skillPath(),
-        agentInstructions.joinInstructions(
-          { general: parts.general, colors: moved },
-          this.rowColorNames(),
-        ),
-      );
-    }
+    await this.saveWorkflow({ colors: { ...colors, [role]: theme } });
     this.display();
   }
 
@@ -310,6 +302,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     const settings = this.plugin.settings;
     settings.workflow = { ...(settings.workflow || {}), ...change };
     await this.plugin.saveData(settings);
+    this.plugin.applyTheme();
   }
 
   // The templates: the notes that set the shapes of agent-written cards and
@@ -352,6 +345,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
           .onClick(async () => {
             delete this.plugin.settings.workflow;
             await this.plugin.saveData(this.plugin.settings);
+            this.plugin.applyTheme();
             this.display();
           }),
       );

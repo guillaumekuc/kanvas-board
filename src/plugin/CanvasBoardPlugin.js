@@ -26,6 +26,8 @@ class CanvasBoardPlugin extends obsidian.Plugin {
   async onload() {
     this.settings = Object.assign({}, shared.DEFAULTS, await this.loadData());
     this.migrateClaudePath();
+    this.applyTheme();
+    this.register(() => this.themeEl && this.themeEl.remove());
     this.addSettingTab(new CanvasBoardSettings(this.app, this));
     const pluginDir = path.join(
       this.app.vault.adapter.basePath,
@@ -58,6 +60,19 @@ class CanvasBoardPlugin extends obsidian.Plugin {
     this.registerInterval(window.setInterval(() => this.tick(), 2000));
     this.tick();
     this.register(() => this.clearScreens());
+  }
+
+  // The colors the roles' slots show (Settings > Workflow), vault-wide: a
+  // style overriding Obsidian's --canvas-color-N (config.themeCss), redone on
+  // each change. Cards keep their slot numbers.
+  applyTheme() {
+    const css = config.themeCss(config.resolve(this.settings).colors);
+    if (!this.themeEl) {
+      this.themeEl = document.head.createEl('style', {
+        attr: { id: 'kanvas-board-theme' },
+      });
+    }
+    this.themeEl.textContent = css;
   }
 
   // Command pattern: each action is { id, menu, test, run }, run from the
