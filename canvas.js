@@ -32,7 +32,7 @@
 //   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
 //   CANVAS check [<board>] [--ids a,b]        read-only: broken links, card text and plan notes off the user's templates, stale working cards, as JSON. --ids: only
 //                                             the cards a pass wrote; without it, an audit of every colored card
-//   CANVAS workflow                           the user's workflow as JSON: color roles (working, blocked, review, done),
+//   CANVAS workflow                           the user's workflow as JSON: each role's color (working, blocked, review, done),
 //                                             template paths and the values of the {placeholders} in the agent instructions
 //   CANVAS instructions                       the agent instructions with their {placeholders} filled in
 // tree, rollup, check and workflow are the agent workflow: they live in src/workflow/ (plugin settings "Workflow").
@@ -4205,15 +4205,47 @@ function restoredEdgeOps(canvasData, frontmatter, { archivedId, restoredId }) {
 }
 
 // src/workflow/config.js
-var DEFAULT_WORKFLOW = {
-  roles: {
-    red: "blocked",
-    orange: "working",
-    yellow: "review",
-    green: "done",
-    cyan: "idle",
-    purple: "idle"
+var ROLES = [
+  {
+    role: "do",
+    color: "cyan",
+    label: "Do",
+    meaning: "The agent carries the card to done."
   },
+  {
+    role: "plan",
+    color: "purple",
+    label: "Plan",
+    meaning: "The agent takes one step, then hands back."
+  },
+  {
+    role: "inProgress",
+    color: "orange",
+    label: "In Progress",
+    meaning: "A pass is on the card."
+  },
+  {
+    role: "review",
+    color: "yellow",
+    label: "Review",
+    meaning: "A question or a review for you."
+  },
+  {
+    role: "blocked",
+    color: "red",
+    label: "Blocked",
+    meaning: "Nothing moves until it is unblocked."
+  },
+  {
+    role: "done",
+    color: "green",
+    label: "Done",
+    meaning: "Finished. Remove the card when it no longer helps."
+  }
+];
+var DEFAULT_WORKFLOW = {
+  // role → color name, when the user picked another color
+  colors: Object.fromEntries(ROLES.map(({ role, color }) => [role, color])),
   // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md
   cardTemplate: "",
   noteTemplate: ""
@@ -4263,22 +4295,30 @@ function templatePaths(settings3, workflow) {
     noteTemplate: workflow.noteTemplate || `${folder}/Plan note.md`
   };
 }
-function colorsWith(roles, role) {
-  return Object.keys(COLORS).filter((name2) => roles[name2] === role).map((name2) => COLORS[name2]);
+function roleColors(own = {}) {
+  const colors = { ...DEFAULT_WORKFLOW.colors, ...own };
+  const picked = Object.values(colors);
+  const isValid = picked.every((name2) => COLORS[name2]) && new Set(picked).size === picked.length;
+  return isValid ? colors : { ...DEFAULT_WORKFLOW.colors };
 }
 function resolve(settings3 = {}) {
   const own = settings3.workflow || {};
-  const roles = { ...DEFAULT_WORKFLOW.roles, ...own.roles || {} };
-  const working = colorsWith(roles, "working")[0] || COLORS.orange;
-  const blocked = colorsWith(roles, "blocked");
-  const review = colorsWith(roles, "review");
+  const colors = roleColors(own.colors);
+  function number(role) {
+    return COLORS[colors[role]];
+  }
+  const blocked = [number("blocked")];
+  const review = [number("review")];
   return {
-    roles,
-    working,
+    colors,
+    roleOf: Object.fromEntries(
+      Object.entries(colors).map(([role, name2]) => [name2, role])
+    ),
+    working: number("inProgress"),
     blocked,
     review,
     waiting: /* @__PURE__ */ new Set([...blocked, ...review]),
-    done: colorsWith(roles, "done")[0] || "",
+    done: number("done"),
     notesFolder: folderOf(settings3),
     ...templatePaths(settings3, { ...DEFAULT_WORKFLOW, ...own })
   };
@@ -4295,7 +4335,7 @@ function placeholders(workflow) {
   return {
     notesFolder: workflow.notesFolder,
     working: colorName(workflow.working),
-    done: workflow.done ? colorName(workflow.done) : "none",
+    done: colorName(workflow.done),
     blocked: workflow.blocked.map(colorName).join(" "),
     review: workflow.review.map(colorName).join(" "),
     cardTemplate: workflow.cardTemplate,

@@ -250,10 +250,13 @@
 .kanvas-board-pane-card-count {
 	flex: none;
 }
-/* Settings > Workflow: the color next to its name. */
+/* Settings > Workflow: the color next to its name; a role's dot picks its color. */
 .kanvas-board-workflow-dot {
 	display: inline-block;
 	margin-right: 8px;
+}
+.kanvas-board-color-picker {
+	cursor: pointer;
 }
 
 /* Tidy layout button: the icon points the way the layout flows. */

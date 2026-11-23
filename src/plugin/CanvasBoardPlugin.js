@@ -187,11 +187,11 @@ class CanvasBoardPlugin extends obsidian.Plugin {
   // Obsidian update may drop those buttons, the commands stay. Header action
   // and ribbon icon are documented API. See "Obsidian internals" in README.md.
 
-  // Label of a color: the one edited in Settings > Workflow, else the default.
+  // Label of a color: the one edited in Settings > Workflow, else its role's.
   colorLabel(name) {
     return (
       (this.settings.colorLabels || {})[name] ||
-      shared.COLORS.find((colorRow) => colorRow.name === name).label
+      config.defaultLabel(name, config.resolve(this.settings))
     );
   }
 
