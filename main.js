@@ -4490,9 +4490,11 @@ var INBOX = {
 var DEFAULT_WORKFLOW = {
   // role → color name, when the user picked another color
   colors: Object.fromEntries(ROLES.map(({ role, color }) => [role, color])),
-  // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md
+  // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md,
+  // Agent instructions.md
   cardTemplate: "",
-  noteTemplate: ""
+  noteTemplate: "",
+  instructions: ""
 };
 var DEFAULT_NOTES_FOLDER = "Board notes";
 var TRAILING_SLASHES2 = /[/]+$/;
@@ -4536,7 +4538,8 @@ function templatePaths(settings2, workflow) {
   const folder = `${folderOf(settings2)}/_templates`;
   return {
     cardTemplate: workflow.cardTemplate || `${folder}/Card.md`,
-    noteTemplate: workflow.noteTemplate || `${folder}/Plan note.md`
+    noteTemplate: workflow.noteTemplate || `${folder}/Plan note.md`,
+    instructions: workflow.instructions || `${folder}/Agent instructions.md`
   };
 }
 function roleColors(own = {}) {
@@ -4588,7 +4591,8 @@ function placeholders(workflow) {
     blocked: workflow.blocked.map(colorName).join(" "),
     review: workflow.review.map(colorName).join(" "),
     cardTemplate: workflow.cardTemplate,
-    noteTemplate: workflow.noteTemplate
+    noteTemplate: workflow.noteTemplate,
+    instructions: workflow.instructions
   };
 }
 function fillPlaceholders(text, workflow) {
@@ -6637,6 +6641,11 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
       name: "Plan note template",
       description: "A note with the frontmatter keys and headings of the notes agents write. Check holds those notes to it."
     });
+    this.addTemplateSetting(workflow, {
+      key: "instructions",
+      name: "Agent instructions note",
+      description: "The note holding the agent instructions (the fields above edit it too); Run pass gives the agent a copy with the placeholders filled in."
+    });
     new obsidian6.Setting(containerEl).setName("Reset workflow").setDesc(
       "The roles' colors and the template paths back to the defaults. Labels, toggles, the template notes and the agent instructions are kept."
     ).addButton(
@@ -6654,6 +6663,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
       (component) => component.setPlaceholder(workflow[key]).setValue((this.plugin.settings.workflow || {})[key] || "").onChange(async (value) => {
         await this.saveWorkflow({ [key]: value.trim() });
         this.plugin.installTemplates();
+        this.plugin.installSkill(this.pluginDir());
       })
     );
   }
@@ -6664,15 +6674,13 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
       `What the agent does on a pass: the general part below, then one part per color, under each color (the agent reads them all; the toggles decide which cards it works). Saved when a field loses focus, to ${this.plugin.skillRelativePath()} (the pass prompt points any agent at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin's version.`
     ).addButton(
       (button) => button.setButtonText("Reset").setWarning().onClick(() => {
-        this.plugin.resetSkill(
-          import_path7.default.join(
-            this.app.vault.adapter.basePath,
-            this.plugin.manifest.dir
-          )
-        );
+        this.plugin.resetSkill(this.pluginDir());
         this.display();
       })
     );
+  }
+  pluginDir() {
+    return import_path7.default.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir);
   }
   // On: cards of this color trigger the agent (setting passColors).
   addWorkflowToggle(row, colorNumber, goColors) {
@@ -7829,20 +7837,28 @@ Shift-click: next direction`,
     }
     delete this.settings.claudePath;
   }
-  // The plugin folder holds the skill's default (skill/SKILL.md) and the user's
-  // copy (agent-instructions.md, git-ignored: a pull never overwrites it),
-  // written only when missing or on "Reset agent skill".
+  // The plugin folder holds the skill's default (skill/SKILL.md); the user's
+  // copy is a vault note (Settings > Workflow, default <notes
+  // folder>/_templates/Agent instructions.md), written only when missing or on
+  // "Reset agent skill".
   skillRelativePath() {
-    return `${this.manifest.dir}/agent-instructions.md`;
+    return resolve(this.settings).instructions;
   }
   skillPath() {
     return import_path8.default.join(this.app.vault.adapter.basePath, this.skillRelativePath());
   }
-  // Older versions kept the user's copy in .claude/skills/<id>/SKILL.md.
+  // Older versions kept the user's copy in the plugin folder
+  // (agent-instructions.md), before that in .claude/skills/<id>/SKILL.md.
   legacySkillPath() {
     const vaultRoot = this.app.vault.adapter.basePath;
     const skills = import_path8.default.join(vaultRoot, ".claude", "skills");
-    return ["kanvas-board", "canvas-board"].map((name) => import_path8.default.join(skills, name, "SKILL.md")).find((candidate) => import_fs5.default.existsSync(candidate));
+    const candidates = [
+      import_path8.default.join(vaultRoot, this.manifest.dir, "agent-instructions.md"),
+      ...["kanvas-board", "canvas-board"].map(
+        (name) => import_path8.default.join(skills, name, "SKILL.md")
+      )
+    ];
+    return candidates.find((candidate) => import_fs5.default.existsSync(candidate));
   }
   installSkill(pluginDir) {
     try {
@@ -7851,6 +7867,9 @@ Shift-click: next direction`,
       }
       const legacy = this.legacySkillPath();
       if (legacy) {
+        import_fs5.default.mkdirSync(import_path8.default.dirname(this.skillPath()), {
+          recursive: true
+        });
         return import_fs5.default.copyFileSync(legacy, this.skillPath());
       }
       this.copySkill(pluginDir);
