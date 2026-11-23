@@ -4,6 +4,7 @@ import fileSystem from 'fs';
 import operatingSystem from 'os';
 import path from 'path';
 import * as shared from './shared.js';
+import * as config from '../workflow/config.js';
 
 const COMMAND_WORDS = /"[^"]*"|\S+/g;
 const OUTER_QUOTES = /^"|"$/g;
@@ -142,7 +143,7 @@ function parseColors(value) {
     String(value || '')
       .split(LIST_SEPARATOR)
       .filter(Boolean)
-      .map((color) => shared.COLOR_NUM[color.toLowerCase()] || color)
+      .map(config.slotOf)
       .filter((color) => CANVAS_COLOR_NUMBER.test(color)),
   );
 }

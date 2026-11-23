@@ -2,6 +2,7 @@ import path from 'path';
 import fileSystem from 'fs';
 import * as refactor from './refactor.js';
 import * as store from './store.js';
+import * as config from '../workflow/config.js';
 
 const WIKILINK_TARGET = /\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g;
 const QUOTED_VALUE = /^(["'])(.*)\1$/;
@@ -186,12 +187,14 @@ function tree(board, { noteInfo, depth = 0, seen = new Set() } = {}) {
   };
 }
 
+// --color: a role (inProgress), a slot's color name (orange), a number, a
+// custom hex or none.
 function colorArg(color) {
   return color === undefined
     ? undefined
     : color === 'none'
       ? ''
-      : store.COLORS[color] || color;
+      : config.slotOf(color);
 }
 
 // Where a board's archive notes go: "<board name> archive" next to the board,
