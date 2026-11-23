@@ -6,17 +6,19 @@ import * as notes from '../board/notes.js';
 import * as geometry from '../board/geometry.js';
 import * as refactor from '../board/refactor.js';
 import * as unpack from './unpack.js';
+import * as config from '../workflow/config.js';
 
 // canvasColor: the canvas color number; commandKey: the color-<key> command
-// id. Labels can be edited in Settings > Workflow.
+// id. A color's label is its role's (config.ROLES), editable in Settings >
+// Workflow.
 const COLORS = [
-  { name: 'none', canvasColor: '', commandKey: '0', label: 'Inbox' },
-  { name: 'red', canvasColor: '1', commandKey: '1', label: 'Blocked' },
-  { name: 'orange', canvasColor: '2', commandKey: '2', label: 'In Progress' },
-  { name: 'yellow', canvasColor: '3', commandKey: '3', label: 'Review' },
-  { name: 'green', canvasColor: '4', commandKey: '4', label: 'Done' },
-  { name: 'cyan', canvasColor: '5', commandKey: '5', label: 'Do' },
-  { name: 'purple', canvasColor: '6', commandKey: '6', label: 'Clarify' },
+  { name: 'none', canvasColor: '', commandKey: '0' },
+  { name: 'red', canvasColor: '1', commandKey: '1' },
+  { name: 'orange', canvasColor: '2', commandKey: '2' },
+  { name: 'yellow', canvasColor: '3', commandKey: '3' },
+  { name: 'green', canvasColor: '4', commandKey: '4' },
+  { name: 'cyan', canvasColor: '5', commandKey: '5' },
+  { name: 'purple', canvasColor: '6', commandKey: '6' },
 ];
 // Terminal command: empty = the platform's terminal (defaultLaunch); else
 // {vault} {board} are replaced, a {agent} word becomes the agent command with
@@ -58,20 +60,19 @@ const COLOR_NUM = {
   cyan: '5',
   purple: '6',
 };
-// Settings > Workflow: what each color does (as in the skill). Fixed: the label
-// above is only how it reads.
-const WORKFLOW = [
-  { name: 'cyan', meaning: 'The agent carries the card to done.' },
-  { name: 'purple', meaning: 'The agent takes one step, then hands back.' },
-  { name: 'orange', meaning: 'A pass is on the card.' },
-  { name: 'yellow', meaning: 'A question or a review for you.' },
-  { name: 'red', meaning: 'Nothing moves until it is unblocked.' },
-  {
-    name: 'green',
-    meaning: 'Finished. Remove the card when it no longer helps.',
-  },
-  { name: 'none', meaning: 'No state. The agent never touches it.' },
-];
+// Settings > Workflow and the starter legend: one row per role, in the
+// roles' order, with the color the user gave it; uncolored last. `name`: the
+// color name.
+function workflowRows(settings) {
+  const { colors } = config.resolve(settings);
+  const rows = config.ROLES.map(({ role, meaning }) => ({
+    role,
+    name: colors[role],
+    meaning,
+  }));
+
+  return [...rows, { role: null, name: 'none', meaning: config.INBOX.meaning }];
+}
 // Tidy layout directions, in the order shift-click cycles them. `turn`: how far
 // the button's icon rotates.
 const LAYOUT_DIRS = {
@@ -214,7 +215,7 @@ export {
   COLORS,
   DEFAULTS,
   COLOR_NUM,
-  WORKFLOW,
+  workflowRows,
   LAYOUT_DIRS,
   LINUX_TERMINALS,
   boardLibrary,

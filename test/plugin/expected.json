@@ -23,7 +23,7 @@
         {
           "id": "dddb052a64c5d837",
           "type": "text",
-          "text": "🟣 **Clarify** (purple)\nThe agent takes one step, then hands back.",
+          "text": "🟣 **Plan** (purple)\nThe agent takes one step, then hands back.",
           "x": 0,
           "y": 100,
           "width": 400,
@@ -163,7 +163,7 @@
     "color-3: Color selected cards: yellow (Review)",
     "color-4: Color selected cards: green (Done)",
     "color-5: Color selected cards: cyan (Do)",
-    "color-6: Color selected cards: purple (Clarify)",
+    "color-6: Color selected cards: purple (Plan)",
     "create-starter-board: Create a starter board (color legend and first cards)",
     "expand: Unpack subcanvas (dissolve)",
     "extract: Extract current selection to a new card",

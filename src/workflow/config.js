@@ -1,27 +1,58 @@
 import * as store from '../board/store.js';
 
 // The user's workflow: `workflow` in data.json (Settings > Workflow), merged
-// over the defaults, which are the plugin's original behavior. One accessor,
-// `resolve(settings)`, read by workflow.js, the plugin and the CLI.
+// over the defaults. One accessor, `resolve(settings)`, read by workflow.js,
+// the plugin and the CLI.
 
-const ROLES = ['working', 'blocked', 'review', 'done', 'idle'];
-// What each role does, shown under its color in Settings > Workflow.
-const ROLE_MEANINGS = {
-  working: 'An agent is on the card (required: exactly one color).',
-  blocked: 'Waiting on you: nothing moves until it is unblocked.',
-  review: 'Waiting on you: a question or a review; ages after "Stale after".',
-  done: 'Finished: a parent whose cards are all done takes it.',
-  idle: 'No state of its own.',
+// Six fixed roles, named after their default labels. Each keeps its rules in
+// the code (do and plan share theirs: the agent instructions tell them apart);
+// the user picks its color, label and instructions. `color`: the default.
+const ROLES = [
+  {
+    role: 'do',
+    color: 'cyan',
+    label: 'Do',
+    meaning: 'The agent carries the card to done.',
+  },
+  {
+    role: 'plan',
+    color: 'purple',
+    label: 'Plan',
+    meaning: 'The agent takes one step, then hands back.',
+  },
+  {
+    role: 'inProgress',
+    color: 'orange',
+    label: 'In Progress',
+    meaning: 'A pass is on the card.',
+  },
+  {
+    role: 'review',
+    color: 'yellow',
+    label: 'Review',
+    meaning: 'A question or a review for you.',
+  },
+  {
+    role: 'blocked',
+    color: 'red',
+    label: 'Blocked',
+    meaning: 'Nothing moves until it is unblocked.',
+  },
+  {
+    role: 'done',
+    color: 'green',
+    label: 'Done',
+    meaning: 'Finished. Remove the card when it no longer helps.',
+  },
+];
+// Uncolored cards: no role.
+const INBOX = {
+  label: 'Inbox',
+  meaning: 'No state. The agent never touches it.',
 };
 const DEFAULT_WORKFLOW = {
-  roles: {
-    red: 'blocked',
-    orange: 'working',
-    yellow: 'review',
-    green: 'done',
-    cyan: 'idle',
-    purple: 'idle',
-  },
+  // role → color name, when the user picked another color
+  colors: Object.fromEntries(ROLES.map(({ role, color }) => [role, color])),
   // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md
   cardTemplate: '',
   noteTemplate: '',
@@ -86,31 +117,58 @@ function templatePaths(settings, workflow) {
   };
 }
 
-function colorsWith(roles, role) {
-  return Object.keys(store.COLORS)
-    .filter((name) => roles[name] === role)
-    .map((name) => store.COLORS[name]);
+// Each role one color, each color one role: a set that is not (a typo, two
+// roles on one color) falls back to the defaults.
+function roleColors(own = {}) {
+  const colors = { ...DEFAULT_WORKFLOW.colors, ...own };
+  const picked = Object.values(colors);
+  const isValid =
+    picked.every((name) => store.COLORS[name]) &&
+    new Set(picked).size === picked.length;
+
+  return isValid ? colors : { ...DEFAULT_WORKFLOW.colors };
 }
 
-// settings (data.json) → the workflow as canvas color numbers. Exactly one
-// working color: none or several set falls back to the first one, else orange.
+// settings (data.json) → the workflow as canvas color numbers.
 function resolve(settings = {}) {
   const own = settings.workflow || {};
-  const roles = { ...DEFAULT_WORKFLOW.roles, ...(own.roles || {}) };
-  const working = colorsWith(roles, 'working')[0] || store.COLORS.orange;
-  const blocked = colorsWith(roles, 'blocked');
-  const review = colorsWith(roles, 'review');
+  const colors = roleColors(own.colors);
+  function number(role) {
+    return store.COLORS[colors[role]];
+  }
+  const blocked = [number('blocked')];
+  const review = [number('review')];
 
   return {
-    roles,
-    working,
+    colors,
+    roleOf: Object.fromEntries(
+      Object.entries(colors).map(([role, name]) => [name, role]),
+    ),
+    working: number('inProgress'),
     blocked,
     review,
     waiting: new Set([...blocked, ...review]),
-    done: colorsWith(roles, 'done')[0] || '',
+    done: number('done'),
     notesFolder: folderOf(settings),
     ...templatePaths(settings, { ...DEFAULT_WORKFLOW, ...own }),
   };
+}
+
+// A role's default label and meaning (INBOX for uncolored).
+function roleInfo(role) {
+  return ROLES.find((each) => each.role === role) || INBOX;
+}
+
+// A color's default label: its role's.
+function defaultLabel(colorName, workflow) {
+  return roleInfo(workflow.roleOf[colorName]).label;
+}
+
+// Picking a taken color swaps the two roles' colors.
+function swapColors(colors, role, colorName) {
+  const other = Object.keys(colors).find((each) => colors[each] === colorName);
+
+  return { ...colors, [other]: colors[role], [role]: colorName };
 }
 
 // A template's text: the vault note, else the built-in default.
@@ -135,7 +193,7 @@ function placeholders(workflow) {
   return {
     notesFolder: workflow.notesFolder,
     working: colorName(workflow.working),
-    done: workflow.done ? colorName(workflow.done) : 'none',
+    done: colorName(workflow.done),
     blocked: workflow.blocked.map(colorName).join(' '),
     review: workflow.review.map(colorName).join(' '),
     cardTemplate: workflow.cardTemplate,
@@ -154,12 +212,15 @@ function fillPlaceholders(text, workflow) {
 
 export {
   ROLES,
-  ROLE_MEANINGS,
+  INBOX,
   DEFAULT_WORKFLOW,
   DEFAULT_NOTES_FOLDER,
   CARD_TEMPLATE,
   NOTE_TEMPLATE,
   resolve,
+  roleInfo,
+  defaultLabel,
+  swapColors,
   templateText,
   colorName,
   placeholders,
