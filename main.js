@@ -6513,22 +6513,72 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     this.watchSkillFields(this.plugin.skillPath());
     this.displayWorkflowRules(workflow);
   }
-  // A role's dot opens a menu of the colors; the role's rules stay.
+  // A role's dot opens a row of color pastilles under it; the role's rules
+  // stay.
   makeColorPicker(dot, role) {
     dot.addClass("kanvas-board-color-picker");
     dot.setAttr("aria-label", "Pick a color for this role");
     dot.addEventListener("click", (event) => {
-      const menu = new obsidian6.Menu();
-      for (const { name, canvasColor } of COLORS2) {
-        if (!canvasColor) {
-          continue;
-        }
-        menu.addItem(
-          (item) => item.setTitle(`${name} (${this.plugin.colorLabel(name)})`).onClick(() => this.setRoleColor(role, name))
-        );
-      }
-      menu.showAtMouseEvent(event);
+      event.stopPropagation();
+      this.openPastilles(dot, role);
     });
+  }
+  openPastilles(dot, role) {
+    this.closePastilles();
+    const { colors } = resolve(this.plugin.settings);
+    const popover = document.body.createDiv({
+      cls: "kanvas-board-pastilles"
+    });
+    for (const { name, canvasColor } of COLORS2) {
+      if (!canvasColor) {
+        continue;
+      }
+      const pastille = popover.createDiv({
+        cls: "kanvas-board-swatch",
+        attr: { "aria-label": name }
+      });
+      pastille.toggleClass("is-active", colors[role] === name);
+      pastille.createSpan({
+        cls: "kanvas-board-dot",
+        attr: { style: this.plugin.dotStyle(canvasColor) }
+      });
+      pastille.addEventListener("click", () => {
+        this.closePastilles();
+        this.setRoleColor(role, name);
+      });
+    }
+    const box = dot.getBoundingClientRect();
+    popover.style.left = `${box.left}px`;
+    popover.style.top = `${box.bottom + 4}px`;
+    function close(event) {
+      const isOtherKey = event.type === "keydown" && event.key !== "Escape";
+      const isInside = event.type === "pointerdown" && popover.contains(event.target);
+      if (!isOtherKey && !isInside) {
+        this.closePastilles();
+      }
+    }
+    const listener = close.bind(this);
+    document.addEventListener("pointerdown", listener, true);
+    document.addEventListener("keydown", listener, true);
+    this.pastilles = {
+      popover,
+      unlisten() {
+        document.removeEventListener("pointerdown", listener, true);
+        document.removeEventListener("keydown", listener, true);
+      }
+    };
+  }
+  closePastilles() {
+    if (!this.pastilles) {
+      return;
+    }
+    this.pastilles.unlisten();
+    this.pastilles.popover.remove();
+    this.pastilles = null;
+  }
+  hide() {
+    this.closePastilles();
+    super.hide();
   }
   // Another color for a role. The role that had it takes the old one, and
   // what is keyed by color (label, toggle, instructions section) moves with
