@@ -22,11 +22,6 @@ const DEFAULT_WORKFLOW = {
     cyan: 'idle',
     purple: 'idle',
   },
-  markers: {
-    question: '?',
-    answer: 'i',
-    decisionsRecord: '## Decisions Record',
-  },
   // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md
   cardTemplate: '',
   noteTemplate: '',
@@ -102,14 +97,12 @@ function colorsWith(roles, role) {
 function resolve(settings = {}) {
   const own = settings.workflow || {};
   const roles = { ...DEFAULT_WORKFLOW.roles, ...(own.roles || {}) };
-  const markers = { ...DEFAULT_WORKFLOW.markers, ...(own.markers || {}) };
   const working = colorsWith(roles, 'working')[0] || store.COLORS.orange;
   const blocked = colorsWith(roles, 'blocked');
   const review = colorsWith(roles, 'review');
 
   return {
     roles,
-    markers,
     working,
     blocked,
     review,
@@ -147,9 +140,6 @@ function placeholders(workflow) {
     review: workflow.review.map(colorName).join(' '),
     cardTemplate: workflow.cardTemplate,
     noteTemplate: workflow.noteTemplate,
-    question: `- [${workflow.markers.question}]`,
-    answer: `- [${workflow.markers.answer}]`,
-    decisionsRecord: workflow.markers.decisionsRecord,
   };
 }
 

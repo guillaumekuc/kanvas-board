@@ -31,7 +31,7 @@
 //   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
 //   CANVAS check [<board>] [--ids a,b]        read-only: broken links, card text and plan notes off the user's templates, stale working cards, as JSON. --ids: only
 //                                             the cards a pass wrote; without it, an audit of every colored card
-//   CANVAS workflow                           the user's workflow as JSON: color roles (working, blocked, review, done), markers,
+//   CANVAS workflow                           the user's workflow as JSON: color roles (working, blocked, review, done),
 //                                             template paths and the values of the {placeholders} in the agent instructions
 //   CANVAS instructions                       the agent instructions with their {placeholders} filled in
 // tree, rollup, check and workflow are the agent workflow: they live in src/workflow/ (plugin settings "Workflow").

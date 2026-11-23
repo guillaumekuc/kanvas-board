@@ -27,7 +27,6 @@ const custom = config.resolve({
       cyan: 'blocked',
       green: 'idle',
     },
-    markers: { question: 'Q' },
     cardTemplate: 'My card.md',
   },
 });
@@ -36,7 +35,6 @@ assert.deepStrictEqual(custom.blocked, ['1', '5']);
 assert.strictEqual(custom.done, '');
 assert.strictEqual(custom.cardTemplate, 'My card.md');
 assert.strictEqual(custom.noteTemplate, 'Tasks/_templates/Plan note.md');
-assert.strictEqual(custom.markers.decisionsRecord, '## Decisions Record');
 
 // No working color set: falls back to orange.
 const noWorking = config.resolve({
@@ -46,10 +44,10 @@ assert.strictEqual(noWorking.working, '2');
 
 assert.strictEqual(
   config.fillPlaceholders(
-    'Notes in {notesFolder}, {working} works, {question} asks, {unknown}.',
+    'Notes in {notesFolder}, {working} works, {blocked} waits, {unknown}.',
     custom,
   ),
-  'Notes in Tasks, purple works, - [Q] asks, {unknown}.',
+  'Notes in Tasks, purple works, red cyan waits, {unknown}.',
 );
 
 // Card shapes from the default template.

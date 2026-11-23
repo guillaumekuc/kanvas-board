@@ -6193,11 +6193,6 @@ var DEFAULT_WORKFLOW = {
     cyan: "idle",
     purple: "idle"
   },
-  markers: {
-    question: "?",
-    answer: "i",
-    decisionsRecord: "## Decisions Record"
-  },
   // vault paths; empty: <notes folder>/_templates/Card.md, Plan note.md
   cardTemplate: "",
   noteTemplate: ""
@@ -6253,13 +6248,11 @@ function colorsWith(roles, role) {
 function resolve(settings2 = {}) {
   const own = settings2.workflow || {};
   const roles = { ...DEFAULT_WORKFLOW.roles, ...own.roles || {} };
-  const markers = { ...DEFAULT_WORKFLOW.markers, ...own.markers || {} };
   const working = colorsWith(roles, "working")[0] || COLORS.orange;
   const blocked = colorsWith(roles, "blocked");
   const review = colorsWith(roles, "review");
   return {
     roles,
-    markers,
     working,
     blocked,
     review,
@@ -6280,10 +6273,7 @@ function placeholders(workflow) {
     blocked: workflow.blocked.map(colorName).join(" "),
     review: workflow.review.map(colorName).join(" "),
     cardTemplate: workflow.cardTemplate,
-    noteTemplate: workflow.noteTemplate,
-    question: `- [${workflow.markers.question}]`,
-    answer: `- [${workflow.markers.answer}]`,
-    decisionsRecord: workflow.markers.decisionsRecord
+    noteTemplate: workflow.noteTemplate
   };
 }
 function fillPlaceholders(text, workflow) {
@@ -6513,28 +6503,10 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     settings2.workflow = { ...settings2.workflow || {}, ...change };
     await this.plugin.saveData(settings2);
   }
-  // Markers and templates: what check and the level read in the notes, and
-  // the notes that set the shapes of agent-written cards and plan notes.
+  // The templates: the notes that set the shapes of agent-written cards and
+  // plan notes.
   displayWorkflowRules(workflow) {
     const { containerEl } = this;
-    const markerFields = [
-      ["question", "Question marker", "An open question: - [?] by default."],
-      ["answer", "Answer marker", "User's answer: - [i] by default."],
-      [
-        "decisionsRecord",
-        "Decisions Record heading",
-        "Questions below it are answered and no longer count."
-      ]
-    ];
-    for (const [key, name, description] of markerFields) {
-      new obsidian6.Setting(containerEl).setName(name).setDesc(description).addText(
-        (component) => component.setPlaceholder(DEFAULT_WORKFLOW.markers[key]).setValue(workflow.markers[key]).onChange(async (value) => {
-          const markers = { ...workflow.markers };
-          markers[key] = value.trim() || DEFAULT_WORKFLOW.markers[key];
-          await this.saveWorkflow({ markers });
-        })
-      );
-    }
     this.addTemplateSetting(workflow, {
       key: "cardTemplate",
       name: "Card template",
@@ -6546,7 +6518,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
       description: "A note with the frontmatter keys and headings of the notes agents write. Check holds those notes to it."
     });
     new obsidian6.Setting(containerEl).setName("Reset workflow").setDesc(
-      "Roles, markers and template paths back to the defaults. The template notes and the agent instructions are kept."
+      "Roles and template paths back to the defaults. The template notes and the agent instructions are kept."
     ).addButton(
       (button) => button.setButtonText("Reset").setWarning().onClick(async () => {
         delete this.plugin.settings.workflow;
