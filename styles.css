@@ -258,6 +258,24 @@
 .kanvas-board-color-picker {
 	cursor: pointer;
 }
+.kanvas-board-pastilles {
+	position: fixed;
+	z-index: var(--layer-menu);
+	display: flex;
+	gap: 2px;
+	padding: 4px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-s);
+}
+.kanvas-board-pastilles .kanvas-board-swatch .kanvas-board-dot {
+	width: 18px;
+	height: 18px;
+}
+.kanvas-board-pastilles .kanvas-board-swatch.is-active {
+	box-shadow: 0 0 0 2px var(--interactive-accent);
+}
 
 /* Tidy layout button: the icon points the way the layout flows. */
 .kanvas-board-controls [data-command="tidy-layout"] svg {
