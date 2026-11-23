@@ -6429,6 +6429,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     this.plugin = plugin;
   }
   display() {
+    this.plugin.applyTheme(this.containerEl.ownerDocument);
     this.containerEl.empty();
     this.skillFields = { general: null, colors: {} };
     this.displayHotkeys();
@@ -6561,10 +6562,14 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
       this.openPastilles(dot, role);
     });
   }
+  // The popover lives in the dot's own window: Settings may open in a popout
+  // window, and a popover in the main one shows far away, misses outside
+  // clicks there and, once clicked, takes the focus and closes Settings.
   openPastilles(dot, role) {
     this.closePastilles();
+    const ownerDoc = dot.ownerDocument;
     const { colors } = resolve(this.plugin.settings);
-    const popover = document.body.createDiv({
+    const popover = ownerDoc.body.createDiv({
       cls: "kanvas-board-pastilles"
     });
     for (const { name, canvasColor } of COLORS2) {
@@ -6586,24 +6591,27 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
       });
     }
     this.addCustomPastille(popover, role, colors[role]);
-    const box = dot.getBoundingClientRect();
-    popover.style.left = `${box.left}px`;
-    popover.style.top = `${box.bottom + 4}px`;
+    placeBelow(popover, dot);
     function close(event) {
-      const isOtherKey = event.type === "keydown" && event.key !== "Escape";
-      const isInside = event.type === "pointerdown" && popover.contains(event.target);
-      if (!isOtherKey && !isInside) {
-        this.closePastilles();
+      if (event.type === "keydown") {
+        if (event.key !== "Escape") {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+      } else if (popover.contains(event.target)) {
+        return;
       }
+      this.closePastilles();
     }
     const listener = close.bind(this);
-    document.addEventListener("pointerdown", listener, true);
-    document.addEventListener("keydown", listener, true);
+    ownerDoc.addEventListener("pointerdown", listener, true);
+    ownerDoc.addEventListener("keydown", listener, true);
     this.pastilles = {
       popover,
       unlisten() {
-        document.removeEventListener("pointerdown", listener, true);
-        document.removeEventListener("keydown", listener, true);
+        ownerDoc.removeEventListener("pointerdown", listener, true);
+        ownerDoc.removeEventListener("keydown", listener, true);
       }
     };
   }
@@ -6914,6 +6922,19 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     );
   }
 };
+function placeBelow(popover, anchor) {
+  const ownerWindow = anchor.ownerDocument.defaultView;
+  const box = anchor.getBoundingClientRect();
+  const margin = 4;
+  const left = Math.min(
+    box.left,
+    ownerWindow.innerWidth - popover.offsetWidth - margin
+  );
+  const below = box.bottom + margin;
+  const top = below + popover.offsetHeight > ownerWindow.innerHeight ? box.top - popover.offsetHeight - margin : below;
+  popover.style.left = `${Math.max(margin, left)}px`;
+  popover.style.top = `${Math.max(margin, top)}px`;
+}
 var CanvasBoardSettings_default = CanvasBoardSettings;
 
 // src/plugin/CanvasBoardPlugin.js
@@ -7326,8 +7347,18 @@ var CanvasBoardPlugin = class extends obsidian8.Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULTS2, await this.loadData());
     this.migrateClaudePath();
-    this.applyTheme();
-    this.register(() => this.themeEl && this.themeEl.remove());
+    this.applyTheme(document);
+    this.registerEvent(
+      this.app.workspace.on(
+        "window-open",
+        (ownerWindow) => this.applyTheme(ownerWindow.doc || ownerWindow.win.document)
+      )
+    );
+    this.register(() => {
+      for (const styleEl of this.themeEls.values()) {
+        styleEl?.remove();
+      }
+    });
     this.addSettingTab(new CanvasBoardSettings_default(this.app, this));
     const pluginDir = import_path8.default.join(
       this.app.vault.adapter.basePath,
@@ -7360,15 +7391,27 @@ var CanvasBoardPlugin = class extends obsidian8.Plugin {
   }
   // The colors the roles' slots show (Settings > Workflow), vault-wide: a
   // style overriding Obsidian's --canvas-color-N (config.themeCss), redone on
-  // each change. Cards keep their slot numbers.
-  applyTheme() {
+  // each change. Cards keep their slot numbers. One style per window: the
+  // main one, popout windows and Settings when it opens in its own window.
+  applyTheme(ownerDoc) {
+    if (!this.themeEls) {
+      this.themeEls = /* @__PURE__ */ new Map();
+    }
+    if (ownerDoc && !this.themeEls.has(ownerDoc)) {
+      this.themeEls.set(ownerDoc, null);
+    }
     const css = themeCss(resolve(this.settings).colors);
-    if (!this.themeEl) {
-      this.themeEl = document.head.createEl("style", {
+    for (const [themed, styleEl] of this.themeEls) {
+      if (!themed.defaultView) {
+        this.themeEls.delete(themed);
+        continue;
+      }
+      const style = styleEl && styleEl.isConnected ? styleEl : themed.head.createEl("style", {
         attr: { id: "kanvas-board-theme" }
       });
+      style.textContent = css;
+      this.themeEls.set(themed, style);
     }
-    this.themeEl.textContent = css;
   }
   // Command pattern: each action is { id, menu, test, run }, run from the
   // palette, a hotkey, a right-click item or a toolbar button.
