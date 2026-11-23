@@ -330,6 +330,14 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
         'A note with the frontmatter keys and headings of the notes ' +
         'agents write. Check holds those notes to it.',
     });
+    this.addTemplateSetting(workflow, {
+      key: 'instructions',
+      name: 'Agent instructions note',
+      description:
+        'The note holding the agent instructions (the fields above edit ' +
+        'it too); Run pass gives the agent a copy with the placeholders ' +
+        'filled in.',
+    });
     new obsidian.Setting(containerEl)
       .setName('Reset workflow')
       .setDesc(
@@ -365,6 +373,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
           .onChange(async (value) => {
             await this.saveWorkflow({ [key]: value.trim() });
             this.plugin.installTemplates();
+            this.plugin.installSkill(this.pluginDir());
           }),
       );
   }
@@ -391,15 +400,14 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
           .setButtonText('Reset')
           .setWarning()
           .onClick(() => {
-            this.plugin.resetSkill(
-              path.join(
-                this.app.vault.adapter.basePath,
-                this.plugin.manifest.dir,
-              ),
-            );
+            this.plugin.resetSkill(this.pluginDir());
             this.display();
           }),
       );
+  }
+
+  pluginDir() {
+    return path.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir);
   }
 
   // On: cards of this color trigger the agent (setting passColors).
