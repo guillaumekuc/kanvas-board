@@ -4623,6 +4623,11 @@ function check(board, ids) {
     shape: noteShape(templateText("note", workflow)),
     done: workflow.done
   };
+  const templates = /* @__PURE__ */ new Set([
+    workflow.cardTemplate,
+    workflow.noteTemplate,
+    workflow.instructions
+  ]);
   const issues = [];
   const seen = /* @__PURE__ */ new Set();
   function walk(current, depth) {
@@ -4631,7 +4636,9 @@ function check(board, ids) {
     for (const node of colored) {
       const isScoped = !ids || ids.has(node.id);
       const { note, canvas } = cardLinks(node);
-      const isPlanNote = Boolean(note && note.startsWith(folder));
+      const isPlanNote = Boolean(
+        note && note.startsWith(folder) && !templates.has(note)
+      );
       const isStale = isPlanNote && isStaleOrange(node, note, workflow.working);
       const found = [
         ...isScoped ? cardIssues(node, depth, shapes) : [],
