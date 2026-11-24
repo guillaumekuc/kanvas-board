@@ -4021,26 +4021,19 @@ var CARD_TEMPLATE = `${CARD_COMMENT}
 [[{note}]] \xB7 {reason}
 {recap} \xB7 done \xB7 [[{output}]]
 `;
-var NOTE_TEMPLATE = `---
-context:
-  -
----
-${NOTE_COMMENT}
+var NOTE_TEMPLATE = `${NOTE_COMMENT}
 > [!info] Since last time
+## Overview
 
-## Aim
-
-### Done when
-
-## Output
-%% when done %%
-
-## Design
+**Done when:**
+**Output**: %% when done %%
+## Plan
 
 ## Open questions
 %% optional %%
-
-## Decisions Record
+## Decisions
+%% optional %%
+## Links & Resources
 %% optional %%
 `;
 function folderOf(settings3) {
@@ -4461,7 +4454,7 @@ var FRONTMATTER3 = /^---\n([\s\S]*?)\n---/;
 var FRONTMATTER_KEY2 = /^(\w[\w-]*):/gm;
 var PART_CHECKBOX = /^\s*- \[([ xX])\] /gm;
 var REGEX_SPECIAL2 = /[.*+?^${}()|[\]\\]/g;
-var DECISIONS_RECORD = /^## Decisions Record/m;
+var DECISIONS_RECORD = /^## Decisions(?: Record)?\s*$/m;
 var OPEN_QUESTION = /^\s*- \[\?\] /gm;
 var ORANGE_STALE_MS = 36e5;
 var DEFAULT_PASS_COLORS = "cyan purple";
@@ -4610,7 +4603,7 @@ function noteIssues(source, color, rules = defaultNoteRules()) {
   }
   const issues = [];
   const expected = shape.keys.join(", ");
-  if (keys.join(", ") !== expected) {
+  if (expected && keys.join(", ") !== expected) {
     const listed = keys.join(", ") || "none";
     issues.push(`note frontmatter is not \`${expected}\` only (${listed})`);
   }

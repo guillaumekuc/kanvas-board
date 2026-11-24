@@ -90,26 +90,19 @@ const CARD_TEMPLATE = `${CARD_COMMENT}
 {recap} · done · [[{output}]]
 `;
 
-const NOTE_TEMPLATE = `---
-context:
-  -
----
-${NOTE_COMMENT}
+const NOTE_TEMPLATE = `${NOTE_COMMENT}
 > [!info] Since last time
+## Overview
 
-## Aim
-
-### Done when
-
-## Output
-%% when done %%
-
-## Design
+**Done when:**
+**Output**: %% when done %%
+## Plan
 
 ## Open questions
 %% optional %%
-
-## Decisions Record
+## Decisions
+%% optional %%
+## Links & Resources
 %% optional %%
 `;
 
