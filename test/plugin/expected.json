@@ -1,0 +1,224 @@
+{
+  "starterBoard": {
+    "Board.canvas": {
+      "nodes": [
+        {
+          "id": "948fa8de1f33f060",
+          "type": "group",
+          "label": "How the colors work",
+          "x": -40,
+          "y": -80,
+          "width": 480,
+          "height": 800
+        },
+        {
+          "id": "1aecb1973e1c20bb",
+          "type": "text",
+          "text": "🔵 **Do** (cyan)\nThe agent carries the card to done.",
+          "x": 0,
+          "y": 0,
+          "width": 400,
+          "height": 80
+        },
+        {
+          "id": "dddb052a64c5d837",
+          "type": "text",
+          "text": "🟣 **Plan** (purple)\nThe agent takes one step, then hands back.",
+          "x": 0,
+          "y": 100,
+          "width": 400,
+          "height": 80
+        },
+        {
+          "id": "964d95b969319874",
+          "type": "text",
+          "text": "🟠 **In Progress** (orange)\nA pass is on the card.",
+          "x": 0,
+          "y": 200,
+          "width": 400,
+          "height": 80
+        },
+        {
+          "id": "71c31d99e376aa33",
+          "type": "text",
+          "text": "🟡 **Review** (yellow)\nA question or a review for you.",
+          "x": 0,
+          "y": 300,
+          "width": 400,
+          "height": 80
+        },
+        {
+          "id": "904cc65844d490ea",
+          "type": "text",
+          "text": "🔴 **Blocked** (red)\nNothing moves until it is unblocked.",
+          "x": 0,
+          "y": 400,
+          "width": 400,
+          "height": 80
+        },
+        {
+          "id": "72d437c5061f499e",
+          "type": "text",
+          "text": "🟢 **Done** (green)\nFinished. Remove the card when it no longer helps.",
+          "x": 0,
+          "y": 500,
+          "width": 400,
+          "height": 80
+        },
+        {
+          "id": "bf4376c8fc8e69e7",
+          "type": "text",
+          "text": "⚪ **Inbox** (uncolored)\nNo state. The agent never touches it.",
+          "x": 0,
+          "y": 600,
+          "width": 400,
+          "height": 80
+        },
+        {
+          "id": "5bed23502ad38429",
+          "type": "group",
+          "label": "First steps",
+          "x": 520,
+          "y": -80,
+          "width": 480,
+          "height": 920
+        },
+        {
+          "id": "aee3a1d54b1d5497",
+          "type": "text",
+          "text": "**1. Write a wish**\nOne card, one thing you want done, in your own words. Uncolored cards are ideas: the agent never touches them.",
+          "x": 560,
+          "y": 0,
+          "width": 400,
+          "height": 130
+        },
+        {
+          "id": "8e7f19a29c90e76d",
+          "type": "text",
+          "text": "**2. Color it**\nCyan: the agent carries it to done. Purple: one step (a brief, then a plan), then it hands back. Color hotkeys: Settings > Kanvas board > Hotkeys.",
+          "x": 560,
+          "y": 160,
+          "width": 400,
+          "height": 130
+        },
+        {
+          "id": "2994a1d1f241b6a0",
+          "type": "text",
+          "text": "**3. Run a pass**\nCommand \"Kanvas board: Run pass\". A terminal opens with the agent on this board; it turns the cards it takes orange.",
+          "x": 560,
+          "y": 320,
+          "width": 400,
+          "height": 130
+        },
+        {
+          "id": "4cc71bb01534a8d8",
+          "type": "text",
+          "text": "**4. Answer**\nYellow: a question or a review for you, in the card's note. Answer there, color the card cyan or purple again, run the next pass.",
+          "x": 560,
+          "y": 480,
+          "width": 400,
+          "height": 130
+        },
+        {
+          "id": "ed80b190f0dd0718",
+          "type": "text",
+          "text": "Try it: color this card cyan, then run a pass.\n\nWrite a short note that explains this board in my own words.",
+          "x": 560,
+          "y": 660,
+          "width": 400,
+          "height": 130
+        }
+      ],
+      "edges": [
+        {
+          "id": "c2e5131cc906d723",
+          "fromNode": "aee3a1d54b1d5497",
+          "fromSide": "bottom",
+          "toNode": "8e7f19a29c90e76d",
+          "toSide": "top"
+        },
+        {
+          "id": "00170f523578fb92",
+          "fromNode": "8e7f19a29c90e76d",
+          "fromSide": "bottom",
+          "toNode": "2994a1d1f241b6a0",
+          "toSide": "top"
+        },
+        {
+          "id": "d82a88cf9be5e7ef",
+          "fromNode": "2994a1d1f241b6a0",
+          "fromSide": "bottom",
+          "toNode": "4cc71bb01534a8d8",
+          "toSide": "top"
+        }
+      ]
+    }
+  },
+  "commands": [
+    "archive: Archive selected cards",
+    "collapse: Pack into subcanvas",
+    "color-0: Color selected cards: none (Inbox)",
+    "color-1: Color selected cards: red (Blocked)",
+    "color-2: Color selected cards: orange (In Progress)",
+    "color-3: Color selected cards: yellow (Review)",
+    "color-4: Color selected cards: green (Done)",
+    "color-5: Color selected cards: cyan (Do)",
+    "color-6: Color selected cards: purple (Plan)",
+    "create-starter-board: Create a starter board (color legend and first cards)",
+    "expand: Unpack subcanvas (dissolve)",
+    "extract: Extract current selection to a new card",
+    "filter: Toggle filter pane",
+    "find: Search current canvas",
+    "fold-direction-in: Fold direction: incoming (cards pointing to it)",
+    "fold-direction-out: Fold direction: outgoing (cards it points to)",
+    "fold: Fold branch",
+    "merge: Merge selected cards",
+    "open-board: Open the board",
+    "reset-skill: Reset agent skill to the plugin's version (overwrites your edits)",
+    "restore: Restore archived card (from its archive note)",
+    "run-pass: Run pass (recheck the board)",
+    "select-children: Select children (all levels down, in the fold direction)",
+    "select-same-color: Select cards with the same color",
+    "select-same-tag: Select cards with the same tag",
+    "show-all: Unhide all",
+    "split-bullet: Split card by top-level bullet",
+    "split-h1: Split card by heading 1",
+    "split-h2: Split card by heading 2",
+    "split-h3: Split card by heading 3",
+    "split-paragraph: Split card by paragraph",
+    "template-insert: Insert cards from template",
+    "template-save: Save selected cards as a template",
+    "tidy-direction-bt: Tidy layout direction: bottom to top",
+    "tidy-direction-lr: Tidy layout direction: left to right",
+    "tidy-direction-next: Tidy layout direction: next",
+    "tidy-direction-rl: Tidy layout direction: right to left",
+    "tidy-direction-tb: Tidy layout direction: top to bottom",
+    "tidy-layout: Tidy layout (selected cards)",
+    "unfold-2: Unfold branch 2 levels",
+    "unfold-3: Unfold branch 3 levels",
+    "unfold-all: Unfold whole branch",
+    "unfold: Unfold branch 1 level",
+    "unpack-copy: Unpack subcanvas (copy)"
+  ],
+  "ribbonIcons": [
+    "kanban-square: Open the board (Kanvas board)"
+  ],
+  "api": [
+    "apply",
+    "read"
+  ],
+  "settings": [
+    "agentCommand",
+    "apm",
+    "archiveFolder",
+    "archiveMode",
+    "cardWarning",
+    "defaultBoard",
+    "foldDirection",
+    "hideTagBranches",
+    "layoutDirection",
+    "notesFolder",
+    "staleDays",
+    "terminal"
+  ]
+}

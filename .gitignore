@@ -1,2 +1,5 @@
 # Personal settings written by Obsidian
 data.json
+node_modules/
+agent-instructions.md
+pass-instructions.md

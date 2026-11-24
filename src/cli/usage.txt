@@ -1,0 +1,39 @@
+// Read and edit Obsidian canvas boards safely, for the kanvas-board skill. Ships with the kanvas-board plugin.
+// If the board is open in Obsidian, edits go through the plugin's API (`app.plugins.plugins['kanvas-board'].api`,
+// called with the Obsidian CLI `obsidian eval`) so Obsidian does not save its in-memory copy over them;
+// otherwise the .canvas file is edited directly. Built from src/ (npm run build); the plugin bundles the same board code.
+//
+// Usage (paths relative to the vault root; CANVAS = node .obsidian/plugins/kanvas-board/canvas.js):
+//   CANVAS read <board>                       nodes and edges as JSON
+//   CANVAS tree [<board>] [--active]          board + linked notes (level, parts) + nested canvases, as JSON
+//                                             --active: go cards (do/plan) and in-progress cards, cards edged to them, waiting count (review/blocked)
+//   CANVAS set <board> <id> [--color c] [--text t] [--file path]
+//                                             c: a role (do plan inProgress review blocked done), its slot's color name
+//                                             (cyan purple orange yellow red green), 1-6 or none
+//                                             --file turns the card into a file card, --text into a text card
+//   CANVAS add <board> --near <id> --text t [--color c] [--width w] [--height h]
+//                                             new text card next to <id> (right, else below); prints its id
+//   CANVAS remove <board> <id>
+//   CANVAS edge <board> <fromId> <toId> [--label l]
+//   CANVAS layout <board> [--ids a,b,c] [--dir TB|LR|BT|RL] [--fit]
+//                                             dagre layered layout of the given cards (default: all), the others
+//                                             stay put; --fit sizes text cards to their text. For canvases an agent
+//                                             made, or cards it just added
+//   CANVAS pack <board> --ids a,b --name N    the cards (and cards inside selected groups) move to `N.canvas`
+//                                             next to the board; one card `[[N.canvas|N]]` takes their place (alias: collapse)
+//   CANVAS unpack <board> <id> [--keep]       the reverse; the subcanvas file goes to .trash, unless --keep or other
+//                                             cards / notes still link it (then it stays, they are listed) (alias: expand)
+//   CANVAS merge <board> --ids a,b            text cards into the first in reading order (most urgent color)
+//   CANVAS split <board> <id> [--by b]        b: paragraph (default), bullet, h1..h6; pieces stack under it
+//   CANVAS extract <board> <id> --text t      the text t leaves the card for a new card right of it, overlaps allowed
+//   CANVAS archive <board> <id>[,id]          cards become notes in "<board> archive/" next to the board (setting "Archive":
+//                                             or one folder for all boards, default Board notes/Archive/)
+//   CANVAS restore <note>                     puts an archived card back on its board, note to .trash
+//   CANVAS rollup [<board>]                  recolor parents from nested boards, update `· N inside` / `· Nd`
+//   CANVAS check [<board>] [--ids a,b]        read-only: broken links, card text and plan notes off the user's templates, stale working cards, as JSON. --ids: only
+//                                             the cards a pass wrote; without it, an audit of every colored card
+//   CANVAS workflow                           the user's workflow as JSON: the color each role's slot shows, the slots (working, blocked, review, done),
+//                                             template paths and the values of the {placeholders} in the agent instructions
+//   CANVAS instructions                       the agent instructions with their {placeholders} filled in
+// tree, rollup, check and workflow are the agent workflow: they live in src/workflow/ (plugin settings "Workflow").
+// Default board: the plugin setting "Default board" (data.json), else Board.canvas. Default direction: the plugin setting "Layout direction" (data.json), else TB.
