@@ -100,6 +100,17 @@ assert.strictEqual(element.text, '1 AP15M · PB 23');
 
 // A new window resets the personal best and is saved.
 (async () => {
+  // Turned off: hidden even on a canvas, nothing counted, PB kept.
+  assert.strictEqual(apm.loadSettings(undefined, undefined).enabled, true);
+  await counter.setEnabled(false);
+  assert.strictEqual(element.shown, false, 'hidden when turned off');
+  counter.record(['Board.canvas#b']);
+  assert.strictEqual(counter.pace(), 0, 'nothing counted when off');
+  assert.strictEqual(counter.settings.pb, 23);
+  await counter.setEnabled(true);
+  assert.strictEqual(element.shown, true, 'back on a canvas');
+  active.saves = 0;
+
   await counter.setWindow(5);
   assert.strictEqual(counter.settings.pb, 0);
   assert.strictEqual(counter.settings.unit, 'cards/5');

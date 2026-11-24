@@ -3153,6 +3153,7 @@ var MIN_PB = 5;
 var SAVE_EVERY_MS = 1e4;
 var CONTENT_KEYS = ["text", "file", "subpath", "url", "label", "color"];
 var DEFAULTS = {
+  enabled: true,
   pb: 0,
   pbDate: "",
   lowPercent: 25,
@@ -3304,7 +3305,7 @@ var ApmCounter = class {
     );
   }
   record(keys, now = Date.now()) {
-    if (!keys.length) {
+    if (!keys.length || !this.settings.enabled) {
       return;
     }
     for (const cardId of keys) {
@@ -3352,7 +3353,7 @@ var ApmCounter = class {
       this.lastSave = now;
       this.save();
     }
-    const isShown = !!this.plugin.activeCanvas();
+    const isShown = settings2.enabled && !!this.plugin.activeCanvas();
     if (this.isShown !== isShown) {
       this.element.toggle(isShown);
       this.isShown = isShown;
@@ -3388,6 +3389,12 @@ var ApmCounter = class {
     this.settings.pbDate = "";
     this.touched.clear();
     this.dirty = false;
+    await this.save();
+    this.refresh();
+  }
+  async setEnabled(enabled) {
+    this.settings.enabled = enabled;
+    this.touched.clear();
     await this.save();
     this.refresh();
   }
@@ -6412,7 +6419,6 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     this.displayWorkflow();
     this.displayPass();
     this.displayApm();
-    this.displayApmTimes();
     this.displayLayoutAndView();
   }
   addTextSetting(name, description, key) {
@@ -6782,6 +6788,15 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     );
     const apm = this.plugin.apm;
     const apmSettings = apm.settings;
+    new obsidian6.Setting(containerEl).setName("Show APM counter").setDesc("Off: hidden and not counting. The personal best is kept.").addToggle(
+      (toggle) => toggle.setValue(apmSettings.enabled).onChange(async (value) => {
+        await apm.setEnabled(value);
+        this.display();
+      })
+    );
+    if (!apmSettings.enabled) {
+      return;
+    }
     new obsidian6.Setting(containerEl).setName("Personal best").setDesc(
       apmSettings.pb ? `${apmSettings.pb} cards in ${apmSettings.windowMinutes} min${apmSettings.pbDate ? `, set ${apmSettings.pbDate}` : ""}.` : "None yet."
     ).addButton(
@@ -6803,6 +6818,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
         this.display();
       });
     });
+    this.displayApmTimes();
   }
   displayApmTimes() {
     const { containerEl } = this;

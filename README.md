@@ -64,7 +64,7 @@ All are commands (give them hotkeys), most also buttons or right-click items:
 - Search the current canvas; filter pane by color and tag.
 - Archive cards to notes and restore them.
 - Insert cards from a template (`.canvas` files in `Templates/Canvas/`).
-- Status bar: card count, and an optional APM counter (cards touched in a rolling window).
+- Status bar: card count, and an optional APM counter (cards touched in a rolling window; Settings > APM counter turns it off).
 
 ## canvas.js
 
