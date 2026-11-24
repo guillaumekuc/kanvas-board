@@ -118,20 +118,21 @@ assert.ok(!workflow.cardTextOk('[[Fix login]] · review', ticket));
 
 // Note shape from the default template.
 const shape = templateRules.noteShape(config.NOTE_TEMPLATE);
-assert.deepStrictEqual(shape.keys, ['context']);
+assert.deepStrictEqual(shape.keys, []);
 assert.deepStrictEqual(
   shape.required.map((heading) => heading.line),
-  ['## Aim', '## Design', '### Done when'],
+  ['## Overview', '## Plan'],
 );
-assert.deepStrictEqual(
-  shape.whenDone.map((heading) => heading.line),
-  ['## Output'],
-);
+assert.deepStrictEqual(shape.whenDone, []);
 const rules = { shape, done: '4' };
-const good = '---\ncontext:\n  - PD\n---\n## Aim\n### Done when\n## Design\n';
+const good = '## Overview\n**Done when:** x\n## Plan\n';
 assert.deepStrictEqual(workflow.noteIssues(good, '5', rules), []);
-assert.deepStrictEqual(workflow.noteIssues(good, '4', rules), [
-  'green card, note has no ## Output',
+assert.deepStrictEqual(workflow.noteIssues(good, '4', rules), []);
+// A template without frontmatter leaves the note's frontmatter free.
+const withContext = '---\ncontext:\n  - PD\n---\n' + good;
+assert.deepStrictEqual(workflow.noteIssues(withContext, '5', rules), []);
+assert.deepStrictEqual(workflow.noteIssues('## Plan\n', '5', rules), [
+  'note has no ## Overview',
 ]);
 // A custom note template: other keys and headings.
 const mine = templateRules.noteShape(

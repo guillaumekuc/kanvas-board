@@ -14,7 +14,7 @@ const FRONTMATTER = /^---\n([\s\S]*?)\n---/;
 const FRONTMATTER_KEY = /^(\w[\w-]*):/gm;
 const PART_CHECKBOX = /^\s*- \[([ xX])\] /gm;
 const REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/g;
-const DECISIONS_RECORD = /^## Decisions Record/m;
+const DECISIONS_RECORD = /^## Decisions(?: Record)?\s*$/m;
 const OPEN_QUESTION = /^\s*- \[\?\] /gm;
 
 const ORANGE_STALE_MS = 3600000;
@@ -232,8 +232,9 @@ function noteIssues(source, color, rules = defaultNoteRules()) {
     return headingLine.test(source);
   }
   const issues = [];
+  // a template without frontmatter leaves the note's frontmatter free
   const expected = shape.keys.join(', ');
-  if (keys.join(', ') !== expected) {
+  if (expected && keys.join(', ') !== expected) {
     const listed = keys.join(', ') || 'none';
     issues.push(`note frontmatter is not \`${expected}\` only (${listed})`);
   }
@@ -398,8 +399,9 @@ function nestedCardUpdate(card, inner, rules) {
 
 // Level is derived from the note: `- [ ]` / `- [x]` parts make it a plan,
 // otherwise it is a brief. Questions: `- [?]` lines above the Decisions
-// Record heading (past rounds). Built in: the agent instructions say how to
-// write them, a vault that wants other markers writes its own tooling.
+// (or older Decisions Record) heading (past rounds). Built in: the agent
+// instructions say how to write them, a vault that wants other markers
+// writes its own tooling.
 function noteState(relativePath) {
   const text = fileSystem.readFileSync(store.vaultPath(relativePath), 'utf8');
   const parts = [...text.matchAll(PART_CHECKBOX)];
