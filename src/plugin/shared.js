@@ -40,9 +40,6 @@ const DEFAULTS = {
   // (in)
   foldDirection: 'out',
   terminal: '',
-  // cards that start a pass (and that tree --active takes, see workflow.js);
-  // empty = never
-  passColors: 'cyan purple',
   // where the agent keeps the notes it makes for cards (read by workflow.js and
   // the skill)
   notesFolder: 'Board notes',

@@ -1,7 +1,6 @@
 import * as shared from './shared.js';
 import * as obsidian from 'obsidian';
 import fileSystem from 'fs';
-import * as pass from './pass.js';
 import * as agentInstructions from './agentInstructions.js';
 import * as config from '../workflow/config.js';
 import path from 'path';
@@ -152,15 +151,13 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
         'a dot to pick the color the slot shows, a preset or a custom ' +
         'one (every canvas and the canvas color picker follow), edit its ' +
         'label (tooltips, the filter pane, the color commands) and, ' +
-        'under it, its part of the agent instructions. Toggle on: the ' +
-        'color triggers the agent, so "Run pass" starts if the board has ' +
-        'such a card and the agent takes those cards. All off: the ' +
-        'agent never starts.',
+        'under it, its part of the agent instructions. Do and Plan cards ' +
+        'start the agent: "Run pass" starts if the board has one, and ' +
+        'the agent takes those cards.',
     );
     this.displayAgentInstructions();
     const instructions = this.readSkillParts();
     this.addGeneralSkillField();
-    const goColors = pass.parseColors(this.plugin.settings.passColors);
     const workflow = config.resolve(this.plugin.settings);
     for (const { role, name, meaning } of this.rows) {
       const colorNumber = shared.COLOR_NUM[name];
@@ -183,7 +180,6 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
           .setValue((this.plugin.settings.colorLabels || {})[name] || '')
           .onChange((value) => this.plugin.setColorLabel(name, value.trim())),
       );
-      this.addWorkflowToggle(row, colorNumber, goColors);
       this.skillFields.colors[name] = this.addSkillField(
         instructions.colors[name],
         `Agent instructions: ${agentInstructions.sectionTitle(name)}`,
@@ -296,7 +292,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
   }
 
   // The color a role's slot shows (a preset name or a hex). Cards, labels,
-  // toggles and instructions stay with the slot.
+  // instructions stay with the slot.
   async setRoleColor(role, theme) {
     const { colors } = config.resolve(this.plugin.settings);
     if (colors[role] === theme) {
@@ -344,8 +340,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
       .setName('Reset workflow')
       .setDesc(
         "The roles' colors and the template paths back to the defaults. " +
-          'Labels, toggles, the template notes and the agent instructions ' +
-          'are kept.',
+          'Labels, the template notes and the agent instructions are kept.',
       )
       .addButton((button) =>
         button
@@ -392,7 +387,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
       .setDesc(
         'What the agent does on a pass: the general part below, then ' +
           'one part per color, under each color (the agent reads them ' +
-          'all; the toggles decide which cards it works). Saved when a ' +
+          'all; it works the Do and Plan cards). Saved when a ' +
           `field loses focus, to ${this.plugin.skillRelativePath()} (the ` +
           'pass prompt points any agent at it). Written once from the ' +
           'plugin, then yours: plugin updates never overwrite it. ' +
@@ -411,37 +406,6 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
 
   pluginDir() {
     return path.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir);
-  }
-
-  // On: cards of this color trigger the agent (setting passColors).
-  addWorkflowToggle(row, colorNumber, goColors) {
-    if (!colorNumber) {
-      row.addToggle((component) =>
-        // uncolored never triggers the agent: same pill for the layout,
-        // locked
-        component
-          .setTooltip('Never triggers the agent')
-          .setValue(false)
-          .setDisabled(true),
-      );
-    } else {
-      row.addToggle((component) =>
-        component
-          .setTooltip('Triggers the agent')
-          .setValue(goColors.has(colorNumber))
-          .onChange(async (isOn) => {
-            if (isOn) {
-              goColors.add(colorNumber);
-            } else {
-              goColors.delete(colorNumber);
-            }
-            this.plugin.settings.passColors = this.rowColorNames()
-              .filter((colorName) => goColors.has(shared.COLOR_NUM[colorName]))
-              .join(' ');
-            await this.plugin.saveData(this.plugin.settings);
-          }),
-      );
-    }
   }
 
   displayPass() {
