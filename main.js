@@ -4179,7 +4179,7 @@ var NOTE_COMMENT = '%% Plan note template: the frontmatter keys and headings of 
 var CARD_TEMPLATE = `${CARD_COMMENT}
 [[{note}]]
 [[{note}]] \xB7 {reason}
-{recap} \xB7 done \xB7 [[{output}]]
+{recap} \xB7 [[{output}]]
 `;
 var NOTE_TEMPLATE = `${NOTE_COMMENT}
 > [!info] Since last time
