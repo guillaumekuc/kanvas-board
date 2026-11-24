@@ -4126,7 +4126,6 @@ var QUOTED_VALUE = /^(["'])(.*)\1$/;
 var CONTEXT_FIELD = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m;
 var OUTER_BRACKETS = /^\[|\]$/g;
 var FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
-var FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/;
 var LINE_MARKUP_PREFIX = /^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/;
 var WIKILINK_SHOWN_TEXT2 = /\[\[([^\]|]*\|)?([^\]]*)\]\]/g;
 var NOTE_NAME_FORBIDDEN = /[#^|[\]*_`>:\\/"?<]/g;
@@ -4194,12 +4193,6 @@ function noteContexts(frontmatter) {
   }
   return (match[1].trim() ? match[1].replace(OUTER_BRACKETS, "").split(",") : match[2].split(LINE_BREAK).filter((line) => line.trim()).map((line) => line.replace(LIST_ITEM_DASH, ""))).map(unquote).filter(Boolean);
 }
-function cardContexts(node) {
-  const { note } = cardLinks(node);
-  const frontmatter = note && (import_fs2.default.readFileSync(vaultPath(note), "utf8").match(FRONTMATTER) || [])[1];
-  const contexts = noteContexts(frontmatter);
-  return contexts.length ? contexts : void 0;
-}
 function noteName(text) {
   return (String(text).split("\n").find((line) => line.trim()) || "Card").replace(LINE_MARKUP_PREFIX, "").replace(WIKILINK_SHOWN_TEXT2, "$2").replace(NOTE_NAME_FORBIDDEN, "").replace(WHITESPACE_RUN, " ").trim().slice(0, 60).trim() || "Card";
 }
@@ -4251,7 +4244,7 @@ function archiveDir(board, options = {}) {
   const boardPath = String(board).replace(BACKSLASH, "/"), folder = import_path3.default.posix.dirname(boardPath);
   return (folder === "." ? "" : folder + "/") + import_path3.default.posix.basename(boardPath, ".canvas") + " archive";
 }
-function archiveNote(canvasData, { id, board, date, contexts = [] }) {
+function archiveNote(canvasData, { id, board, date }) {
   const node = canvasData.nodes.find((node2) => node2.id === id);
   if (!node) {
     throw new Error("no node " + id);
@@ -4270,8 +4263,6 @@ function archiveNote(canvasData, { id, board, date, contexts = [] }) {
   );
   const frontmatter = [
     "---",
-    ...contexts.length ? ["context:"] : [],
-    ...contexts.map((context) => `  - ${context}`),
     `archived-from: "[[${board}]]"`,
     `archived: ${date}`,
     `card-id: ${yamlStr(node.id)}`,
@@ -4382,7 +4373,7 @@ var LINE_ENDINGS = /\r\n?/g;
 var COMMENT = /%%[\s\S]*?%%/g;
 var MARKER = /^%%\s*(optional|when done)\s*%%$/;
 var HEADING = /^(#{1,6}) +(.+?)\s*$/;
-var FRONTMATTER2 = /^---\n([\s\S]*?)\n---\n?/;
+var FRONTMATTER = /^---\n([\s\S]*?)\n---\n?/;
 var FRONTMATTER_KEY = /^(\w[\w-]*):/gm;
 var CARD_PLACEHOLDER = /(\[\[)?\{\w+\}/g;
 var REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/g;
@@ -4432,11 +4423,11 @@ function byLevel(first, second) {
 }
 function noteShape(templateSource) {
   const source = String(templateSource).replace(LINE_ENDINGS, "\n").replace(COMMENT, (comment) => MARKER.test(comment) ? comment : "");
-  const frontmatter = (source.match(FRONTMATTER2) || [])[1] || "";
+  const frontmatter = (source.match(FRONTMATTER) || [])[1] || "";
   const keys = [...frontmatter.matchAll(FRONTMATTER_KEY)].map(
     (match) => match[1]
   );
-  const headings = templateHeadings(source.replace(FRONTMATTER2, ""));
+  const headings = templateHeadings(source.replace(FRONTMATTER, ""));
   return {
     keys,
     required: headings.filter((each) => each.when === "always").sort(byLevel),
@@ -4450,7 +4441,7 @@ var CANVAS_COLOR_NUMBER = /^[1-6]$/;
 var ROLLUP_SUFFIXES = / · \d+ inside| · \d+d$/g;
 var STALE_SUFFIX = / · \d+d$/;
 var INSIDE_SUFFIX = / · \d+ inside/;
-var FRONTMATTER3 = /^---\n([\s\S]*?)\n---/;
+var FRONTMATTER2 = /^---\n([\s\S]*?)\n---/;
 var FRONTMATTER_KEY2 = /^(\w[\w-]*):/gm;
 var PART_CHECKBOX = /^\s*- \[([ xX])\] /gm;
 var REGEX_SPECIAL2 = /[.*+?^${}()|[\]\\]/g;
@@ -4595,7 +4586,7 @@ function defaultNoteRules() {
 }
 function noteIssues(source, color, rules = defaultNoteRules()) {
   const { shape, done } = rules;
-  const frontmatter = (source.match(FRONTMATTER3) || [])[1];
+  const frontmatter = (source.match(FRONTMATTER2) || [])[1];
   const keys = frontmatter ? [...frontmatter.matchAll(FRONTMATTER_KEY2)].map((match) => match[1]) : [];
   function hasHeading(heading) {
     const headingLine = new RegExp(`^${heading}\\s*$`, "m");
@@ -4813,14 +4804,11 @@ function archiveCommand(cli2) {
   const canvasData = readBoard(board);
   const ids = cli2.rest[0].split(",");
   for (const id of ids) {
-    const node = canvasData.nodes.find((each) => each.id === id);
-    const contexts = node && cardContexts(node) || settings().archiveContexts;
     const date = today();
     const archived = archiveNote(canvasData, {
       id,
       board,
-      date,
-      contexts
+      date
     });
     const folder = archiveDir(board, settings());
     const file = freePath(folder, archived.name, ".md");

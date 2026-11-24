@@ -14,7 +14,6 @@ import * as boardView from './boardView.js';
 const CANVAS_COLOR_CLASS = /mod-canvas-color-(\d)/;
 const CANVAS_WIKILINKS = /\[\[([^\]|#]+\.canvas)/g;
 const CANVAS_WIKILINK = /\[\[([^\]|#]+\.canvas)/;
-const FIRST_WIKILINK_TARGET = /\[\[([^\]|#]+)/;
 
 const CONTROL_BUTTONS = [
   { id: 'find', label: 'Search current canvas', icon: 'search' },
@@ -899,27 +898,6 @@ class CanvasBoardPlugin extends obsidian.Plugin {
       (child && ((child.editMode && child.editMode.editor) || child.editor)) ||
       null
     );
-  }
-
-  // Context of the note a card links (its `context:` list), so its archive note
-  // keeps the same context.
-  cardContexts(node, board) {
-    const nodeData = node.getData();
-    const target =
-      nodeData.type === 'file'
-        ? nodeData.file
-        : ((nodeData.text || '').match(FIRST_WIKILINK_TARGET) || [])[1];
-    const file =
-      target &&
-      this.app.metadataCache.getFirstLinkpathDest(target.trim(), board);
-    const frontmatter =
-      file && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
-    const contexts =
-      frontmatter && frontmatter.context
-        ? [].concat(frontmatter.context).map(String)
-        : [];
-
-    return contexts.length ? contexts : undefined;
   }
 
   async restore(note) {
