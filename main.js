@@ -4632,8 +4632,6 @@ var DEFAULTS2 = {
   agentCommand: "",
   layoutDirection: "TB",
   // TB, LR, BT or RL
-  colorLabels: {},
-  // color name → label, when edited (Settings > Workflow)
   cardWarning: "60",
   // yellow cards whose note is untouched this long get a warning badge (and the
   // rollup's `· Nd`)
@@ -6497,7 +6495,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
   displayWorkflow() {
     const { containerEl } = this;
     this.addHeading("Workflow").setDesc(
-      'Six roles, each with its rules in the plugin and its canvas color slot for good (the number cards store, the Alt+N hotkey): click a dot to pick the color the slot shows, a preset or a custom one (every canvas and the canvas color picker follow), edit its label (tooltips, the filter pane, the color commands) and, under it, its part of the agent instructions. Do and Plan cards start the agent: "Run pass" starts if the board has one, and the agent takes those cards.'
+      'Six roles, each with its rules in the plugin and its canvas color slot for good (the number cards store, the Alt+N hotkey): click a dot to pick the color the slot shows, a preset or a custom one (every canvas and the canvas color picker follow), and, under it, its part of the agent instructions. Do and Plan cards start the agent: "Run pass" starts if the board has one, and the agent takes those cards.'
     );
     this.displayAgentInstructions();
     const instructions = this.readSkillParts();
@@ -6514,11 +6512,6 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
       if (role) {
         this.makeColorPicker(dot, role);
       }
-      row.addText(
-        (component) => component.setPlaceholder(
-          role ? roleInfo(role).label : INBOX.label
-        ).setValue((this.plugin.settings.colorLabels || {})[name] || "").onChange((value) => this.plugin.setColorLabel(name, value.trim()))
-      );
       this.skillFields.colors[name] = this.addSkillField(
         instructions.colors[name],
         `Agent instructions: ${sectionTitle(name)}`
@@ -7297,6 +7290,7 @@ var CanvasBoardPlugin = class extends obsidian8.Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULTS2, await this.loadData());
     this.migrateClaudePath();
+    delete this.settings.colorLabels;
     this.applyTheme(document);
     this.registerEvent(
       this.app.workspace.on(
@@ -7473,34 +7467,12 @@ var CanvasBoardPlugin = class extends obsidian8.Plugin {
   // (.canvas-controls, canvas.menu.render), like folds and the filter pane: an
   // Obsidian update may drop those buttons, the commands stay. Header action
   // and ribbon icon are documented API. See "Obsidian internals" in README.md.
-  // Label of a color: the one edited in Settings > Workflow, else its role's.
+  // Label of a color: its role's (fixed, like the roles).
   colorLabel(name) {
-    return (this.settings.colorLabels || {})[name] || defaultLabel(name, resolve(this.settings));
+    return defaultLabel(name, resolve(this.settings));
   }
   colorCommandName(name) {
     return `Color selected cards: ${name} (${this.colorLabel(name)})`;
-  }
-  // An edited label also renames its command in the palette and the hotkey
-  // list. The id, and so the key, stays.
-  async setColorLabel(name, label) {
-    const labels = this.settings.colorLabels = {
-      ...this.settings.colorLabels
-    };
-    if (label) {
-      labels[name] = label;
-    } else {
-      delete labels[name];
-    }
-    await this.saveData(this.settings);
-    const row = COLORS2.find((colorRow) => colorRow.name === name);
-    const colorCommand = this.app.commands && this.app.commands.commands[`${this.manifest.id}:color-${row.commandKey}`];
-    const commandName = this.colorCommandName(name);
-    if (colorCommand) {
-      colorCommand.name = `${this.manifest.name}: ${commandName}`;
-    }
-    for (const canvas of this.panes.keys()) {
-      this.refreshView(canvas);
-    }
   }
   // Hotkey of a plugin command as Obsidian prints it ("Alt + ↑"), or ''.
   hotkey(id) {

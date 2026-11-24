@@ -86,7 +86,7 @@ function firstStepsCanvas() {
   return { nodes: [group, ...steps, tryIt], edges };
 }
 
-// One card per color: its label and what it does (Settings > Workflow).
+// One card per color: its role and what it does (Settings > Workflow).
 function legendNodes(colorLabel, settings) {
   const rows = shared.workflowRows(settings);
   const group = {

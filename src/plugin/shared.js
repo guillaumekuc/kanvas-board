@@ -29,7 +29,6 @@ const DEFAULTS = {
   // goes (else last)
   agentCommand: '',
   layoutDirection: 'TB', // TB, LR, BT or RL
-  colorLabels: {}, // color name → label, when edited (Settings > Workflow)
   cardWarning: '60',
   // yellow cards whose note is untouched this long get a warning badge (and the
   // rollup's `· Nd`)
