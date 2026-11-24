@@ -149,8 +149,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
       'Six roles, each with its rules in the plugin and its canvas color ' +
         'slot for good (the number cards store, the Alt+N hotkey): click ' +
         'a dot to pick the color the slot shows, a preset or a custom ' +
-        'one (every canvas and the canvas color picker follow), edit its ' +
-        'label (tooltips, the filter pane, the color commands) and, ' +
+        'one (every canvas and the canvas color picker follow), and, ' +
         'under it, its part of the agent instructions. Do and Plan cards ' +
         'start the agent: "Run pass" starts if the board has one, and ' +
         'the agent takes those cards.',
@@ -172,14 +171,6 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
       if (role) {
         this.makeColorPicker(dot, role);
       }
-      row.addText((component) =>
-        component
-          .setPlaceholder(
-            role ? config.roleInfo(role).label : config.INBOX.label,
-          )
-          .setValue((this.plugin.settings.colorLabels || {})[name] || '')
-          .onChange((value) => this.plugin.setColorLabel(name, value.trim())),
-      );
       this.skillFields.colors[name] = this.addSkillField(
         instructions.colors[name],
         `Agent instructions: ${agentInstructions.sectionTitle(name)}`,

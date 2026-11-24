@@ -6,7 +6,7 @@ Desktop only. Tested on Windows with Obsidian 1.14.5 and Claude Code. The macOS 
 
 ## The colors
 
-| Slot (default color) | Role (default label) | Meaning |
+| Slot (default color) | Role | Meaning |
 |---|---|---|
 | cyan | Do | The agent carries the card to done. |
 | purple | Plan | The agent takes one planning step (brief, then plan, then a refined plan), then hands back. It never does the work: color the card cyan for that. |
@@ -19,7 +19,6 @@ Desktop only. Tested on Windows with Obsidian 1.14.5 and Claude Code. The macOS 
 The six roles are fixed, each with its rules in the plugin: In Progress is always taken by the next pass (and flagged when its note goes untouched for an hour); Blocked and Review wait on you (counted, they climb to parent cards, Blocked first; Review cards age); a parent whose cards are all Done turns Done; Do and Plan share the same rules and differ only by their agent instructions. Settings > Workflow lets you shape the rest:
 
 - **Color** per role: each role keeps its canvas color slot for good (the number cards store, the Alt+N hotkey); click its dot to pick the color the slot shows, one of the six presets or a custom one. Every canvas in the vault, the canvas color picker and the plugin's dots follow; cards are never rewritten. Two roles may show the same color.
-- **Label** per role: how it reads. Do and Plan cards start the agent; the other roles never do.
 - **Agent instructions** per role: what the agent does with those cards, including how it writes questions (`- [?]`), answers (`- [i]`) and the `## Decisions Record`. `tree` counts `- [?]` lines above `## Decisions Record` as open questions; a vault that wants other markers writes its own tooling.
 - **Templates**: two notes in `<agent notes folder>/_templates/`, written the first time, then yours. `Card.md` lists the card text shapes agents write (`[[{note}]] · {reason}`, `{recap} · [[{output}]]`); `Plan note.md` holds the frontmatter keys and headings of their notes (a heading followed by `%% optional %%` or `%% when done %%` is not always required). `canvas.js check` reads both, so it checks what your workflow asks for.
 - **Reset workflow** brings the defaults back.

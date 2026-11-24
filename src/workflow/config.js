@@ -4,7 +4,7 @@ import * as store from '../board/store.js';
 // over the defaults. One accessor, `resolve(settings)`, read by workflow.js,
 // the plugin and the CLI.
 
-// Six fixed roles, named after their default labels. Each keeps its rules in
+// Six fixed roles, named after their labels. Each keeps its rules in
 // the code (do and plan share theirs: the agent instructions tell them apart)
 // and one canvas color slot for good: the number cards store, the Alt+N
 // hotkey. `color`: the slot's name (its default color, also an alias of the

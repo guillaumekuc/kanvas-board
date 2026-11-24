@@ -25,6 +25,8 @@ class CanvasBoardPlugin extends obsidian.Plugin {
   async onload() {
     this.settings = Object.assign({}, shared.DEFAULTS, await this.loadData());
     this.migrateClaudePath();
+    // Role labels are no longer editable: drop the old custom ones.
+    delete this.settings.colorLabels;
     this.applyTheme(document);
     this.registerEvent(
       this.app.workspace.on('window-open', (ownerWindow) =>
@@ -225,41 +227,13 @@ class CanvasBoardPlugin extends obsidian.Plugin {
   // Obsidian update may drop those buttons, the commands stay. Header action
   // and ribbon icon are documented API. See "Obsidian internals" in README.md.
 
-  // Label of a color: the one edited in Settings > Workflow, else its role's.
+  // Label of a color: its role's (fixed, like the roles).
   colorLabel(name) {
-    return (
-      (this.settings.colorLabels || {})[name] ||
-      config.defaultLabel(name, config.resolve(this.settings))
-    );
+    return config.defaultLabel(name, config.resolve(this.settings));
   }
 
   colorCommandName(name) {
     return `Color selected cards: ${name} (${this.colorLabel(name)})`;
-  }
-
-  // An edited label also renames its command in the palette and the hotkey
-  // list. The id, and so the key, stays.
-  async setColorLabel(name, label) {
-    const labels = (this.settings.colorLabels = {
-      ...this.settings.colorLabels,
-    });
-    if (label) {
-      labels[name] = label;
-    } else {
-      delete labels[name];
-    }
-    await this.saveData(this.settings);
-    const row = shared.COLORS.find((colorRow) => colorRow.name === name);
-    const colorCommand =
-      this.app.commands &&
-      this.app.commands.commands[`${this.manifest.id}:color-${row.commandKey}`];
-    const commandName = this.colorCommandName(name);
-    if (colorCommand) {
-      colorCommand.name = `${this.manifest.name}: ${commandName}`;
-    }
-    for (const canvas of this.panes.keys()) {
-      this.refreshView(canvas);
-    }
   }
 
   // Hotkey of a plugin command as Obsidian prints it ("Alt + ↑"), or ''.
