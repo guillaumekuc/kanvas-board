@@ -8,6 +8,7 @@ const MIN_PB = 5;
 const SAVE_EVERY_MS = 10000;
 const CONTENT_KEYS = ['text', 'file', 'subpath', 'url', 'label', 'color'];
 const DEFAULTS = {
+  enabled: true,
   pb: 0,
   pbDate: '',
   lowPercent: 25,
@@ -182,7 +183,8 @@ class ApmCounter {
   }
 
   record(keys, now = Date.now()) {
-    if (!keys.length) {
+    // turned off: nothing is counted, so turning it back on starts clean
+    if (!keys.length || !this.settings.enabled) {
       return;
     }
 
@@ -238,7 +240,7 @@ class ApmCounter {
       this.lastSave = now;
       this.save();
     }
-    const isShown = !!this.plugin.activeCanvas();
+    const isShown = settings.enabled && !!this.plugin.activeCanvas();
     if (this.isShown !== isShown) {
       this.element.toggle(isShown);
       this.isShown = isShown;
@@ -283,6 +285,13 @@ class ApmCounter {
     this.settings.pbDate = '';
     this.touched.clear();
     this.dirty = false;
+    await this.save();
+    this.refresh();
+  }
+
+  async setEnabled(enabled) {
+    this.settings.enabled = enabled;
+    this.touched.clear();
     await this.save();
     this.refresh();
   }

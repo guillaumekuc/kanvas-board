@@ -25,7 +25,6 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     this.displayWorkflow();
     this.displayPass();
     this.displayApm();
-    this.displayApmTimes();
     this.displayLayoutAndView();
   }
 
@@ -519,6 +518,19 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     const apm = this.plugin.apm;
     const apmSettings = apm.settings;
     new obsidian.Setting(containerEl)
+      .setName('Show APM counter')
+      .setDesc('Off: hidden and not counting. The personal best is kept.')
+      .addToggle((toggle) =>
+        toggle.setValue(apmSettings.enabled).onChange(async (value) => {
+          await apm.setEnabled(value);
+          this.display();
+        }),
+      );
+    // the detailed settings only matter while the counter is on
+    if (!apmSettings.enabled) {
+      return;
+    }
+    new obsidian.Setting(containerEl)
       .setName('Personal best')
       .setDesc(
         apmSettings.pb
@@ -552,6 +564,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
           this.display();
         });
       });
+    this.displayApmTimes();
   }
 
   displayApmTimes() {
