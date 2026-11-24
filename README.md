@@ -19,15 +19,15 @@ Desktop only. Tested on Windows with Obsidian 1.14.5 and Claude Code. The macOS 
 The six roles are fixed, each with its rules in the plugin: In Progress is always taken by the next pass (and flagged when its note goes untouched for an hour); Blocked and Review wait on you (counted, they climb to parent cards, Blocked first; Review cards age); a parent whose cards are all Done turns Done; Do and Plan share the same rules and differ only by their agent instructions. Settings > Workflow lets you shape the rest:
 
 - **Color** per role: each role keeps its canvas color slot for good (the number cards store, the Alt+N hotkey); click its dot to pick the color the slot shows, one of the six presets or a custom one. Every canvas in the vault, the canvas color picker and the plugin's dots follow; cards are never rewritten. Two roles may show the same color.
-- **Agent instructions** per role: what the agent does with those cards, including how it writes questions (`- [?]`), answers (`- [i]`) and the `## Decisions Record`. `tree` counts `- [?]` lines above `## Decisions Record` as open questions; a vault that wants other markers writes its own tooling.
+- **Agent instructions** per role: what the agent does with those cards, including how it writes questions (`- [?]`), answers (`- [i]`) and the `## Decisions` rounds. `tree` counts `- [?]` lines above `## Decisions` (or an older `## Decisions Record`) as open questions; a vault that wants other markers writes its own tooling.
 - **Templates**: two notes in `<agent notes folder>/_templates/`, written the first time, then yours. `Card.md` lists the card text shapes agents write (`[[{note}]] · {reason}`, `{recap} · [[{output}]]`); `Plan note.md` holds the frontmatter keys and headings of their notes (a heading followed by `%% optional %%` or `%% when done %%` is not always required). `canvas.js check` reads both, so it checks what your workflow asks for.
 - **Reset workflow** brings the defaults back.
 
 ## How a card moves
 
 1. **Wish**: a card in your own words.
-2. **Brief**: the agent writes a note (in the "Agent notes folder") with Aim, Design and open questions, links it from the card and turns it yellow.
-3. **Plan**: you answer the questions in the note, color the card again; the agent lists the parts as checkboxes (and a plan canvas when there are many).
+2. **Brief**: the agent writes a note (in the "Agent notes folder") with Overview (aim and **Done when**), Plan and open questions, links it from the card and turns it yellow.
+3. **Plan**: you answer the questions in the note, color the card again; the agent lists the parts as checkboxes.
 4. **Work** (cyan only): the agent does the parts, ticks them, and the card ends green with a link to what was made.
 
 A cyan card that is clear enough skips the brief and the plan.
@@ -72,7 +72,7 @@ The command line the agent uses; also usable by hand from the vault root:
 
 ```
 node .obsidian/plugins/kanvas-board/canvas.js tree [board] --active
-node .obsidian/plugins/kanvas-board/canvas.js set <board> <id> --color cyan
+node .obsidian/plugins/kanvas-board/canvas.js set <board> <id> --color review
 node .obsidian/plugins/kanvas-board/canvas.js rollup [board]
 node .obsidian/plugins/kanvas-board/canvas.js check [board]
 ```
