@@ -951,7 +951,7 @@ class CanvasBoardPlugin extends obsidian.Plugin {
   }
 
   // True if the board, or a plan canvas linked from one of its cards, has a
-  // card in `goColorSet` (setting "Workflow").
+  // Do or Plan card (`goColorSet`).
   async hasGoCards(board, goColorSet) {
     const read = async (filePath) => {
       const file = this.app.vault.getAbstractFileByPath(filePath);
@@ -992,17 +992,12 @@ class CanvasBoardPlugin extends obsidian.Plugin {
       view && view.getViewType() === 'canvas' && view.file
         ? view.file.path
         : this.settings.defaultBoard;
-    const goColorSet = pass.parseColors(this.settings.passColors);
-    if (!goColorSet.size) {
-      return this.noticeNoGoColor();
-    }
+    const goColorSet = config.resolve(this.settings).go;
     if (!(await this.hasGoCards(board, goColorSet))) {
-      const names = Object.keys(shared.COLOR_NUM).filter((colorName) =>
-        goColorSet.has(shared.COLOR_NUM[colorName]),
-      );
       new obsidian.Notice(
         `Kanvas board: nothing to do on ${board} (no ` +
-          `${names.join(' or ')} card)`,
+          `${config.roleInfo('do').label} or ` +
+          `${config.roleInfo('plan').label} card)`,
       );
       return;
     }
@@ -1019,26 +1014,6 @@ class CanvasBoardPlugin extends obsidian.Plugin {
       return;
     }
     pass.startPass(launch, { vault, board });
-  }
-
-  noticeNoGoColor() {
-    new obsidian.Notice(
-      createFragment((fragment) => {
-        fragment.appendText(
-          'Kanvas board: the agent did not start, no color triggers it. ' +
-            'Turn one on in Settings > Workflow. ',
-        );
-        const button = fragment.createEl('button', {
-          cls: 'kanvas-board-notice-undo',
-          text: 'Open settings',
-        });
-        button.addEventListener('click', () => {
-          this.app.setting.open();
-          this.app.setting.openTabById(this.manifest.id);
-        });
-      }),
-      10000,
-    );
   }
 }
 

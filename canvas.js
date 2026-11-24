@@ -4076,6 +4076,8 @@ function resolve(settings3 = {}) {
   return {
     colors: roleColors(own.colors),
     roleOf: Object.fromEntries(ROLES.map(({ role, color }) => [color, role])),
+    // the roles a pass takes as work: fixed, not a setting
+    go: /* @__PURE__ */ new Set([number("do"), number("plan")]),
     working: number("inProgress"),
     blocked,
     review,
@@ -4436,8 +4438,6 @@ function noteShape(templateSource) {
 }
 
 // src/workflow/workflow.js
-var LIST_SEPARATOR = /[\s,]+/;
-var CANVAS_COLOR_NUMBER = /^[1-6]$/;
 var ROLLUP_SUFFIXES = / · \d+ inside| · \d+d$/g;
 var STALE_SUFFIX = / · \d+d$/;
 var INSIDE_SUFFIX = / · \d+ inside/;
@@ -4448,7 +4448,6 @@ var REGEX_SPECIAL2 = /[.*+?^${}()|[\]\\]/g;
 var DECISIONS_RECORD = /^## Decisions(?: Record)?\s*$/m;
 var OPEN_QUESTION = /^\s*- \[\?\] /gm;
 var ORANGE_STALE_MS = 36e5;
-var DEFAULT_PASS_COLORS = "cyan purple";
 function escapeRegex2(text) {
   return text.replace(REGEX_SPECIAL2, "\\$&");
 }
@@ -4492,11 +4491,6 @@ function activeNode(boardTree, total, colors) {
   );
   return { board: boardTree.board, cards, context, edges };
 }
-function parseColors(value) {
-  return new Set(
-    String(value || "").split(LIST_SEPARATOR).filter(Boolean).map(slotOf).filter((color) => CANVAS_COLOR_NUMBER.test(color))
-  );
-}
 function settings2() {
   try {
     return JSON.parse(
@@ -4509,13 +4503,9 @@ function settings2() {
 function workflowNow() {
   return resolve(settings2());
 }
-function goColors() {
-  const value = settings2().passColors;
-  return parseColors(value === void 0 ? DEFAULT_PASS_COLORS : value);
-}
 function activeTree(boardTree) {
   const workflow = workflowNow();
-  const active = /* @__PURE__ */ new Set([...goColors(), workflow.working]);
+  const active = /* @__PURE__ */ new Set([...workflow.go, workflow.working]);
   const total = { waiting: 0 };
   const filtered = activeNode(boardTree, total, {
     active,
@@ -4679,8 +4669,8 @@ function colorCounts(colors, workflow = workflowNow()) {
   };
 }
 function desiredColor(card, inner, rules) {
-  const { goColors: goColors2, workflow } = rules;
-  if (goColors2.has(card.color)) {
+  const { workflow } = rules;
+  if (workflow.go.has(card.color)) {
     return card.color;
   }
   const rolled = card.text !== void 0 && INSIDE_SUFFIX.test(card.text);
@@ -4735,7 +4725,6 @@ function tree2(board) {
 }
 function rollup(board) {
   const workflow = workflowNow();
-  const goColorSet = goColors();
   const days = staleDays();
   const changes = [];
   function walk(node) {
@@ -4745,10 +4734,7 @@ function rollup(board) {
         return card.color;
       }
       const inner = walk(card.inside);
-      const update = nestedCardUpdate(card, inner, {
-        goColors: goColorSet,
-        workflow
-      });
+      const update = nestedCardUpdate(card, inner, { workflow });
       if (update.operation) {
         operations.push(update.operation);
       }

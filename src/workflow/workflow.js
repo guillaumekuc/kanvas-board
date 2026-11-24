@@ -5,8 +5,6 @@ import * as store from '../board/store.js';
 import * as config from './config.js';
 import * as templateRules from './templateRules.js';
 
-const LIST_SEPARATOR = /[\s,]+/;
-const CANVAS_COLOR_NUMBER = /^[1-6]$/;
 const ROLLUP_SUFFIXES = / · \d+ inside| · \d+d$/g;
 const STALE_SUFFIX = / · \d+d$/;
 const INSIDE_SUFFIX = / · \d+ inside/;
@@ -18,7 +16,6 @@ const DECISIONS_RECORD = /^## Decisions(?: Record)?\s*$/m;
 const OPEN_QUESTION = /^\s*- \[\?\] /gm;
 
 const ORANGE_STALE_MS = 3600000;
-const DEFAULT_PASS_COLORS = 'cyan purple';
 const DEFAULT_NOTES_FOLDER = config.DEFAULT_NOTES_FOLDER;
 
 function escapeRegex(text) {
@@ -72,18 +69,6 @@ function activeNode(boardTree, total, colors) {
   return { board: boardTree.board, cards, context, edges };
 }
 
-// "do plan" / "cyan purple" / "5,6" → Set of slot numbers. Empty setting
-// (all off): no go colors, the agent takes nothing.
-function parseColors(value) {
-  return new Set(
-    String(value || '')
-      .split(LIST_SEPARATOR)
-      .filter(Boolean)
-      .map(config.slotOf)
-      .filter((color) => CANVAS_COLOR_NUMBER.test(color)),
-  );
-}
-
 function settings() {
   try {
     return JSON.parse(
@@ -99,18 +84,12 @@ function workflowNow() {
   return config.resolve(settings());
 }
 
-function goColors() {
-  const value = settings().passColors;
-
-  return parseColors(value === undefined ? DEFAULT_PASS_COLORS : value);
-}
-
 // `tree --active`: only what a pass needs. Go/orange cards with their notes,
 // the cards edged to them (once each, text only, as context), nested boards
 // only when they hold active cards, and the yellow/red count.
 function activeTree(boardTree) {
   const workflow = workflowNow();
-  const active = new Set([...goColors(), workflow.working]);
+  const active = new Set([...workflow.go, workflow.working]);
   const total = { waiting: 0 };
   const filtered = activeNode(boardTree, total, {
     active,
@@ -350,8 +329,8 @@ function colorCounts(colors, workflow = workflowNow()) {
 // agent set it) climbs; a rolled-up card whose inside is resolved takes the
 // done color when everything inside is done, else no color.
 function desiredColor(card, inner, rules) {
-  const { goColors, workflow } = rules;
-  if (goColors.has(card.color)) {
+  const { workflow } = rules;
+  if (workflow.go.has(card.color)) {
     return card.color;
   }
 
@@ -372,7 +351,7 @@ function desiredColor(card, inner, rules) {
 
 // A card linking a nested board takes its most urgent color and the count of
 // waiting cards inside as `· N inside` (any `· Nd` age goes).
-// rules: { goColors, workflow }.
+// rules: { workflow }.
 function nestedCardUpdate(card, inner, rules) {
   const color = desiredColor(card, inner, rules);
   const waiting = inner.total;
@@ -434,7 +413,6 @@ function tree(board) {
 // Nested boards are written before the boards that link them.
 function rollup(board) {
   const workflow = workflowNow();
-  const goColorSet = goColors();
   const days = staleDays();
   const changes = [];
   function walk(node) {
@@ -445,10 +423,7 @@ function rollup(board) {
       }
 
       const inner = walk(card.inside);
-      const update = nestedCardUpdate(card, inner, {
-        goColors: goColorSet,
-        workflow,
-      });
+      const update = nestedCardUpdate(card, inner, { workflow });
       if (update.operation) {
         operations.push(update.operation);
       }
@@ -473,13 +448,10 @@ function rollup(board) {
 
 export {
   ORANGE_STALE_MS,
-  DEFAULT_PASS_COLORS,
   DEFAULT_NOTES_FOLDER,
   activeNode,
-  parseColors,
   settings,
   workflowNow,
-  goColors,
   activeTree,
   ageSuffixOperation,
   cardLinkTargets,

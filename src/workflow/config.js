@@ -161,6 +161,8 @@ function resolve(settings = {}) {
   return {
     colors: roleColors(own.colors),
     roleOf: Object.fromEntries(ROLES.map(({ role, color }) => [color, role])),
+    // the roles a pass takes as work: fixed, not a setting
+    go: new Set([number('do'), number('plan')]),
     working: number('inProgress'),
     blocked,
     review,

@@ -73,10 +73,7 @@ for (const [name, slot] of [
 ]) {
   assert.strictEqual(config.slotOf(name), slot, name);
 }
-assert.deepStrictEqual(
-  [...workflow.parseColors('do Plan,orange')],
-  ['5', '6', '2'],
-);
+assert.deepStrictEqual([...defaults.go], ['5', '6']);
 
 // The theme overrides only the slots showing another color.
 assert.strictEqual(config.themeCss(defaults.colors), '');
@@ -155,7 +152,6 @@ const inner = workflow.colorCounts(['3', '1', '1'], custom);
 assert.strictEqual(inner.total, 3);
 assert.strictEqual(
   workflow.desiredColor({ text: 'Sub', color: '' }, inner, {
-    goColors: new Set(),
     workflow: custom,
   }),
   '1',
@@ -166,7 +162,7 @@ assert.strictEqual(
   workflow.desiredColor(
     { text: 'Sub · 2 inside', color: '3' },
     workflow.colorCounts(['4', '4'], defaults),
-    { goColors: new Set(), workflow: defaults },
+    { workflow: defaults },
   ),
   '4',
 );
