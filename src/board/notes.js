@@ -9,7 +9,6 @@ const QUOTED_VALUE = /^(["'])(.*)\1$/;
 const CONTEXT_FIELD = /^context:[ \t]*(.*)((?:\r?\n[ \t]+-.*)*)/m;
 const OUTER_BRACKETS = /^\[|\]$/g;
 const FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
-const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/;
 const LINE_MARKUP_PREFIX = /^\s*([>#]+\s*|([-*+]|\d+[.)])\s+(\[.\]\s+)?)/;
 const WIKILINK_SHOWN_TEXT = /\[\[([^\]|]*\|)?([^\]]*)\]\]/g;
 const NOTE_NAME_FORBIDDEN = /[#^|[\]*_`>:\\/"?<]/g;
@@ -107,20 +106,6 @@ function noteContexts(frontmatter) {
   )
     .map(unquote)
     .filter(Boolean);
-}
-
-// Context of the note a card links, to file its archive note under the same
-// context.
-function cardContexts(node) {
-  const { note } = cardLinks(node);
-  const frontmatter =
-    note &&
-    (fileSystem
-      .readFileSync(store.vaultPath(note), 'utf8')
-      .match(FRONTMATTER) || [])[1];
-  const contexts = noteContexts(frontmatter);
-
-  return contexts.length ? contexts : undefined;
 }
 
 function noteName(text) {
@@ -222,9 +207,8 @@ function archiveDir(board, options = {}) {
 // An archived card becomes a note (body = its text, or a link to its file)
 // whose frontmatter keeps what a restore needs: board, id, place, size, color
 // and its edges. Listed by Canvas archive.base. Returns { name, content,
-// operations }. `contexts`: the context of the note the archived card links,
-// else data.json `archiveContexts`, else none.
-function archiveNote(canvasData, { id, board, date, contexts = [] }) {
+// operations }.
+function archiveNote(canvasData, { id, board, date }) {
   const node = canvasData.nodes.find((node) => node.id === id);
   if (!node) {
     throw new Error('no node ' + id);
@@ -245,8 +229,6 @@ function archiveNote(canvasData, { id, board, date, contexts = [] }) {
     );
   const frontmatter = [
     '---',
-    ...(contexts.length ? ['context:'] : []),
-    ...contexts.map((context) => `  - ${context}`),
     `archived-from: "[[${board}]]"`,
     `archived: ${date}`,
     `card-id: ${yamlStr(node.id)}`,
@@ -373,7 +355,6 @@ export {
   cardLinks,
   linksTo,
   noteContexts,
-  cardContexts,
   noteName,
   yamlStr,
   tree,

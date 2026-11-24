@@ -4314,7 +4314,7 @@ function archiveDir(board, options = {}) {
   const boardPath = String(board).replace(BACKSLASH, "/"), folder = import_path3.default.posix.dirname(boardPath);
   return (folder === "." ? "" : folder + "/") + import_path3.default.posix.basename(boardPath, ".canvas") + " archive";
 }
-function archiveNote(canvasData, { id, board, date, contexts = [] }) {
+function archiveNote(canvasData, { id, board, date }) {
   const node = canvasData.nodes.find((node2) => node2.id === id);
   if (!node) {
     throw new Error("no node " + id);
@@ -4333,8 +4333,6 @@ function archiveNote(canvasData, { id, board, date, contexts = [] }) {
   );
   const frontmatter = [
     "---",
-    ...contexts.length ? ["context:"] : [],
-    ...contexts.map((context) => `  - ${context}`),
     `archived-from: "[[${board}]]"`,
     `archived: ${date}`,
     `card-id: ${yamlStr(node.id)}`,
@@ -5717,8 +5715,7 @@ function registerArchiveCommand(plugin) {
         const archived = plugin.boardLibrary.archiveNote(canvasData, {
           id: node.id,
           board,
-          date: window.moment().format("YYYY-MM-DD"),
-          contexts: plugin.cardContexts(node, board) || plugin.settings.archiveContexts
+          date: window.moment().format("YYYY-MM-DD")
         });
         notes.push(plugin.freePath(folder + "/", archived.name, ".md"));
         await plugin.app.vault.create(
@@ -7330,7 +7327,6 @@ function mixBoardView(targetClass) {
 var CANVAS_COLOR_CLASS = /mod-canvas-color-(\d)/;
 var CANVAS_WIKILINKS = /\[\[([^\]|#]+\.canvas)/g;
 var CANVAS_WIKILINK = /\[\[([^\]|#]+\.canvas)/;
-var FIRST_WIKILINK_TARGET2 = /\[\[([^\]|#]+)/;
 var CONTROL_BUTTONS = [
   { id: "find", label: "Search current canvas", icon: "search" },
   { id: "filter", label: "Filter cards", icon: "filter" },
@@ -8083,16 +8079,6 @@ Shift-click: next direction`,
   cardEditor(node) {
     const child = node.child;
     return child && (child.editMode && child.editMode.editor || child.editor) || null;
-  }
-  // Context of the note a card links (its `context:` list), so its archive note
-  // keeps the same context.
-  cardContexts(node, board) {
-    const nodeData = node.getData();
-    const target = nodeData.type === "file" ? nodeData.file : ((nodeData.text || "").match(FIRST_WIKILINK_TARGET2) || [])[1];
-    const file = target && this.app.metadataCache.getFirstLinkpathDest(target.trim(), board);
-    const frontmatter = file && (this.app.metadataCache.getFileCache(file) || {}).frontmatter;
-    const contexts = frontmatter && frontmatter.context ? [].concat(frontmatter.context).map(String) : [];
-    return contexts.length ? contexts : void 0;
   }
   async restore(note) {
     const source = await this.app.vault.read(note);

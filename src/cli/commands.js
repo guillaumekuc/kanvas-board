@@ -46,15 +46,11 @@ function archiveCommand(cli) {
   const canvasData = store.readBoard(board);
   const ids = cli.rest[0].split(',');
   for (const id of ids) {
-    const node = canvasData.nodes.find((each) => each.id === id);
-    const contexts =
-      (node && notes.cardContexts(node)) || store.settings().archiveContexts;
     const date = store.today();
     const archived = notes.archiveNote(canvasData, {
       id,
       board,
       date,
-      contexts,
     });
     const folder = notes.archiveDir(board, store.settings());
     const file = store.freePath(folder, archived.name, '.md');
