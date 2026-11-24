@@ -22,7 +22,7 @@ This skill holds the steps. **The card color is the state**: notes carry no boar
 3. `node .obsidian/plugins/kanvas-board/canvas.js rollup [board]`: parents take the most urgent nested role, `· N inside` and `· Nd` suffixes are refreshed. Then `node .obsidian/plugins/kanvas-board/canvas.js check [board] --ids <the inventory's ids and any card this pass added>` (read-only, never blocks the pass): it checks what the agent wrote, not what User did with cards afterwards.
 4. Report: what each card became, then the Review/Blocked cards with links (or "nothing needs User"), then `check: N issues` with each one (or `check: clean`).
 
-Each role has its section below: the agent reads them all; the plugin's Workflow toggles (`passColors` in `.obsidian/plugins/kanvas-board/data.json`) decide which roles `tree --active` returns as work.
+Each role has its section below: the agent reads them all; `tree --active` returns the Do and Plan cards as work (fixed, not a setting).
 
 ## Do cards
 
