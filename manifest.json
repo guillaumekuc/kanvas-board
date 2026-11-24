@@ -1,7 +1,7 @@
 {
 	"id": "kanvas-board",
 	"name": "Kanvas board",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"minAppVersion": "1.12.0",
 	"description": "Turn a canvas into a kanban-style board where the card color is the state, and hand cyan and purple cards to an AI agent (Claude Code, Codex, Gemini CLI or another) that briefs, plans and does them. Color hotkeys, tidy layout, filter, fold, pack and archive.",
 	"author": "Guillaume Kuc",
