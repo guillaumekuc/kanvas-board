@@ -6421,6 +6421,15 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     this.displayApm();
     this.displayLayoutAndView();
   }
+  // Re-render after a change without jumping back to the top of the tab.
+  // The tab or its container scrolls, depending on the Obsidian version.
+  redisplay() {
+    const scrollers = [this.containerEl, this.containerEl.parentElement].filter(Boolean).map((element) => [element, element.scrollTop]);
+    this.display();
+    for (const [element, scrollTop] of scrollers) {
+      element.scrollTop = scrollTop;
+    }
+  }
   addTextSetting(name, description, key) {
     return new obsidian6.Setting(this.containerEl).setName(name).setDesc(description).addText(
       (component) => component.setPlaceholder(DEFAULTS2[key]).setValue(this.plugin.settings[key]).onChange(async (value) => {
@@ -6487,7 +6496,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
       (dropdown) => dropdown.addOption("board", "Next to each board").addOption("global", "One folder for all boards").setValue(this.plugin.settings.archiveMode).onChange(async (value) => {
         this.plugin.settings.archiveMode = value;
         await this.plugin.saveData(this.plugin.settings);
-        this.display();
+        this.redisplay();
       })
     );
     if (this.plugin.settings.archiveMode === "global") {
@@ -6627,7 +6636,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
       return;
     }
     await this.saveWorkflow({ colors: { ...colors, [role]: theme } });
-    this.display();
+    this.redisplay();
   }
   async saveWorkflow(change) {
     const settings2 = this.plugin.settings;
@@ -6661,7 +6670,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
         delete this.plugin.settings.workflow;
         await this.plugin.saveData(this.plugin.settings);
         this.plugin.applyTheme();
-        this.display();
+        this.redisplay();
       })
     );
   }
@@ -6684,7 +6693,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     ).addButton(
       (button) => button.setButtonText("Reset").setWarning().onClick(() => {
         this.plugin.resetSkill(this.pluginDir());
-        this.display();
+        this.redisplay();
       })
     );
   }
@@ -6791,7 +6800,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     new obsidian6.Setting(containerEl).setName("Show APM counter").setDesc("Off: hidden and not counting. The personal best is kept.").addToggle(
       (toggle) => toggle.setValue(apmSettings.enabled).onChange(async (value) => {
         await apm.setEnabled(value);
-        this.display();
+        this.redisplay();
       })
     );
     if (!apmSettings.enabled) {
@@ -6802,7 +6811,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     ).addButton(
       (button) => button.setButtonText("Reset").setWarning().onClick(async () => {
         await apm.resetPb();
-        this.display();
+        this.redisplay();
       })
     );
     new obsidian6.Setting(containerEl).setName("Window (minutes)").setDesc(
@@ -6815,7 +6824,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
           return;
         }
         await apm.setWindow(minutes);
-        this.display();
+        this.redisplay();
       });
     });
     this.displayApmTimes();

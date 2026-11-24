@@ -28,6 +28,18 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     this.displayLayoutAndView();
   }
 
+  // Re-render after a change without jumping back to the top of the tab.
+  // The tab or its container scrolls, depending on the Obsidian version.
+  redisplay() {
+    const scrollers = [this.containerEl, this.containerEl.parentElement]
+      .filter(Boolean)
+      .map((element) => [element, element.scrollTop]);
+    this.display();
+    for (const [element, scrollTop] of scrollers) {
+      element.scrollTop = scrollTop;
+    }
+  }
+
   addTextSetting(name, description, key) {
     return new obsidian.Setting(this.containerEl)
       .setName(name)
@@ -130,7 +142,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.archiveMode = value;
             await this.plugin.saveData(this.plugin.settings);
-            this.display();
+            this.redisplay();
           }),
       );
     if (this.plugin.settings.archiveMode === 'global') {
@@ -290,7 +302,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
     }
 
     await this.saveWorkflow({ colors: { ...colors, [role]: theme } });
-    this.display();
+    this.redisplay();
   }
 
   async saveWorkflow(change) {
@@ -340,7 +352,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
             delete this.plugin.settings.workflow;
             await this.plugin.saveData(this.plugin.settings);
             this.plugin.applyTheme();
-            this.display();
+            this.redisplay();
           }),
       );
   }
@@ -389,7 +401,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
           .setWarning()
           .onClick(() => {
             this.plugin.resetSkill(this.pluginDir());
-            this.display();
+            this.redisplay();
           }),
       );
   }
@@ -523,7 +535,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
       .addToggle((toggle) =>
         toggle.setValue(apmSettings.enabled).onChange(async (value) => {
           await apm.setEnabled(value);
-          this.display();
+          this.redisplay();
         }),
       );
     // the detailed settings only matter while the counter is on
@@ -544,7 +556,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
           .setWarning()
           .onClick(async () => {
             await apm.resetPb();
-            this.display();
+            this.redisplay();
           }),
       );
     new obsidian.Setting(containerEl)
@@ -561,7 +573,7 @@ class CanvasBoardSettings extends obsidian.PluginSettingTab {
             return;
           }
           await apm.setWindow(minutes);
-          this.display();
+          this.redisplay();
         });
       });
     this.displayApmTimes();
