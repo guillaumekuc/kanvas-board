@@ -4221,11 +4221,6 @@ function roleColors(own = {}) {
     ])
   );
 }
-function slotOf(name) {
-  const key = String(name).toLowerCase();
-  const role = ROLES.find((each) => each.role.toLowerCase() === key);
-  return role ? role.slot : COLORS[key] || name;
-}
 function resolve(settings2 = {}) {
   const own = settings2.workflow || {};
   function number(role) {
@@ -4236,6 +4231,8 @@ function resolve(settings2 = {}) {
   return {
     colors: roleColors(own.colors),
     roleOf: Object.fromEntries(ROLES.map(({ role, color }) => [color, role])),
+    // the roles a pass takes as work: fixed, not a setting
+    go: /* @__PURE__ */ new Set([number("do"), number("plan")]),
     working: number("inProgress"),
     blocked,
     review,
@@ -4647,9 +4644,6 @@ var DEFAULTS2 = {
   // (in)
   foldDirection: "out",
   terminal: "",
-  // cards that start a pass (and that tree --active takes, see workflow.js);
-  // empty = never
-  passColors: "cyan purple",
   // where the agent keeps the notes it makes for cards (read by workflow.js and
   // the skill)
   notesFolder: "Board notes",
@@ -6239,8 +6233,6 @@ var COMMAND_WORDS = /"[^"]*"|\S+/g;
 var OUTER_QUOTES = /^"|"$/g;
 var PROMPT_PLACEHOLDER = /\{prompt\}/g;
 var VAULT_OR_BOARD_PLACEHOLDER = /\{(vault|board)\}/g;
-var LIST_SEPARATOR = /[\s,]+/;
-var CANVAS_COLOR_NUMBER = /^[1-6]$/;
 function claudeBin(setting) {
   if (setting) {
     return setting;
@@ -6327,11 +6319,6 @@ function passPrompt(instructionsPath, board) {
 }
 function nextTurn(current, target) {
   return current + ((target - current) % 360 + 540) % 360 - 180;
-}
-function parseColors(value) {
-  return new Set(
-    String(value || "").split(LIST_SEPARATOR).filter(Boolean).map(slotOf).filter((color) => CANVAS_COLOR_NUMBER.test(color))
-  );
 }
 function startPass([command, commandArguments], { vault, board }) {
   function failed(error) {
@@ -6510,12 +6497,11 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
   displayWorkflow() {
     const { containerEl } = this;
     this.addHeading("Workflow").setDesc(
-      'Six roles, each with its rules in the plugin and its canvas color slot for good (the number cards store, the Alt+N hotkey): click a dot to pick the color the slot shows, a preset or a custom one (every canvas and the canvas color picker follow), edit its label (tooltips, the filter pane, the color commands) and, under it, its part of the agent instructions. Toggle on: the color triggers the agent, so "Run pass" starts if the board has such a card and the agent takes those cards. All off: the agent never starts.'
+      'Six roles, each with its rules in the plugin and its canvas color slot for good (the number cards store, the Alt+N hotkey): click a dot to pick the color the slot shows, a preset or a custom one (every canvas and the canvas color picker follow), edit its label (tooltips, the filter pane, the color commands) and, under it, its part of the agent instructions. Do and Plan cards start the agent: "Run pass" starts if the board has one, and the agent takes those cards.'
     );
     this.displayAgentInstructions();
     const instructions = this.readSkillParts();
     this.addGeneralSkillField();
-    const goColors = parseColors(this.plugin.settings.passColors);
     const workflow = resolve(this.plugin.settings);
     for (const { role, name, meaning } of this.rows) {
       const colorNumber = COLOR_NUM[name];
@@ -6533,7 +6519,6 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
           role ? roleInfo(role).label : INBOX.label
         ).setValue((this.plugin.settings.colorLabels || {})[name] || "").onChange((value) => this.plugin.setColorLabel(name, value.trim()))
       );
-      this.addWorkflowToggle(row, colorNumber, goColors);
       this.skillFields.colors[name] = this.addSkillField(
         instructions.colors[name],
         `Agent instructions: ${sectionTitle(name)}`
@@ -6636,7 +6621,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
     });
   }
   // The color a role's slot shows (a preset name or a hex). Cards, labels,
-  // toggles and instructions stay with the slot.
+  // instructions stay with the slot.
   async setRoleColor(role, theme) {
     const { colors } = resolve(this.plugin.settings);
     if (colors[role] === theme) {
@@ -6671,7 +6656,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
       description: "The note holding the agent instructions (the fields above edit it too); Run pass gives the agent a copy with the placeholders filled in."
     });
     new obsidian6.Setting(containerEl).setName("Reset workflow").setDesc(
-      "The roles' colors and the template paths back to the defaults. Labels, toggles, the template notes and the agent instructions are kept."
+      "The roles' colors and the template paths back to the defaults. Labels, the template notes and the agent instructions are kept."
     ).addButton(
       (button) => button.setButtonText("Reset").setWarning().onClick(async () => {
         delete this.plugin.settings.workflow;
@@ -6696,7 +6681,7 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
   displayAgentInstructions() {
     const { containerEl } = this;
     new obsidian6.Setting(containerEl).setName("Agent instructions").setDesc(
-      `What the agent does on a pass: the general part below, then one part per color, under each color (the agent reads them all; the toggles decide which cards it works). Saved when a field loses focus, to ${this.plugin.skillRelativePath()} (the pass prompt points any agent at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin's version.`
+      `What the agent does on a pass: the general part below, then one part per color, under each color (the agent reads them all; it works the Do and Plan cards). Saved when a field loses focus, to ${this.plugin.skillRelativePath()} (the pass prompt points any agent at it). Written once from the plugin, then yours: plugin updates never overwrite it. Reset brings back the plugin's version.`
     ).addButton(
       (button) => button.setButtonText("Reset").setWarning().onClick(() => {
         this.plugin.resetSkill(this.pluginDir());
@@ -6706,30 +6691,6 @@ var CanvasBoardSettings = class extends obsidian6.PluginSettingTab {
   }
   pluginDir() {
     return import_path7.default.join(this.app.vault.adapter.basePath, this.plugin.manifest.dir);
-  }
-  // On: cards of this color trigger the agent (setting passColors).
-  addWorkflowToggle(row, colorNumber, goColors) {
-    if (!colorNumber) {
-      row.addToggle(
-        (component) => (
-          // uncolored never triggers the agent: same pill for the layout,
-          // locked
-          component.setTooltip("Never triggers the agent").setValue(false).setDisabled(true)
-        )
-      );
-    } else {
-      row.addToggle(
-        (component) => component.setTooltip("Triggers the agent").setValue(goColors.has(colorNumber)).onChange(async (isOn) => {
-          if (isOn) {
-            goColors.add(colorNumber);
-          } else {
-            goColors.delete(colorNumber);
-          }
-          this.plugin.settings.passColors = this.rowColorNames().filter((colorName) => goColors.has(COLOR_NUM[colorName])).join(" ");
-          await this.plugin.saveData(this.plugin.settings);
-        })
-      );
-    }
   }
   displayPass() {
     const { containerEl } = this;
@@ -8120,7 +8081,7 @@ Shift-click: next direction`,
     return view && view.getViewType() === "canvas" ? view.canvas : null;
   }
   // True if the board, or a plan canvas linked from one of its cards, has a
-  // card in `goColorSet` (setting "Workflow").
+  // Do or Plan card (`goColorSet`).
   async hasGoCards(board, goColorSet) {
     const read = async (filePath) => {
       const file = this.app.vault.getAbstractFileByPath(filePath);
@@ -8153,16 +8114,10 @@ Shift-click: next direction`,
     const vault = this.app.vault.adapter.basePath;
     const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
     const board = view && view.getViewType() === "canvas" && view.file ? view.file.path : this.settings.defaultBoard;
-    const goColorSet = parseColors(this.settings.passColors);
-    if (!goColorSet.size) {
-      return this.noticeNoGoColor();
-    }
+    const goColorSet = resolve(this.settings).go;
     if (!await this.hasGoCards(board, goColorSet)) {
-      const names = Object.keys(COLOR_NUM).filter(
-        (colorName) => goColorSet.has(COLOR_NUM[colorName])
-      );
       new obsidian8.Notice(
-        `Kanvas board: nothing to do on ${board} (no ${names.join(" or ")} card)`
+        `Kanvas board: nothing to do on ${board} (no ${roleInfo("do").label} or ${roleInfo("plan").label} card)`
       );
       return;
     }
@@ -8178,24 +8133,6 @@ Shift-click: next direction`,
       return;
     }
     startPass(launch, { vault, board });
-  }
-  noticeNoGoColor() {
-    new obsidian8.Notice(
-      createFragment((fragment) => {
-        fragment.appendText(
-          "Kanvas board: the agent did not start, no color triggers it. Turn one on in Settings > Workflow. "
-        );
-        const button = fragment.createEl("button", {
-          cls: "kanvas-board-notice-undo",
-          text: "Open settings"
-        });
-        button.addEventListener("click", () => {
-          this.app.setting.open();
-          this.app.setting.openTabById(this.manifest.id);
-        });
-      }),
-      1e4
-    );
   }
 };
 mixBoardView(CanvasBoardPlugin);

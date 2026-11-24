@@ -10,8 +10,6 @@ const COMMAND_WORDS = /"[^"]*"|\S+/g;
 const OUTER_QUOTES = /^"|"$/g;
 const PROMPT_PLACEHOLDER = /\{prompt\}/g;
 const VAULT_OR_BOARD_PLACEHOLDER = /\{(vault|board)\}/g;
-const LIST_SEPARATOR = /[\s,]+/;
-const CANVAS_COLOR_NUMBER = /^[1-6]$/;
 
 // Claude Code: the setting, else the native installer's
 // ~/.local/bin/claude(.exe), else `claude` on PATH.
@@ -138,16 +136,6 @@ function nextTurn(current, target) {
   return current + ((((target - current) % 360) + 540) % 360) - 180;
 }
 
-function parseColors(value) {
-  return new Set(
-    String(value || '')
-      .split(LIST_SEPARATOR)
-      .filter(Boolean)
-      .map(config.slotOf)
-      .filter((color) => CANVAS_COLOR_NUMBER.test(color)),
-  );
-}
-
 // The terminal runs on its own: closing Obsidian does not stop the pass.
 function startPass([command, commandArguments], { vault, board }) {
   function failed(error) {
@@ -177,6 +165,5 @@ export {
   terminalLaunch,
   passPrompt,
   nextTurn,
-  parseColors,
   startPass,
 };
