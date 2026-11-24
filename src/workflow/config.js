@@ -87,7 +87,7 @@ const NOTE_COMMENT =
 const CARD_TEMPLATE = `${CARD_COMMENT}
 [[{note}]]
 [[{note}]] · {reason}
-{recap} · done · [[{output}]]
+{recap} · [[{output}]]
 `;
 
 const NOTE_TEMPLATE = `${NOTE_COMMENT}

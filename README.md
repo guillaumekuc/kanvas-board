@@ -21,7 +21,7 @@ The six roles are fixed, each with its rules in the plugin: In Progress is alway
 - **Color** per role: each role keeps its canvas color slot for good (the number cards store, the Alt+N hotkey); click its dot to pick the color the slot shows, one of the six presets or a custom one. Every canvas in the vault, the canvas color picker and the plugin's dots follow; cards are never rewritten. Two roles may show the same color.
 - **Label** and **toggle** per role: how it reads, and whether its color starts the agent.
 - **Agent instructions** per role: what the agent does with those cards, including how it writes questions (`- [?]`), answers (`- [i]`) and the `## Decisions Record`. `tree` counts `- [?]` lines above `## Decisions Record` as open questions; a vault that wants other markers writes its own tooling.
-- **Templates**: two notes in `<agent notes folder>/_templates/`, written the first time, then yours. `Card.md` lists the card text shapes agents write (`[[{note}]] · {reason}`, `{recap} · done · [[{output}]]`); `Plan note.md` holds the frontmatter keys and headings of their notes (a heading followed by `%% optional %%` or `%% when done %%` is not always required). `canvas.js check` reads both, so it checks what your workflow asks for.
+- **Templates**: two notes in `<agent notes folder>/_templates/`, written the first time, then yours. `Card.md` lists the card text shapes agents write (`[[{note}]] · {reason}`, `{recap} · [[{output}]]`); `Plan note.md` holds the frontmatter keys and headings of their notes (a heading followed by `%% optional %%` or `%% when done %%` is not always required). `canvas.js check` reads both, so it checks what your workflow asks for.
 - **Reset workflow** brings the defaults back.
 
 ## How a card moves

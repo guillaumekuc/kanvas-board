@@ -159,7 +159,7 @@ function cardLinkTargets(node) {
 
 // Structure only, never content. A card the agent wrote: a wish (User's free
 // text, any length, no link) or one of the card template's shapes (by default
-// `[[Note]] · reason` or a recap `<words> · done · [[Output]]`).
+// `[[Note]] · reason` or a recap `<words> · [[Output]]`).
 function cardTextOk(raw, shapes = defaultCardShapes()) {
   const text = raw.trim();
   if (!text.includes('[[')) {
