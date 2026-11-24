@@ -6,7 +6,7 @@ argument-hint: "[board path, default: plugin setting \"Default board\"]"
 
 # Kanvas board pass
 
-This skill holds the steps. **The card color is the state**: notes carry no board fields beyond `context`. Colors are named by **role**, each one a fixed canvas color slot (the number cards store): Do `"5"`, Plan `"6"`, In Progress `"2"`, Review `"3"`, Blocked `"1"`, Done `"4"`. User picks the color each slot shows, so never go by what a color looks like; `--color` takes the role (`do`, `plan`, `inProgress`, `review`, `blocked`, `done`).
+This skill holds the steps. **The card color is the state**: notes carry no board fields. Colors are named by **role**, each one a fixed canvas color slot (the number cards store): Do `"5"`, Plan `"6"`, In Progress `"2"`, Review `"3"`, Blocked `"1"`, Done `"4"`. User picks the color each slot shows, so never go by what a color looks like; `--color` takes the role (`do`, `plan`, `inProgress`, `review`, `blocked`, `done`).
 
 **Name the person "User"** in everything a pass writes (cards, notes, report), never by name.
 
